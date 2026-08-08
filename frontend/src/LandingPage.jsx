@@ -33,8 +33,8 @@ export default function LandingPage() {
   );
 }
 
-function SignInCard() {
-  const [mode, setMode] = useState('signin');  // 'signin' | 'signup' | 'forgot'
+function SignInCard({ initialMode = 'signin', allowBackToSignIn = true }) {
+  const [mode, setMode] = useState(initialMode);  // 'signin' | 'signup' | 'forgot'
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
@@ -154,11 +154,13 @@ function SignInCard() {
             <Button type="submit" variant="primary" className="w-100">
               Sign Up
             </Button>
-            <div className="mt-2 text-center">
-              <a href="#" onClick={(e) => { e.preventDefault(); setMode('signin'); }}>
-                Back to sign in
-              </a>
-            </div>
+            {allowBackToSignIn && (
+              <div className="mt-2 text-center">
+                <a href="#" onClick={(e) => { e.preventDefault(); setMode('signin'); }}>
+                  Back to sign in
+                </a>
+              </div>
+            )}
           </Form>
         )}
         {mode === 'forgot' && (
@@ -191,7 +193,7 @@ function PricingCard() {
   const [showSignup, setShowSignup] = useState(false);
 
   if (showSignup) {
-    return <SignInCard />;
+    return <SignInCard initialMode="signup" allowBackToSignIn={false} />;
   }
 
   return (
@@ -238,7 +240,7 @@ function OpenSourceCard() {
         <Button
           variant="outline-secondary"
           className="w-100"
-          onClick={() => window.open('https://github.com/YmerFlow/Ymerflow/docs/k8s', '_blank')}
+          onClick={() => window.open('https://ymerflow.org/docs/deployment.html', '_blank')}
         >
           Deployment Guide
         </Button>
