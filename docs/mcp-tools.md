@@ -2,6 +2,8 @@
 
 Nagelfluh exposes a subset of its REST API as MCP (Model Context Protocol) tools via [fastapi-mcp](https://github.com/tadata-ru/fastapi-mcp), mounted at `/mcp` using the Streamable HTTP transport.
 
+Only routes tagged `Processes`, `Datasets`, `Environments`, `Uploads`, or `Workspaces` are exposed as MCP tools (`backend/main.py`, `FastApiMCP(..., include_tags=[...])`). Auth, Projects, Admin, Systems, Tags, Plugins, and Internal routes are REST-only and not visible to MCP clients. No `operation_id` is set on any route, so tool names follow FastAPI's default `{function_name}_{path}_{method}` pattern (e.g. `create_process_process_post`).
+
 ## Authentication
 
 All tools require a project-scoped API key:
@@ -10,7 +12,7 @@ All tools require a project-scoped API key:
 Authorization: Bearer apk_<key>
 ```
 
-API keys are scoped to a single project, so no `project_id` selection is needed at the session level — the key carries it.
+API keys are scoped to a single project, so no `project_id` selection is needed at the session level — the key carries it. Under the hood, a single bearer credential is dispatched by prefix: `apk_...` (API key, hashed and looked up, scopes the request to its project), `upt_...` (short-lived 1h upload-only JWT from `request_upload_token`), or a full-session JWT (no project scope). Most process/dataset endpoints additionally require the caller to be a member of the resource's project.
 
 ## Typical Workflow
 
@@ -18,20 +20,22 @@ API keys are scoped to a single project, so no `project_id` selection is needed 
 1. list_environments          — discover available environments and process type names
 2. get_process_type_schema    — fetch the JSON Schema for the specific type you want to run
 3. upload_file                — upload local input data (or use request_upload_token + curl for large files)
-4. create_process             — submit the job; save the returned id and version
+4. create_process              — submit the job; save the returned id and version
 5. get_process                — poll until versions[-1].state is 'done' or 'failed'
 6. get_dataset                — resolve output URLs from versions[-1].outputs
-7. curl '{url}'               — download results; /files/ URLs need no authentication
+7. curl '{url}'                — download results; /files/ URLs need no authentication
 ```
 
-Use `describe_dataset` before downloading to check columns, record counts, and bounding box.
+Use `get_dataset` to inspect a dataset before downloading it in full: its `files` dict (root-level and per-part) may include a `"application/vnd.nagelfluh.stats+json"` entry whose URL resolves to pre-computed statistics (count, min, max, mean, rms, percentiles, skewness, kurtosis), so you can check value ranges without downloading the binary content.
 
 ## Which endpoints are NOT exposed
 
-Binary data download endpoints are excluded from MCP because they overflow LLM context windows:
+Binary data download endpoints are excluded from MCP (`include_in_schema=False`) because they overflow LLM context windows:
 - `GET /dataset/{id}/data` and `/geography` — use the `url` field from `get_dataset` + curl instead
 - `GET /files/{path}` — auth-free, download directly with curl
 - `GET /uploads/{id}` — use the `url` returned by `upload_file`
+
+There is no longer a `describe_dataset` endpoint — it was removed and replaced by the pre-computed stats files described above (see `get_dataset`).
 
 ---
 
@@ -52,20 +56,20 @@ Submit any type of job — data import, processing, inversion, forward modelling
 |---|---|---|---|
 | `project_id` | string | Yes | Project ID the job belongs to. |
 
-**Request body:**
+**Request body** (`ProcessCreate`; accepts extra unknown fields, which are silently ignored):
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `type` | string | Yes | Process type key, e.g. `aem_inversion`. Obtain from `list_environments` / `get_process_type_schema`. |
 | `environment` | object | Yes | Compute environment to run in — `{id, [name]}`. Obtain from `list_environments` (pass the object straight through, or just `{"id": ...}`). |
-| `params` | object | No | Process-type-specific parameters defined by the process type's JSON Schema. Fields with `x-format: dataset` expect a file URL from `search_datasets` or `get_dataset`. |
+| `params` | object | No | Process-type-specific parameters defined by the process type's JSON Schema. Default `{}`. Fields with `x-format: dataset` expect a file URL from `search_datasets` or `get_dataset`. |
 | `id` | string | No | Existing process ID. Provide to add a new version (retry/correction). Omit to create a new process. |
 | `name` | string | No | Human-readable display name. Defaults to `<type>-process`. |
 | `resource_requests` | object | No | Kubernetes resource requests. See below. |
 | `deadline_seconds` | integer | No | Max wall-clock time before the job is killed. Default: `3600`. Always set explicitly for inversions. |
-| `cluster` | object | No | Cluster to run on — `{id, [name]}`. Obtain from `available_clusters`. Omit to auto-select the first allowed cluster. |
+| `cluster` | object | No | Cluster to run on — `{id, [name]}`. Obtain from `available_clusters`. Omit to auto-select the first allowed cluster (by `sort_order`). |
 
-A value obtained from `list_environments`, `available_clusters`, or a prior `get_process` can be passed straight through as the `environment`/`cluster` field — no extraction step needed. `name`, if present, is ignored server-side.
+A value obtained from `list_environments`, `available_clusters`, or a prior `get_process` can be passed straight through as the `environment`/`cluster` field — no extraction step needed. `name`, if present on `environment`/`cluster`, is ignored server-side (only `.id` is read).
 
 **`resource_requests` fields:**
 
@@ -92,7 +96,7 @@ Each process has a `versions` array sorted ascending by version number; `version
 |---|---|---|---|
 | `project_id` | string | No | Filter to a specific project. Without this, returns all processes across all projects the user can access (or just the API key's scoped project). |
 
-**Returns:** Array of process objects.
+**Returns:** Array of process objects — `{id, name, type, environment: {id, name, created_at}|null, project_id, flow_x, flow_y, versions: [...]}`. Each version is `{version, parameters, outputs: {name: "<url>/dataset/{id}"}, state: "queued"|"running"|"done"|"failed", dependencies, resource_requests, deadline_seconds, cluster, tags}`.
 
 ---
 
@@ -107,7 +111,7 @@ After `create_process` returns an id, poll this endpoint until `versions[-1].sta
 |---|---|---|---|
 | `process_id` | string | Yes | Process ID from `create_process`. |
 
-**Returns:** Single process object. Returns 404 if not found or not a project member.
+**Returns:** Single process object (same shape as `list_processes` entries). Returns 404 if not found or not a project member.
 
 ---
 
@@ -131,7 +135,7 @@ Always pass `version` when diagnosing a specific run — omitting it returns log
 | `offset` | integer | No | Positive = from start; negative = from end. Default: `0`. |
 | `limit` | integer | No | Maximum number of log entries to return. Omit for all entries from offset. |
 
-**Returns:** Array of log entry objects with timestamps and messages.
+**Returns:** Array of log entry objects — `{timestamp, message}`.
 
 ---
 
@@ -164,22 +168,6 @@ Returns the same `{"id", "versions": [{"version"}]}` format as `create_process`.
 
 ---
 
-### `available_clusters`
-`GET /utilities/available-clusters`
-
-Return the clusters the current user may run a process on, each with live CPU/memory limits (read from the cluster's Kueue `ClusterQueue`) and its `max_runtime_seconds` ceiling (`null` = unbounded). Call this before `create_process` to discover valid `cluster_id` values and size `resource_requests`/`deadline_seconds` within the selected cluster's limits. Sorted in the same order the value should be presented in.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `project_id` | string | No | Restrict to clusters allowed for this project. |
-| `cpu` | string | No | CPU request to check allowance for, e.g. `"4"`. |
-| `memory` | string | No | Memory request to check allowance for, e.g. `"16Gi"`. |
-| `deadline_seconds` | integer | No | Requested wall-clock deadline to check against each cluster's `max_runtime_seconds`. |
-
-**Returns:** Array of cluster objects: `id`, `name`, `sort_order`, `max_cpu_cores`, `max_memory_gb`, `max_runtime_seconds`.
-
----
-
 ### `cancel_process_version`
 `POST /process/{process_id}/versions/{version}/cancel`
 
@@ -191,6 +179,44 @@ Cancel a process version that is currently queued or running. Deletes the Kubern
 | `version` | integer | Yes | Version number to cancel. |
 
 **Returns:** `{"status": "cancelled"}`
+
+---
+
+### `update_process_position`
+`PATCH /process/{process_id}/position`
+
+Persist the FlowView canvas position for a process node, so the layout is remembered between sessions.
+
+**Path parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `process_id` | string | Yes | Process ID. |
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `x` | number | Yes | X coordinate on the FlowView canvas. |
+| `y` | number | Yes | Y coordinate on the FlowView canvas. |
+
+**Returns:** No content (`204`).
+
+---
+
+### `available_clusters`
+`GET /utilities/available-clusters`
+
+Return the clusters the current user may run a process on, each with live CPU/memory limits (read from the cluster's Kueue `ClusterQueue`) and its `max_runtime_seconds` ceiling (`null` = unbounded). Call this before `create_process` to discover valid cluster IDs and size `resource_requests`/`deadline_seconds` within the selected cluster's limits. Sorted by `sort_order`, the same order the value should be presented in.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project_id` | string | No | Restrict to clusters allowed for this project. |
+| `cpu` | string | No | CPU request to check allowance for, e.g. `"4"`. |
+| `memory` | string | No | Memory request to check allowance for, e.g. `"16Gi"`. |
+| `deadline_seconds` | integer | No | Accepted but currently unused server-side — only `cpu`/`memory` affect which clusters are returned. |
+
+**Returns:** Array of cluster objects — `{id, name, namespace, created_at, sort_order, active, max_runtime_seconds, provisioning_status, max_cpu_cores, max_memory_gb}`.
 
 ---
 
@@ -209,7 +235,7 @@ The search string is matched case-insensitively against `<process_name> / v<vers
 | `project_id` | string | No | Restrict to one project. |
 | `completed_only` | boolean | No | Default: `true`. Set `false` to include datasets from still-running or failed jobs. |
 
-**Returns:** Array of dataset metadata objects.
+**Returns:** Array of dataset metadata objects (same shape as `get_dataset`).
 
 ---
 
@@ -220,29 +246,18 @@ Return metadata for a specific dataset including its `mime_type`, `parts` struct
 
 The `url` field in the response is the actual file URL — downloadable directly with curl (`curl "{url}" -o /tmp/result.msgpack`). **Use this `url` as `input_data` when passing this dataset to `create_process`**, not the `/dataset/{id}` URL from `list_processes` outputs.
 
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `dataset_id` | string | Yes | Dataset ID. |
+The `files` dict (both at the root and under `parts.<name>.files`) may contain a key `"application/vnd.nagelfluh.stats+json"`. Fetching that URL returns pre-computed statistics — `count`, `min`, `max`, `mean`, `rms`, `geometric_mean`, `std`, percentiles `p5`/`p25`/`p50`/`p75`/`p95`, `skewness`, `kurtosis` (constant columns/flightlines appear as `{"constant": true, "value": X}` instead). Structure varies by dataset type:
+- **XYZ/AEM** (`application/x-aarhusxyz-msgpack`): `flightlines` (per-column stats) and `layer_data` (per-channel, with `.layers` arrays indexed by layer number for varying channels).
+- **MAG** (`application/x-magdata-msgpack`): `columns` (per-column stats).
+- **Grid/webxtile** (`application/x-webxtile`): `variables`, each with `all` and (for 3-D variables) `slices` arrays indexed by z-slice.
 
-**Returns:** Dataset metadata object including `url`, `mime_type`, and `parts`.
-
----
-
-### `describe_dataset`
-`GET /dataset/{dataset_id}/describe`
-
-Return compact statistics for a dataset without downloading the full content. Much cheaper than downloading, especially for large AEM files.
-
-Returns (depending on `mime_type`):
-- **XYZ/AEM** (`application/x-aarhusxyz-msgpack`): `flightline_count`, `columns`, `value_ranges` for numeric columns, `bbox`, `crs`
-- **GeoJSON** (`application/geo+json`): `feature_count`, `bbox`
-- **JSON** (`application/json`): `record_count` (if array), `keys`
+Use this stats URL to inspect a dataset without downloading the full binary file.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `dataset_id` | string | Yes | Dataset ID. |
 
-**Returns:** Statistics object appropriate for the dataset's mime type.
+**Returns:** Dataset metadata object — `{id, mime_type, process_id, process_name, process_version, dataset_name, project_id, parts, url}`.
 
 ---
 
@@ -257,7 +272,7 @@ List available compute environments. Returns each environment's `id`, `name`, an
 |---|---|---|---|
 | `include_schemas` | boolean | No | Include full JSON Schemas for each process type. Default: `false`. Use `get_process_type_schema` to fetch a single type's schema instead of embedding all schemas here. |
 
-**Returns:** Array of environment objects.
+**Returns:** Array of environment objects — `{id, name, docker_image, process_id, process_types, created_at}`.
 
 ---
 
@@ -339,7 +354,7 @@ curl -X POST "https://host/upload?project_id=..." \
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `project_id` | string | No* | Project ID. Required unless using an upload token (`upt_...`) that already encodes the project. |
+| `project_id` | string | No* | Project ID. *Required in practice unless using an upload token (`upt_...`) that already encodes the project, or the user has a default project preference — otherwise the request fails with 400. |
 
 **Returns:** `{"id": "<upload_id>", "filename": "<name>", "url": "<http_url>"}`
 
@@ -363,11 +378,11 @@ No parameters.
 ### `list_workspaces`
 `GET /workspaces`
 
-List all saved workspaces. Returns `id`, `title`, and timestamps for each workspace (layout tree is not included).
+List all saved workspaces. Returns `id`, `title`, and `created_at` for each workspace (layout tree is not included).
 
 No parameters.
 
-**Returns:** Array of workspace summary objects.
+**Returns:** Array of workspace summary objects — `{id, title, created_at}`.
 
 ---
 
@@ -382,26 +397,26 @@ Call `get_workspace_schema` first to understand valid node structures and widget
 |---|---|---|---|
 | `workspace_id` | string | Yes | Workspace ID from `list_workspaces`. |
 
-**Returns:** Workspace object including the full `layout` tree.
+**Returns:** Workspace object — `{id, title, created_at, layout}`. Returns 404 if missing. Note: this endpoint has no project/auth scoping — workspaces are global, not per-project.
 
 ---
 
 ### `create_workspace`
 `POST /workspace`
 
-Create a new workspace with a title and layout tree. If an `id` is provided and already exists, the workspace is updated (upsert behaviour).
+Create a new workspace with a title and layout tree. If an `id` is provided and matches an existing workspace, that workspace is updated in place (upsert); otherwise a new workspace is created with that id, or a generated `uuid4` if `id` is omitted.
 
-The `layout` must conform to the schema from `get_workspace_schema`. Always call `get_workspace_schema` before constructing a layout to discover valid widget types and their `layoutConfig` schemas.
+The `layout` should conform to the schema from `get_workspace_schema`, though this is documented convention only — the request body is an untyped dict and is **not validated server-side**. Always call `get_workspace_schema` before constructing a layout to discover valid widget types and their `layoutConfig` schemas.
 
-**Request body:**
+**Request body** (untyped dict — fields below are read manually by the handler):
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `title` | string | No | Display name. Default: `"Untitled Workspace"`. |
-| `layout` | object | No | Recursive node tree. Must conform to the schema from `get_workspace_schema`. |
-| `id` | string | No | If provided and exists, updates the workspace (upsert). Omit to always create a new one. |
+| `layout` | object | No | Recursive node tree. Should conform to the schema from `get_workspace_schema`. Default: `{}`. |
+| `id` | string | No | If provided and matches an existing workspace, updates it (upsert). If provided and new, creates with that id. Omit to auto-generate a new id. |
 
-**Returns:** Created or updated workspace object including the generated `id` and full `layout`.
+**Returns:** Created or updated workspace object — `{id, title, created_at, layout}`.
 
 ---
 
@@ -410,14 +425,14 @@ The `layout` must conform to the schema from `get_workspace_schema`. Always call
 
 Return the JSON Schema for the workspace layout format. The schema describes a recursive tree of layout nodes; container widgets (`VerticalSplit`, `HorizontalSplit`, `TabSet`) hold `children` arrays, and leaf widgets hold `layoutConfig`.
 
-Returns 503 if widget schemas have not been generated yet. To generate them:
+Returns 503 if widget schemas have not been generated yet (reads `backend/widget_schemas.json`). To generate them:
 ```bash
 cd frontend && npm run export-schemas
 ```
 
 No parameters.
 
-**Returns:** JSON Schema object with `$defs` for all registered widget types.
+**Returns:** JSON Schema document with `$schema`, `title`, `description`, `$defs` for all registered widget types, and `$ref` to the root `Node` union.
 
 ---
 
