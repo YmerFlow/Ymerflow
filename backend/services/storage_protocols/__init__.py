@@ -21,6 +21,11 @@ class StorageProtocolHandler:
     implementations delegate to one of these instead of branching on
     `backend.protocol` themselves."""
 
+    # Names of `config` keys that hold credential/secret material and must be masked as "****" in
+    # admin API responses. None (the default) means "mask every key" — the conservative default
+    # for any handler, including third-party plugins, that hasn't explicitly opted a key out.
+    SECRET_CONFIG_KEYS = None
+
     def provision(self, project, backend) -> dict:
         """One-time setup at project creation: bucket/service-account/policy creation.
         Returns credentials to persist for static-key use, or {} if this protocol never

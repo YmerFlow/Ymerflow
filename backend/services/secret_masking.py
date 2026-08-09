@@ -7,8 +7,14 @@ rather than being persisted (or tested against) literally."""
 MASKED = "****"
 
 
-def mask_config(config):
-    return {k: MASKED for k in (config or {})}
+def mask_config(config, secret_keys=None):
+    """secret_keys=None masks every key (default, conservative). A protocol handler that declares
+    SECRET_CONFIG_KEYS restricts masking to just those keys — other keys (e.g. MinIO's endpoint)
+    pass through in plaintext."""
+    config = config or {}
+    if secret_keys is None:
+        return {k: MASKED for k in config}
+    return {k: (MASKED if k in secret_keys else v) for k, v in config.items()}
 
 
 def mask_secret(value):
