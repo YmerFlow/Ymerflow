@@ -12,6 +12,7 @@ import { MenuProvider, useRegisterMenuComponent } from "./flexout/MenuContext";
 import MenuBar from "./flexout/MenuBar";
 import ProcessSelector from "./ProcessSelector";
 import ProjectDropdown from "./ProjectDropdown";
+import AutoCreateProjectDialog from "./AutoCreateProjectDialog";
 import UserMenu from "./UserMenu";
 import WorkspaceMenu from "./WorkspaceMenu";
 import LandingPage from "./LandingPage";
@@ -218,6 +219,7 @@ function AppWithContext({ widgets }) {
               <div className="flex-grow-1 overflow-hidden">
                 <MainLayout />
               </div>
+              <AutoCreateProjectDialog />
             </div>
           } />
           {hooks.run.pages().map(({ path, component: C }) => (
