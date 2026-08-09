@@ -113,5 +113,15 @@ class Settings(BaseSettings):
             return secrets.token_urlsafe(32)
         return v
 
+    @field_validator('hosted_version_text', mode='before')
+    @classmethod
+    def unescape_hosted_version_text(cls, v):
+        # config.env is sourced by bash, which does not expand \n inside double
+        # quotes, so a literal backslash-n typed in the file reaches us as-is.
+        # Turn it into a real newline so Markdown renders line breaks correctly.
+        if v is None:
+            return v
+        return v.replace('\\n', '\n')
+
 
 settings = Settings()
