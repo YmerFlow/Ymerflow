@@ -105,6 +105,12 @@ async def health():
     return {"status": "healthy"}
 
 
+@app.get("/public-config")
+async def public_config():
+    """Public, unauthenticated config for the landing page (shown before sign-in)."""
+    return {"hosted_version_text": settings.hosted_version_text}
+
+
 # Mount MCP server — exposes Processes, Datasets, Environments, and Uploads as MCP
 # tools at /mcp (Streamable HTTP transport). Auth via API key in the Authorization
 # header; each key is scoped to a single project so no project selection is needed.

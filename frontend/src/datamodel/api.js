@@ -113,6 +113,11 @@ export async function getUserAccount() {
   return response.data;
 }
 
+export async function getPublicConfig() {
+  const response = await apiClient.get('/public-config');
+  return response.data;
+}
+
 export async function updateUserPreferences(preferences) {
   const response = await apiClient.put('/auth/account/preferences', preferences);
   return response.data;

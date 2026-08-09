@@ -1,21 +1,34 @@
 import React, { useState, useContext } from 'react';
 import { Card, Container, Row, Col, Button, Form } from 'react-bootstrap';
+import Markdown from 'markdown-to-jsx';
 import { AuthContext } from './AuthContext';
-import { useLogin, useSignup, useForgotPassword } from './datamodel/useAuthQueries';
+import { useLogin, useSignup, useForgotPassword, usePublicConfig } from './datamodel/useAuthQueries';
 import { setAuthToken } from './datamodel/api';
 
 export default function LandingPage() {
   return (
     <Container className="d-flex align-items-center justify-content-center min-vh-100">
       <div className="w-100">
-        <div className="text-center mb-5">
+        <div className="d-flex align-items-center flex-wrap mb-5 gap-4">
           <img
             src="/Nagelfluh.jpg"
-            alt="Nagelfluh"
-            style={{ maxWidth: '300px', width: '100%', height: 'auto' }}
-            className="mb-3"
+            alt="Ymerflow"
+            style={{ maxWidth: '200px', width: '100%', height: 'auto', flexShrink: 0 }}
           />
-          <h1>Nagelfluh Geophysics</h1>
+          <div style={{ flex: '1 1 300px' }}>
+            <h1>Ymerflow - Cloud-native geophysics</h1>
+            <p>
+              Browser-based AEM and magnetic survey processing, inversion, and pipeline
+              automation — no Windows install, no per-seat licenses, no black-box algorithms.
+            </p>
+            <p className="mb-0">
+              Ymerflow replaces desktop-bound geophysics tools with a reproducible, versioned
+              workflow platform that runs in any browser. Processing pipelines are defined as
+              visual DAGs, executed in Kubernetes containers, and stored in per-project cloud
+              storage so results are always reproducible. The inversion core is SimPEG (GPL v3)
+              — peer-reviewed, auditable, and extensible.
+            </p>
+          </div>
         </div>
         <Row className="g-4">
           <Col md={4}>
@@ -81,9 +94,13 @@ function SignInCard({ initialMode = 'signin', allowBackToSignIn = true }) {
   };
 
   return (
-    <Card>
+    <Card className="h-100">
       <div className="card-header py-3">
         <h4 className="my-0 fw-normal">
+          <i
+            className={`fas ${mode === 'signin' ? 'fa-key' : mode === 'signup' ? 'fa-handshake' : 'fa-unlock-keyhole'} me-2`}
+            aria-hidden="true"
+          ></i>
           {mode === 'signin' ? 'Sign In' : mode === 'signup' ? 'Sign Up' : 'Forgot Password'}
         </h4>
       </div>
@@ -191,26 +208,24 @@ function SignInCard({ initialMode = 'signin', allowBackToSignIn = true }) {
 
 function PricingCard() {
   const [showSignup, setShowSignup] = useState(false);
+  const { data: publicConfig } = usePublicConfig();
 
   if (showSignup) {
     return <SignInCard initialMode="signup" allowBackToSignIn={false} />;
   }
 
   return (
-    <Card>
+    <Card className="h-100">
       <div className="card-header py-3">
-        <h4 className="my-0 fw-normal">Hosted version</h4>
+        <h4 className="my-0 fw-normal">
+          <i className="fas fa-cloud me-2" aria-hidden="true"></i>
+          Hosted version
+        </h4>
       </div>
       <Card.Body>
-        <h3 className="text-center my-4">$0.01/compute minute</h3>
-        <ul>
-          <li>No system administration, no hardware</li>
-          <li>Pay only for what you use</li>
-          <li>100 credits included</li>
-          <li>Unlimited projects</li>
-          <li>Unlimited storage</li>
-          <li>Same open source code</li>
-        </ul>
+        {publicConfig?.hosted_version_text && (
+          <Markdown>{publicConfig.hosted_version_text}</Markdown>
+        )}
         <Button variant="success" className="w-100" onClick={() => setShowSignup(true)}>
           Sign Up Now
         </Button>
@@ -219,31 +234,45 @@ function PricingCard() {
   );
 }
 
+const OPEN_SOURCE_LINKS = [
+  {
+    href: 'https://github.com/YmerFlow/Ymerflow',
+    icon: 'fab fa-github',
+    text: 'Grab the full source on GitHub and see exactly how it works, no black boxes.',
+  },
+  {
+    href: 'https://ymerflow.org',
+    icon: 'fas fa-file-lines',
+    text: 'Read the docs to get a feel for the architecture and what it can do for you.',
+  },
+  {
+    href: 'https://ymerflow.org/docs/deployment.html',
+    icon: 'fab fa-kubernetes',
+    text: 'Spin it up yourself on a laptop with Minikube and put it to the test on your own data before you commit to anything.',
+  },
+];
+
 function OpenSourceCard() {
   return (
-    <Card>
+    <Card className="h-100">
       <div className="card-header py-3">
-        <h4 className="my-0 fw-normal">Open Source</h4>
+        <h4 className="my-0 fw-normal">
+          <i className="fas fa-code-branch me-2" aria-hidden="true"></i>
+          Open Source
+        </h4>
       </div>
       <Card.Body>
-        <p>Nagelfluh is open source and available on GitHub.</p>
-        <Button
-          variant="outline-primary"
-          className="w-100 mb-2"
-          onClick={() => window.open('https://github.com/YmerFlow/Ymerflow', '_blank')}
-        >
-          View on GitHub
-        </Button>
-        <hr />
-        <h6>Deploy on Kubernetes</h6>
-        <p className="small">Self-host Nagelfluh on your own infrastructure.</p>
-        <Button
-          variant="outline-secondary"
-          className="w-100"
-          onClick={() => window.open('https://ymerflow.org/docs/deployment.html', '_blank')}
-        >
-          Deployment Guide
-        </Button>
+        <p>Nagelfluh is free and open source. Try it out for yourself, no strings attached.</p>
+        <ul className="list-unstyled">
+          {OPEN_SOURCE_LINKS.map(({ href, icon, text }) => (
+            <li key={href} className="mb-3">
+              <a href={href} target="_blank" rel="noopener noreferrer" className="open-source-link">
+                <i className={`${icon} me-3`} aria-hidden="true"></i>
+                <span>{text}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
       </Card.Body>
     </Card>
   );

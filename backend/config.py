@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     process_cost: float = 0.10
     initial_user_balance: float = 100.0
 
+    # Markdown shown in the "Hosted version" box on the landing page (config.env
+    # HOSTED_VERSION_TEXT). Served publicly via GET /public-config — no auth, since it's
+    # rendered before sign-in. Unset => the box is left empty.
+    hosted_version_text: Optional[str] = None
+
     # CORS
     cors_origins: List[str] = ["http://localhost:3000"]
 
