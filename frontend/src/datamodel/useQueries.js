@@ -13,6 +13,7 @@ import {
   getProjects,
   createProject,
   getAvailableClusters,
+  getAvailableStorageBackends,
   getProjectMembers,
   getProjectInvites,
   createProjectInvite,
@@ -43,6 +44,7 @@ export const queryKeys = {
   datasets: (search, completedOnly, projectId) => ['datasets', { search, completedOnly, projectId }],
   processOutputDatasets: (processId, version) => ['processOutputDatasets', processId, version],
   availableClusters: (projectId, resourceRequests) => ['availableClusters', projectId, resourceRequests?.cpu, resourceRequests?.memory],
+  availableStorageBackends: ['availableStorageBackends'],
   projectMembers: (projectId) => ['projectMembers', projectId],
   projectInvites: (projectId) => ['projectInvites', projectId],
   inviteInfo: (token) => ['inviteInfo', token],
@@ -65,11 +67,20 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: createProject,
+    mutationFn: ({ name, storageBackendId }) => createProject(name, storageBackendId),
     onSuccess: () => {
       // Invalidate and refetch projects list
       queryClient.invalidateQueries({ queryKey: queryKeys.projects });
     },
+  });
+}
+
+// Storage backends are not live/quota-based (unlike cluster limits), so a normal staleTime applies.
+export function useAvailableStorageBackends() {
+  return useQuery({
+    queryKey: queryKeys.availableStorageBackends,
+    queryFn: getAvailableStorageBackends,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
 

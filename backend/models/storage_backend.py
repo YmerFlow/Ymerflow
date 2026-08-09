@@ -3,6 +3,7 @@ from datetime import datetime
 import uuid
 
 from backend.database import Base
+from backend.hooks import hooks
 
 DEFAULT_STORAGE_BACKEND_ID = 'f51f2357-277c-4128-806c-61d7dad491e7'
 
@@ -37,13 +38,19 @@ class StorageBackend(Base):
         }
 
 
-async def get_default_storage_backend_id(db) -> str:
-    """The storage backend a new project is assigned by default: the first active backend
-    ordered by sort_order. Raises if none are active — a project cannot be created without a
-    storage backend to provision against."""
-    stmt = select(StorageBackend).where(StorageBackend.active == True).order_by(StorageBackend.sort_order)
+async def get_allowed_storage_backends(db, user) -> list["StorageBackend"]:
+    """Resolve the set of StorageBackends `user` is allowed to create a project against, sorted
+    by sort_order. Mirrors get_allowed_clusters() (backend/models/cluster.py).
+
+    If no select_storage_backends plugins are registered, every active backend is allowed. If
+    plugins are registered, their union of allowed backend ids is the allowed set — an empty
+    union means no backends are allowed, not a fallback to "all active".
+    """
+    if hooks.any_registered("select_storage_backends"):
+        allowed_ids = set(hooks.run.select_storage_backends(db, user))
+        stmt = select(StorageBackend).where(StorageBackend.id.in_(allowed_ids), StorageBackend.active == True)
+    else:
+        stmt = select(StorageBackend).where(StorageBackend.active == True)
+    stmt = stmt.order_by(StorageBackend.sort_order)
     result = await db.execute(stmt)
-    backend = result.scalars().first()
-    if backend is None:
-        raise RuntimeError("No active storage backend configured — cannot create a project")
-    return backend.id
+    return result.scalars().all()

@@ -208,8 +208,13 @@ export async function getAvailableClusters(projectId, resourceRequests) {
   return response.data;
 }
 
-export async function createProject(name) {
-  const response = await apiClient.post('/projects', { name });
+export async function getAvailableStorageBackends() {
+  const response = await apiClient.get('/utilities/available-storage-backends');
+  return response.data;
+}
+
+export async function createProject(name, storageBackendId) {
+  const response = await apiClient.post('/projects', { name, storage_backend_id: storageBackendId });
   return response.data;
 }
 

@@ -23,9 +23,9 @@ function ProjectDropdown() {
     }
   };
 
-  const handleCreateProject = async (name) => {
+  const handleCreateProject = async (name, storageBackendId) => {
     try {
-      const newProject = await createProjectMutation.mutateAsync(name);
+      const newProject = await createProjectMutation.mutateAsync({ name, storageBackendId });
       setCurrentProject(newProject.id);
       setShowCreateModal(false);
     } catch (error) {

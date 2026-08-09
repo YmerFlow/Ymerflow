@@ -8,6 +8,7 @@ from backend.database import get_db
 from backend.services.k8s_client import k8s_clients
 from backend.services.auth_service import get_current_user, AuthContext
 from backend.models.cluster import get_allowed_clusters
+from backend.models.storage_backend import get_allowed_storage_backends
 
 router = APIRouter(prefix="/utilities", tags=["Utilities"])
 
@@ -45,6 +46,20 @@ async def available_clusters(
             "max_memory_gb": limits["max_memory_gb"],
         })
     return out
+
+
+@router.get("/available-storage-backends")
+async def available_storage_backends(
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the storage backends the current user may create a project against.
+
+    Mirrors /utilities/available-clusters: select_storage_backends hook's allowed-backend set,
+    sorted by sort_order — the same order the project-creation dropdown presents.
+    """
+    backends = await get_allowed_storage_backends(db, auth.user)
+    return [b.to_dict() for b in backends]
 
 
 @router.get("/epsg-codes")

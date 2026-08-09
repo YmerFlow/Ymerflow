@@ -11,12 +11,11 @@ import logging
 
 from backend.database import get_db, async_session_maker
 from backend.models import Project, ProjectMember, ProjectInvite, User
-from backend.models.storage_backend import get_default_storage_backend_id
+from backend.models.storage_backend import get_allowed_storage_backends
 from backend.services.auth_service import get_current_user, require_project_member, AuthContext
 from backend.services.storage_credentials import ensure_ready
 from backend.services.email_service import send_invite_email
 from backend.config import settings
-from backend.hooks import hooks
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects", tags=["Projects"])
@@ -71,25 +70,30 @@ async def create_project(
 ):
     """Create a new project and provision its storage bucket.
 
-    Body: { "name": "My Project" }
+    Body: { "name": "My Project", "storage_backend_id": "<id>" }. storage_backend_id is
+    required — call GET /utilities/available-storage-backends first to get the allowed set.
 
     Returns the new project record including its id. Storage setup runs
     asynchronously; the project is immediately usable for submitting jobs.
     """
-    project_id = str(uuid.uuid4())
+    storage_backend_id = project.get("storage_backend_id")
+    if not storage_backend_id:
+        raise HTTPException(status_code=400, detail="storage_backend_id is required")
 
+    allowed = await get_allowed_storage_backends(db, auth.user)
+    backend = next((b for b in allowed if b.id == storage_backend_id), None)
+    if backend is None:
+        raise HTTPException(status_code=400, detail=f"Storage backend {storage_backend_id} is not allowed for this request.")
+
+    project_id = str(uuid.uuid4())
     proj = Project(
         id=project_id,
         name=project.get("name", "Unnamed Project"),
         created_at=datetime.utcnow(),
         storage_status="pending",
+        storage_backend_id=backend.id,
     )
     db.add(proj)
-    await db.flush()
-
-    proj.storage_backend_id = hooks.run_first.select_storage(
-        await get_default_storage_backend_id(db), db, auth.user, proj
-    )
 
     member = ProjectMember(
         project_id=project_id,
