@@ -247,6 +247,26 @@ export async function createProject(name, storageBackendId) {
   return response.data;
 }
 
+export async function exportProject(projectId) {
+  const response = await apiClient.post(`/projects/${projectId}/export`);
+  return response.data;
+}
+
+export async function getProjectExport(projectId, exportId) {
+  const response = await apiClient.get(`/projects/${projectId}/export/${exportId}`);
+  return response.data;
+}
+
+export async function importProject(uploadId) {
+  const response = await apiClient.post('/projects/import', { upload_id: uploadId });
+  return response.data;
+}
+
+export async function getProjectImport(importId) {
+  const response = await apiClient.get(`/projects/import/${importId}`);
+  return response.data;
+}
+
 export async function getEnvironments() {
   const response = await apiClient.get('/environments', { params: { include_schemas: true } });
   return response.data;

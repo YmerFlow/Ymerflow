@@ -12,6 +12,10 @@ import {
   getEnvironmentProcessTypes,
   getProjects,
   createProject,
+  exportProject,
+  getProjectExport,
+  importProject,
+  getProjectImport,
   getAvailableClusters,
   getAvailableStorageBackends,
   getProjectMembers,
@@ -56,6 +60,8 @@ export const queryKeys = {
   processOutputDatasets: (processId, version) => ['processOutputDatasets', processId, version],
   availableClusters: (projectId, resourceRequests) => ['availableClusters', projectId, resourceRequests?.cpu, resourceRequests?.memory],
   availableStorageBackends: ['availableStorageBackends'],
+  projectExport: (projectId, exportId) => ['projectExport', projectId, exportId],
+  projectImport: (importId) => ['projectImport', importId],
   projectMembers: (projectId) => ['projectMembers', projectId],
   projectInvites: (projectId) => ['projectInvites', projectId],
   publications: (projectId) => ['publications', projectId],
@@ -89,6 +95,48 @@ export function useCreateProject() {
       // Invalidate and refetch projects list
       queryClient.invalidateQueries({ queryKey: queryKeys.projects });
     },
+  });
+}
+
+// Hook to start a project export job (fire-and-forget; poll its progress with useProjectExport)
+export function useExportProject() {
+  return useMutation({
+    mutationFn: (projectId) => exportProject(projectId),
+  });
+}
+
+// Polls an export job until it reaches a terminal state (done/failed).
+export function useProjectExport(projectId, exportId, options = {}) {
+  return useQuery({
+    queryKey: queryKeys.projectExport(projectId, exportId),
+    queryFn: () => getProjectExport(projectId, exportId),
+    enabled: !!projectId && !!exportId,
+    refetchInterval: (query) => {
+      const state = query.state.data?.state;
+      return state === 'done' || state === 'failed' ? false : 2000;
+    },
+    ...options,
+  });
+}
+
+// Hook to start a project import job from a previously-uploaded zip.
+export function useImportProject() {
+  return useMutation({
+    mutationFn: (uploadId) => importProject(uploadId),
+  });
+}
+
+// Polls an import job until it reaches a terminal state (done/failed).
+export function useProjectImport(importId, options = {}) {
+  return useQuery({
+    queryKey: queryKeys.projectImport(importId),
+    queryFn: () => getProjectImport(importId),
+    enabled: !!importId,
+    refetchInterval: (query) => {
+      const state = query.state.data?.state;
+      return state === 'done' || state === 'failed' ? false : 2000;
+    },
+    ...options,
   });
 }
 

@@ -10,11 +10,14 @@ import secrets
 import logging
 
 from backend.database import get_db, async_session_maker
-from backend.models import Project, ProjectMember, ProjectInvite, User, Publication
+from backend.models import Project, ProjectMember, ProjectInvite, User, Publication, Upload
 from backend.models.storage_backend import get_allowed_storage_backends
+from backend.models.project_export import ProjectExport, ProjectImport
 from backend.services.auth_service import get_current_user, get_current_user_optional, require_project_member, AuthContext
 from backend.services.storage_credentials import ensure_ready
 from backend.services.email_service import send_invite_email
+from backend.services.project_export_service import run_export
+from backend.services.project_import_service import run_import
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
@@ -182,6 +185,83 @@ async def setup_storage(
     await db.commit()
     asyncio.create_task(_setup_storage_background(project.id, force=True))
     return {"status": "pending", "project_id": project.id}
+
+
+@router.post("/{project_id}/export", summary="Export a project as a downloadable zip archive")
+async def export_project(
+    project: Project = Depends(require_project_member),
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Start a background job that packs this project (processes, versions, output datasets,
+    uploads, and tags) into a zip archive. Poll GET /projects/{project_id}/export/{export_id}
+    for progress; once state is "done", it returns a download_url.
+    """
+    export_row = ProjectExport(project_id=project.id, created_by_id=auth.user.id)
+    db.add(export_row)
+    await db.commit()
+    await db.refresh(export_row)
+
+    asyncio.create_task(run_export(project.id, export_row.id))
+    return export_row.to_dict()
+
+
+@router.get("/{project_id}/export/{export_id}", summary="Poll a project export job")
+async def get_project_export(
+    export_id: str,
+    project: Project = Depends(require_project_member),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(ProjectExport).where(ProjectExport.id == export_id, ProjectExport.project_id == project.id)
+    result = await db.execute(stmt)
+    export_row = result.scalar_one_or_none()
+    if not export_row:
+        raise HTTPException(status_code=404, detail="Export not found")
+    return export_row.to_dict()
+
+
+@router.post("/import", summary="Import a project from a previously-uploaded export zip")
+async def import_project(
+    body: Dict,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Start a background job that unpacks an export zip (submitted via the normal
+    /projects/{project_id}/upload flow, into any project the caller is a member of) into a
+    brand-new project owned solely by the caller. Body: { "upload_id": "<id>" }.
+    Poll GET /projects/import/{import_id} for progress; once state is "done", it returns
+    the new project_id.
+    """
+    upload_id = body.get("upload_id")
+    if not upload_id:
+        raise HTTPException(status_code=400, detail="upload_id is required")
+
+    stmt = select(Upload).where(Upload.id == upload_id)
+    result = await db.execute(stmt)
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    import_row = ProjectImport(upload_id=upload_id, created_by_id=auth.user.id)
+    db.add(import_row)
+    await db.commit()
+    await db.refresh(import_row)
+
+    asyncio.create_task(run_import(import_row.id))
+    return import_row.to_dict()
+
+
+@router.get("/import/{import_id}", summary="Poll a project import job")
+async def get_project_import(
+    import_id: str,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(ProjectImport).where(ProjectImport.id == import_id, ProjectImport.created_by_id == auth.user.id)
+    result = await db.execute(stmt)
+    import_row = result.scalar_one_or_none()
+    if not import_row:
+        raise HTTPException(status_code=404, detail="Import not found")
+    return import_row.to_dict()
 
 
 @router.get("/{project_id}/members", summary="List project members")

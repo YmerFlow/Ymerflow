@@ -9,6 +9,7 @@ from backend.models.process import Process, ProcessVersion, ProcessLog, ProcessS
 from backend.models.dataset import Dataset
 from backend.models.workspace import Workspace, WorkspaceVersion
 from backend.models.upload import Upload
+from backend.models.project_export import ProjectExport, ProjectImport
 from backend.models.system import System
 from backend.models.plugin import Plugin, PluginVersion, UserPlugin
 
@@ -37,6 +38,8 @@ __all__ = [
     "Workspace",
     "WorkspaceVersion",
     "Upload",
+    "ProjectExport",
+    "ProjectImport",
     "System",
     "Plugin",
     "PluginVersion",
