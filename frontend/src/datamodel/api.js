@@ -433,8 +433,13 @@ export async function getProcess(processId) {
 }
 
 // Workspace functions
-export async function getWorkspaces() {
-  const response = await apiClient.get('/workspaces');
+export async function getWorkspaces(projectId) {
+  const response = await apiClient.get('/workspaces', { params: { project_id: projectId } });
+  return response.data;
+}
+
+export async function getPublicWorkspaces() {
+  const response = await apiClient.get('/workspaces/public');
   return response.data;
 }
 
@@ -443,8 +448,30 @@ export async function getWorkspace(workspaceId) {
   return response.data;
 }
 
-export async function saveWorkspace(workspace) {
-  const response = await apiClient.post('/workspace', workspace);
+export async function saveWorkspace({ projectId, title, layout }) {
+  const response = await apiClient.post('/workspace', { title, layout }, { params: { project_id: projectId } });
+  return response.data;
+}
+
+export async function saveWorkspaceVersion(workspaceId, layout) {
+  const response = await apiClient.post(`/workspace/${workspaceId}/versions`, { layout });
+  return response.data;
+}
+
+export async function updateWorkspace(workspaceId, { title, is_public } = {}) {
+  const body = {};
+  if (title !== undefined) body.title = title;
+  if (is_public !== undefined) body.is_public = is_public;
+  const response = await apiClient.patch(`/workspace/${workspaceId}`, body);
+  return response.data;
+}
+
+export async function forkWorkspace(workspaceId, { projectId, version } = {}) {
+  const response = await apiClient.post(
+    `/workspace/${workspaceId}/fork`,
+    version !== undefined ? { version } : {},
+    { params: { project_id: projectId } }
+  );
   return response.data;
 }
 

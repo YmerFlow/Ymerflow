@@ -178,8 +178,9 @@ function AppWithContext({ widgets }) {
       try {
         const { getWorkspace } = await import('./datamodel/api');
         const workspace = await getWorkspace(workspaceId);
-        if (workspace && workspace.layout) {
-          setLayoutToUse(workspace.layout);
+        const latestVersion = workspace?.versions?.[workspace.versions.length - 1];
+        if (latestVersion) {
+          setLayoutToUse(latestVersion.layout);
         }
       } catch (error) {
         console.error('Failed to load workspace, using hardcoded layout:', error);

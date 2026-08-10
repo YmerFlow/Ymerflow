@@ -7,7 +7,7 @@ from backend.models.api_key import ApiKey
 from backend.models.environment import Environment
 from backend.models.process import Process, ProcessVersion, ProcessLog, ProcessState, ProcessTag
 from backend.models.dataset import Dataset
-from backend.models.workspace import Workspace
+from backend.models.workspace import Workspace, WorkspaceVersion
 from backend.models.upload import Upload
 from backend.models.system import System
 from backend.models.plugin import Plugin, PluginVersion, UserPlugin
@@ -34,6 +34,7 @@ __all__ = [
     "ProcessTag",
     "Dataset",
     "Workspace",
+    "WorkspaceVersion",
     "Upload",
     "System",
     "Plugin",

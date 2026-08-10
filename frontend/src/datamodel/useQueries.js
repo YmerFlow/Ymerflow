@@ -32,6 +32,14 @@ import {
   enablePlugin,
   disablePlugin,
   upgradePlugin,
+  getWorkspaces,
+  getPublicWorkspaces,
+  getWorkspace,
+  saveWorkspace,
+  saveWorkspaceVersion,
+  updateWorkspace,
+  forkWorkspace,
+  deleteWorkspace,
 } from './api';
 
 // Query keys
@@ -49,6 +57,9 @@ export const queryKeys = {
   projectInvites: (projectId) => ['projectInvites', projectId],
   inviteInfo: (token) => ['inviteInfo', token],
   projectTags: (projectId) => ['projectTags', projectId],
+  workspaces: (projectId) => ['workspaces', projectId],
+  publicWorkspaces: ['publicWorkspaces'],
+  workspace: (id) => ['workspace', id],
 };
 
 // Hook to fetch all projects
@@ -351,3 +362,85 @@ export function useUpgradePlugin() {
 // `build_frontend_plugin` process in the Process Editor (its schema drives the form); it
 // auto-registers when the build completes and then appears in usePlugins(). This widget only
 // enables/disables already-registered plugins.
+
+// ── Workspace queries ─────────────────────────────────────────────────────────
+
+// Each workspace embeds its full version list (including layout), so selecting a
+// workspace/version in the UI never needs a follow-up fetch.
+export function useWorkspaces(projectId) {
+  return useQuery({
+    queryKey: queryKeys.workspaces(projectId),
+    queryFn: () => getWorkspaces(projectId),
+    enabled: !!projectId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function usePublicWorkspaces() {
+  return useQuery({
+    queryKey: queryKeys.publicWorkspaces,
+    queryFn: getPublicWorkspaces,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useWorkspace(workspaceId, options = {}) {
+  return useQuery({
+    queryKey: queryKeys.workspace(workspaceId),
+    queryFn: () => getWorkspace(workspaceId),
+    enabled: !!workspaceId,
+    staleTime: 30 * 1000,
+    ...options,
+  });
+}
+
+export function useSaveWorkspace(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ title, layout }) => saveWorkspace({ projectId, title, layout }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces(projectId) });
+    },
+  });
+}
+
+export function useSaveWorkspaceVersion(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workspaceId, layout }) => saveWorkspaceVersion(workspaceId, layout),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces(projectId) });
+    },
+  });
+}
+
+export function useUpdateWorkspace(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workspaceId, title, is_public }) => updateWorkspace(workspaceId, { title, is_public }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.publicWorkspaces });
+    },
+  });
+}
+
+export function useForkWorkspace(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workspaceId, version }) => forkWorkspace(workspaceId, { projectId, version }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces(projectId) });
+    },
+  });
+}
+
+export function useDeleteWorkspace(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (workspaceId) => deleteWorkspace(workspaceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces(projectId) });
+    },
+  });
+}

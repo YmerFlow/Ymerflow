@@ -375,48 +375,133 @@ No parameters.
 
 ## Workspaces
 
-### `list_workspaces`
-`GET /workspaces`
+Workspaces belong to a project and are versioned: each workspace is a parent record with a
+`versions` array (mirroring how `Process`/`ProcessVersion` work). Saving over a workspace never
+overwrites — it appends the next version, and "current" is always the highest version number. A
+workspace can be marked public (`is_public`), which lists it in the cross-project public gallery
+where any authenticated user can fork a specific version of it into their own project.
 
-List all saved workspaces. Returns `id`, `title`, and `created_at` for each workspace (layout tree is not included).
+A workspace object has the shape:
+`{id, title, project_id, is_public, forked_from_workspace_id, forked_from_version, created_at, versions: [{version, layout, created_at}], project_name?}`
+(`project_name` is included only on public-gallery and single-workspace reads).
+
+### `list_workspaces`
+`GET /workspaces?project_id=<id>`
+
+List the workspaces belonging to a project, each with its full version history. Requires the
+caller to be a member of the project (the API key's scoped project).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project_id` | string | Yes | Project whose workspaces to list. |
+
+**Returns:** Array of workspace objects (see shape above).
+
+---
+
+### `list_public_workspaces`
+`GET /workspaces/public`
+
+List every public workspace across all projects — the "public gallery" used to discover
+workspaces worth forking. Any authenticated user can call this (no project-membership check).
+Each entry includes its home project's `project_name` and full version list.
 
 No parameters.
 
-**Returns:** Array of workspace summary objects — `{id, title, created_at}`.
+**Returns:** Array of workspace objects, each including `project_name`.
 
 ---
 
 ### `get_workspace`
 `GET /workspace/{workspace_id}`
 
-Get the full layout tree for a workspace. Returns a recursive JSON tree of nodes with `id`, `widget`, optional `children`, and widget-specific `layoutConfig`.
+Get a workspace and its full version history. Returns 404 unless the workspace is public or the
+caller is a member of its home project. Each entry in `versions` holds a recursive JSON `layout`
+tree of nodes with `id`, `widget`, optional `children`, and widget-specific `layoutConfig`.
 
 Call `get_workspace_schema` first to understand valid node structures and widget types.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `workspace_id` | string | Yes | Workspace ID from `list_workspaces`. |
+| `workspace_id` | string | Yes | Workspace ID from `list_workspaces` or `list_public_workspaces`. |
 
-**Returns:** Workspace object — `{id, title, created_at, layout}`. Returns 404 if missing. Note: this endpoint has no project/auth scoping — workspaces are global, not per-project.
+**Returns:** Workspace object (see shape above). Returns 404 if missing or not accessible.
 
 ---
 
 ### `create_workspace`
-`POST /workspace`
+`POST /workspace?project_id=<id>`
 
-Create a new workspace with a title and layout tree. If an `id` is provided and matches an existing workspace, that workspace is updated in place (upsert); otherwise a new workspace is created with that id, or a generated `uuid4` if `id` is omitted.
+Create a new workspace in a project, with an initial version-1 layout. Requires membership of
+`project_id`.
 
-The `layout` should conform to the schema from `get_workspace_schema`, though this is documented convention only — the request body is an untyped dict and is **not validated server-side**. Always call `get_workspace_schema` before constructing a layout to discover valid widget types and their `layoutConfig` schemas.
+The `layout` should conform to the schema from `get_workspace_schema`, though this is documented
+convention only — the request body is an untyped dict and is **not validated server-side**. Always
+call `get_workspace_schema` before constructing a layout.
 
-**Request body** (untyped dict — fields below are read manually by the handler):
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project_id` | string | Yes | Project the workspace belongs to. |
+
+**Request body** (untyped dict):
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `title` | string | No | Display name. Default: `"Untitled Workspace"`. |
-| `layout` | object | No | Recursive node tree. Should conform to the schema from `get_workspace_schema`. Default: `{}`. |
-| `id` | string | No | If provided and matches an existing workspace, updates it (upsert). If provided and new, creates with that id. Omit to auto-generate a new id. |
+| `layout` | object | No | Recursive node tree for version 1. Default: `{}`. |
 
-**Returns:** Created or updated workspace object — `{id, title, created_at, layout}`.
+**Returns:** Created workspace object with its generated `id` and a single `version` 1.
+
+---
+
+### `create_workspace_version`
+`POST /workspace/{workspace_id}/versions`
+
+Append a new version to an existing workspace's layout — never overwrites, so prior layouts stay
+browsable. Requires membership of the workspace's home project (whether or not it's public).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `workspace_id` | string | Yes | Workspace to add a version to. |
+
+**Request body:** `{layout}` — the new version's node tree.
+
+**Returns:** The workspace object with the new version appended.
+
+---
+
+### `update_workspace`
+`PATCH /workspace/{workspace_id}`
+
+Rename a workspace and/or toggle whether it's public. Any member of the workspace's home project
+may do either (no creator-only or admin-only restriction).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `workspace_id` | string | Yes | Workspace to update. |
+
+**Request body:** `{title?, is_public?}` — supply either or both.
+
+**Returns:** The updated workspace object.
+
+---
+
+### `fork_workspace`
+`POST /workspace/{workspace_id}/fork?project_id=<id>`
+
+Copy a version of a public workspace into your own project as a new, independent workspace. The
+fork is a snapshot copy (not a live reference): it starts its own version-1 history and never
+changes when the source is edited afterward. Requires membership of the *destination* `project_id`;
+the source must be public (404 otherwise).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `workspace_id` | string | Yes | Public source workspace to fork. |
+| `project_id` | string | Yes | Destination project (the fork's new home). |
+
+**Request body:** `{version?}` — which source version to copy. Defaults to the source's latest.
+
+**Returns:** The new forked workspace object (with `forked_from_workspace_id`/`forked_from_version` set).
 
 ---
 

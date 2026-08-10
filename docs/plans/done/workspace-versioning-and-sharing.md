@@ -115,12 +115,27 @@ default, applied consistently in both the per-workspace selector and the fork pi
 ### 6. Frontend: per-workspace menu component (title + version `<select>`), not nested menu paths (chosen)
 
 Given the menu system's action-vs-children limitation (see Background), each workspace stops being
-a plain `useRegisterMenu` leaf and becomes a `useRegisterMenuComponent` row: clickable title text
-(loads the currently-selected version; default = latest) plus an inline version `<select>`,
+a plain `useRegisterMenu` leaf and is rendered as a `useRegisterMenuComponent` row: clickable title
+text (loads the currently-selected version; default = latest) plus an inline version `<select>`,
 structurally identical to `ProcessSelector.jsx`'s version selector. A new top-level
 `['Workspaces', 'Public Workspaces...']` entry opens a single tabbed modal (new component,
 `WorkspaceSharingModal.jsx`, see Design Decision 8) rather than trying to represent hundreds of
 other-project public workspaces as menu items.
+
+**Two implementation refinements made during build (deviating from the first-draft wording below):**
+
+- **"Current workspace" identity is remembered, and Save targets it by name.** The workspace you
+  loaded is remembered in the `/w/{id}` URL param (`selectedEnvironment`, set by clicking a row).
+  Saving a new version is a **single top-level `['Workspaces', 'Save']` control** that writes back
+  to *that* workspace — not a `+`/"Save as New Version" button sitting on the active row. It's a
+  menu component so its label names the target (`Save "My Workspace"`) and disables itself
+  (`Save (no workspace loaded)`) until a real workspace is loaded — which also safely covers the
+  case where `selectedEnvironment` isn't yet a valid workspace id. The rows themselves are now
+  load-only (title loads + makes current; version `<select>` picks which version to load).
+- **The workspace rows are registered as one list component, not one component per workspace.** The
+  flexout menu system has no unregister, so per-workspace registration would strand the previous
+  project's rows in the menu tree on a project switch. A single `['Workspaces', '_workspaceList']`
+  component maps over `useWorkspaces(currentProject)` and stays correct across project changes.
 
 ### 7. Public gallery search: reuse `ProcessSelector.jsx`'s search-combo-box pattern, no pagination (chosen, per your answer)
 
@@ -269,15 +284,20 @@ Questions for the coordination note.
 
 ### `frontend/src/WorkspaceMenu.jsx`
 
-- `WorkspaceMenuItem` (plain `useRegisterMenu` leaf) is replaced by a `useRegisterMenuComponent`
+- `WorkspaceMenuItem` (plain `useRegisterMenu` leaf) is replaced by a single
+  `useRegisterMenuComponent` list component (`['Workspaces', '_workspaceList']`) that renders one
   row per workspace: title text (click → load the row's currently-selected version, default
-  latest) + a version `<select>` populated from `workspace.versions`, structurally mirroring
-  `ProcessSelector.jsx:150-165`.
-- `['Workspaces', 'Save Current Layout As New Workspace...']` (renamed from today's
-  `'Save Current Layout As...'`) — unchanged prompt-for-title flow, now scoped to
-  `currentProject`.
-- New action on the active workspace's row: "Save as New Version" — calls
-  `saveWorkspaceVersion(workspaceId, layoutRef.current)`, no title prompt.
+  latest, and make it the current workspace) + a version `<select>` populated from
+  `workspace.versions`, structurally mirroring `ProcessSelector.jsx:150-165`. One list component
+  rather than one-per-workspace, so a project switch doesn't strand stale rows (the menu system has
+  no unregister — see Design Decision 6).
+- Top-level `['Workspaces', 'Save']` — a `useRegisterMenuComponent` control that saves the current
+  layout as a **new version of the currently-loaded workspace** (identity from the `/w/{id}` URL
+  param / `selectedEnvironment`), via `saveWorkspaceVersion(currentWorkspaceId, layoutRef.current)`,
+  no title prompt. Its label names the target (`Save "<title>"`) and it's disabled until a real
+  workspace is loaded.
+- `['Workspaces', 'Save As New Workspace...']` — prompt-for-title flow that creates a brand-new
+  workspace (version 1) via `saveWorkspace`, scoped to `currentProject`.
 - New top-level `['Workspaces', 'Public Workspaces...']` entry opens `WorkspaceSharingModal.jsx`
   (see below).
 
@@ -332,10 +352,12 @@ Two tabs (per Design Decision 8):
 
 ## Verification
 
-- As a project member: "Save Current Layout As New Workspace..." → appears only in that project's
-  own `WorkspaceMenu` list, not any other project's.
-- "Save as New Version" on that workspace twice → version `<select>` shows v1/v2/v3, defaults to
-  latest, loading each version renders the layout it was saved with.
+- As a project member: "Save As New Workspace..." → appears only in that project's own
+  `WorkspaceMenu` list, not any other project's.
+- Load that workspace (click its row) → the top-level "Save" item now reads `Save "<title>"` and is
+  enabled; before any workspace is loaded it reads `Save (no workspace loaded)` and is disabled.
+- Click "Save" twice → version `<select>` shows v1/v2/v3, defaults to latest, loading each version
+  renders the layout it was saved with.
 - Toggle the workspace public via the "Publish workspaces" tab → switch to a different project →
   the "Add public workspaces" tab shows it with the correct home-project name and version list, and
   typing part of its title in the search box filters it in.
