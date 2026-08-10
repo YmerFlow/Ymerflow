@@ -88,6 +88,23 @@ async def signup(credentials: Dict[str, str], db: AsyncSession = Depends(get_db)
         )
 
 
+@router.get("/tos")
+async def get_tos():
+    """Public endpoint: returns the configured Terms of Service text, if any.
+
+    Read from disk on every request (no caching) so edits to TOS_FILE take effect without a
+    restart. If TOS_FILE is unset, {"text": null} tells the frontend to skip the ToS modal
+    entirely and proceed with signup as before.
+    """
+    if not settings.tos_file:
+        return {"text": None}
+
+    with open(settings.tos_file, "r") as f:
+        text = f.read()
+
+    return {"text": text}
+
+
 @router.post("/login")
 async def login(credentials: Dict[str, str], db: AsyncSession = Depends(get_db)):
     """Login with username and password"""

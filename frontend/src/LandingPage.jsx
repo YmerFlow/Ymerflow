@@ -1,8 +1,8 @@
 import React, { useState, useContext } from 'react';
-import { Card, Container, Row, Col, Button, Form } from 'react-bootstrap';
+import { Card, Container, Row, Col, Button, Form, Modal } from 'react-bootstrap';
 import Markdown from 'markdown-to-jsx';
 import { AuthContext } from './AuthContext';
-import { useLogin, useSignup, useForgotPassword, usePublicConfig } from './datamodel/useAuthQueries';
+import { useLogin, useSignup, useForgotPassword, usePublicConfig, useTos } from './datamodel/useAuthQueries';
 import { setAuthToken } from './datamodel/api';
 
 export default function LandingPage() {
@@ -51,10 +51,12 @@ function SignInCard({ initialMode = 'signin', allowBackToSignIn = true }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
+  const [showTosModal, setShowTosModal] = useState(false);
   const { login: authLogin } = useContext(AuthContext);
   const loginMutation = useLogin();
   const signupMutation = useSignup();
   const forgotPasswordMutation = useForgotPassword();
+  const { data: tos } = useTos();
 
   const handleSignIn = async (e) => {
     e.preventDefault();
@@ -71,8 +73,7 @@ function SignInCard({ initialMode = 'signin', allowBackToSignIn = true }) {
     }
   };
 
-  const handleSignUp = async (e) => {
-    e.preventDefault();
+  const doSignup = async () => {
     try {
       const result = await signupMutation.mutateAsync({ username, password, email: email || undefined });
       setAuthToken(result.access_token);
@@ -80,6 +81,20 @@ function SignInCard({ initialMode = 'signin', allowBackToSignIn = true }) {
     } catch (error) {
       alert('Signup failed: ' + (error.response?.data?.detail || error.message));
     }
+  };
+
+  const handleSignUp = (e) => {
+    e.preventDefault();
+    if (tos?.text) {
+      setShowTosModal(true);
+    } else {
+      doSignup();
+    }
+  };
+
+  const handleAgreeTos = () => {
+    setShowTosModal(false);
+    doSignup();
   };
 
   const handleForgotPassword = async (e) => {
@@ -202,6 +217,19 @@ function SignInCard({ initialMode = 'signin', allowBackToSignIn = true }) {
           </Form>
         )}
       </Card.Body>
+
+      <Modal show={showTosModal} onHide={() => setShowTosModal(false)} backdrop="static" size="lg">
+        <Modal.Header>
+          <Modal.Title>Terms of Service</Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{ maxHeight: '60vh', overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+          {tos?.text}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowTosModal(false)}>Cancel</Button>
+          <Button variant="primary" onClick={handleAgreeTos}>I Agree</Button>
+        </Modal.Footer>
+      </Modal>
     </Card>
   );
 }

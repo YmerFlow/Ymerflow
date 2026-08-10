@@ -118,6 +118,11 @@ export async function getPublicConfig() {
   return response.data;
 }
 
+export async function getTos() {
+  const response = await apiClient.get('/auth/tos');
+  return response.data;
+}
+
 export async function updateUserPreferences(preferences) {
   const response = await apiClient.put('/auth/account/preferences', preferences);
   return response.data;

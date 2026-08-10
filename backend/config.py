@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     # rendered before sign-in. Unset => the box is left empty.
     hosted_version_text: Optional[str] = None
 
+    # Path to a file containing the Terms of Service shown to new users before signup
+    # (config.env TOS_FILE). Read fresh from disk on every GET /auth/tos request — no caching —
+    # so operators can edit the file without a restart. Unset => no ToS modal, signup proceeds
+    # directly as before.
+    tos_file: Optional[str] = None
+
     # CORS
     cors_origins: List[str] = ["http://localhost:3000"]
 
