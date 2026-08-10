@@ -217,7 +217,7 @@ See [Deployment Guide](docs/deployment.md) for detailed setup instructions.
       version: 0,
       parameters: { /* JSON Schema params */ },
       outputs: {
-        "output_name": "http://localhost:8000/dataset/xyz-789"
+        "output_name": "http://localhost:8000/projects/proj-abc-123/dataset/xyz-789"
       },
       state: "completed",  // "pending" | "running" | "completed" | "failed"
       logs: [/* log entries */]
@@ -391,13 +391,17 @@ npm run build
 
 ## API Endpoints (Backend)
 
+Every project-resource endpoint lives under `/projects/{project_id}/...` — `project_id` accepts
+either a real project id (real membership required for writes; reads also work) or a read-only
+publication id (reads only; see `docs/plans/done/publication-readonly-projects.md`).
+
 Key endpoints:
 - `GET /process-types` - Available process types with schemas
-- `POST /process` - Create new process
-- `GET /processes` - List all processes
-- `POST /process/{id}/versions/{version}/cancel` - Cancel queued/running version (marks as failed, deletes K8s job)
-- `GET /datasets?search=<query>` - Search datasets
-- `GET /dataset/{id}` - Get dataset content
+- `POST /projects/{project_id}/process` - Create new process
+- `GET /projects/{project_id}/processes` - List processes in a project
+- `POST /projects/{project_id}/process/{id}/versions/{version}/cancel` - Cancel queued/running version (marks as failed, deletes K8s job)
+- `GET /projects/{project_id}/datasets?search=<query>` - Search datasets
+- `GET /projects/{project_id}/dataset/{id}` - Get dataset content
 - `WS /ws/logs` - Real-time log streaming
 - `WS /ws/state` - Real-time state updates
 

@@ -2,7 +2,7 @@ from backend.models.user import User
 from backend.models.storage_backend import StorageBackend
 from backend.models.registry_backend import RegistryBackend
 from backend.models.cluster import Cluster
-from backend.models.project import Project, ProjectMember, ProjectInvite
+from backend.models.project import Project, ProjectMember, ProjectInvite, Publication
 from backend.models.api_key import ApiKey
 from backend.models.environment import Environment
 from backend.models.process import Process, ProcessVersion, ProcessLog, ProcessState, ProcessTag
@@ -25,6 +25,7 @@ __all__ = [
     "Project",
     "ProjectMember",
     "ProjectInvite",
+    "Publication",
     "ApiKey",
     "Environment",
     "Process",

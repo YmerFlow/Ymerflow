@@ -1,12 +1,15 @@
 import React, { useState, useContext } from 'react';
 import { Modal, Tab, Tabs, Table, Button, Form, InputGroup, Spinner, Alert } from 'react-bootstrap';
-import { ProcessContext } from './ProcessContext';
+import { ProcessContext, buildUrlPath } from './ProcessContext';
 import {
   useProjectMembers,
   useProjectInvites,
   useInviteMember,
   useCancelInvite,
   useLeaveProject,
+  usePublications,
+  useCreatePublication,
+  useDeletePublication,
 } from './datamodel/useQueries';
 
 export default function ProjectMembersModal({ show, onHide, projectId, projectName }) {
@@ -25,6 +28,9 @@ export default function ProjectMembersModal({ show, onHide, projectId, projectNa
           </Tab>
           <Tab eventKey="pending" title="Pending Invites">
             <PendingInvitesTab projectId={projectId} />
+          </Tab>
+          <Tab eventKey="publications" title="Publications">
+            <PublicationsTab projectId={projectId} />
           </Tab>
         </Tabs>
       </Modal.Body>
@@ -197,5 +203,120 @@ function PendingInvitesTab({ projectId }) {
         ))}
       </tbody>
     </Table>
+  );
+}
+
+function PublicationsTab({ projectId }) {
+  const { selectedEnvironment, activeProcess, currentPart, currentSounding } = useContext(ProcessContext);
+  const { data: publications = [], isLoading } = usePublications(projectId);
+  const createPublication = useCreatePublication(projectId);
+  const deletePublication = useDeletePublication(projectId);
+  const [findable, setFindable] = useState(false);
+  const [allowAnonymous, setAllowAnonymous] = useState(true);
+  const [copiedId, setCopiedId] = useState(null);
+
+  const copyLink = (publicationId) => {
+    const path = buildUrlPath(
+      selectedEnvironment,
+      publicationId,
+      activeProcess?.processId,
+      activeProcess?.version,
+      currentPart === "all" ? null : currentPart,
+      currentSounding
+    );
+    navigator.clipboard.writeText(`${window.location.origin}${path}`);
+    setCopiedId(publicationId);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    try {
+      const publication = await createPublication.mutateAsync({ findable, allowAnonymous });
+      copyLink(publication.id);
+    } catch (error) {
+      alert('Failed to create publication: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  const handleDelete = async (publicationId) => {
+    if (!window.confirm('Delete this publication link? It will stop working immediately.')) return;
+    try {
+      await deletePublication.mutateAsync(publicationId);
+    } catch (error) {
+      alert('Failed to delete publication: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  if (isLoading) return <Spinner animation="border" />;
+
+  return (
+    <>
+      <p className="text-muted">
+        Publications are read-only share links into this project. Anyone with the link can
+        view the project, but can never make changes.
+      </p>
+      {publications.length > 0 && (
+        <Table size="sm" hover className="mb-3">
+          <thead>
+            <tr>
+              <th>Findable</th>
+              <th>Anonymous</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {publications.map(pub => (
+              <tr key={pub.id}>
+                <td>{pub.findable ? 'Yes' : 'No'}</td>
+                <td>{pub.allow_anonymous ? 'Yes' : 'No'}</td>
+                <td>{new Date(pub.created_at).toLocaleDateString()}</td>
+                <td className="text-end">
+                  <Button
+                    size="sm"
+                    variant="outline-secondary"
+                    className="me-2"
+                    onClick={() => copyLink(pub.id)}
+                  >
+                    {copiedId === pub.id ? 'Copied!' : 'Copy link'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline-danger"
+                    onClick={() => handleDelete(pub.id)}
+                    disabled={deletePublication.isPending}
+                  >
+                    Delete
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+
+      <Form onSubmit={handleCreate}>
+        <Form.Check
+          type="checkbox"
+          id="publication-findable"
+          label="Findable — show up in every user's Projects list"
+          checked={findable}
+          onChange={e => setFindable(e.target.checked)}
+          className="mb-2"
+        />
+        <Form.Check
+          type="checkbox"
+          id="publication-anonymous"
+          label="Allow anonymous — link works without logging in"
+          checked={allowAnonymous}
+          onChange={e => setAllowAnonymous(e.target.checked)}
+          className="mb-3"
+        />
+        <Button type="submit" disabled={createPublication.isPending}>
+          {createPublication.isPending ? <Spinner animation="border" size="sm" /> : 'Create publication'}
+        </Button>
+      </Form>
+    </>
   );
 }

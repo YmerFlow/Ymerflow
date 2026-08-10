@@ -187,7 +187,7 @@ export default function ProcessEditor() {
       }, {
         onSuccess: async (newProcess) => {
           await Promise.all(selectedTags.map(tag =>
-            addVersionTagMutation.mutateAsync({ processId: newProcess.id, version: 1, tagId: tag.id })
+            addVersionTagMutation.mutateAsync({ processId: newProcess.id, version: 1, tagId: tag.id, projectId: currentProject })
           ));
           await invalidateProject();
           setActiveProcess({ processId: newProcess.id, version: 1 });
@@ -216,7 +216,7 @@ export default function ProcessEditor() {
                 variant="outline-danger" size="sm"
                 disabled={cancelProcessMutation.isPending}
                 onClick={() => cancelProcessMutation.mutate(
-                  { processId: process.id, version: activeProcess.version },
+                  { processId: process.id, version: activeProcess.version, projectId: currentProject },
                   { onSuccess: () => invalidateProject(), onError: () => alert("Failed to cancel process") }
                 )}
               >

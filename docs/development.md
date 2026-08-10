@@ -86,14 +86,16 @@ distribution metadata, not source — re-run `pip install -e .` for those to tak
 
 ### API Endpoints
 
-Key endpoints:
+Key endpoints (all project-resource endpoints live under `/projects/{project_id}/...` — the
+`project_id` path segment accepts either a real project id (read/write, real membership required)
+or a publication id (read-only; see `docs/plans/done/publication-readonly-projects.md`)):
 - `GET /` - Health check
 - `GET /process-types` - List available process types with schemas
-- `POST /process` - Create new process
-- `GET /processes` - List all processes
-- `GET /process/{id}` - Get process details
-- `GET /datasets` - Search datasets
-- `GET /dataset/{id}` - Get dataset content
+- `POST /projects/{project_id}/process` - Create new process
+- `GET /projects/{project_id}/processes` - List processes in a project
+- `GET /projects/{project_id}/process/{id}` - Get process details
+- `GET /projects/{project_id}/datasets` - Search datasets
+- `GET /projects/{project_id}/dataset/{id}` - Get dataset content
 - `WS /ws/logs` - WebSocket for log streaming
 - `WS /ws/state` - WebSocket for state updates
 

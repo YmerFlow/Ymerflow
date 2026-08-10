@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { XYZ } from './libaarhusxyz';
 import { MagData } from './magdata';
-import { API } from './api';
+import { getDataset } from './api';
 import { Data, DataGroup, registerAxisQuantityKind, parseCrsCode, crsToQkX, crsToQkY } from 'gladly-plot';
 // NOTE: WebxtileDataset is intentionally NOT imported here. webxtile.js imports Dataset from this
 // module (subclass → base), so a static import back the other way creates a circular dependency
@@ -976,7 +976,7 @@ export class DatasetCollectionAdapter {
 }
 
 // Factory function to load dataset
-export async function loadDataset(id) {
+export async function loadDataset(id, projectId) {
   const cacheKey = id;
 
   // Check IndexedDB cache for metadata
@@ -985,9 +985,10 @@ export async function loadDataset(id) {
     return createDatasetInstance(cached.metadata);
   }
 
-  // Fetch metadata from API
-  const response = await axios.get(`${API}/dataset/${id}`);
-  const metadata = response.data;
+  // Fetch metadata from API via the authenticated apiClient (not raw axios) — this endpoint
+  // now requires real project membership or a read-only publication, so it needs the
+  // Authorization header that only the configured apiClient carries.
+  const metadata = await getDataset(id, projectId);
 
   // Cache metadata
   await putInCache('datasets', cacheKey, { metadata });

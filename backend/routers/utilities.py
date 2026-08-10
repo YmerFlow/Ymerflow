@@ -6,23 +6,23 @@ import projnames
 
 from backend.database import get_db
 from backend.services.k8s_client import k8s_clients
-from backend.services.auth_service import get_current_user, AuthContext
+from backend.services.auth_service import get_current_user, AuthContext, resolve_project_for_read, ProjectReadAccess
 from backend.models.cluster import get_allowed_clusters
 from backend.models.storage_backend import get_allowed_storage_backends
 
-router = APIRouter(prefix="/utilities", tags=["Utilities"])
+router = APIRouter(tags=["Utilities"])
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_QUEUE_LIMITS = {"max_cpu_cores": 8.0, "max_memory_gb": 32.0}
 
 
-@router.get("/available-clusters", tags=["Processes"])
+@router.get("/projects/{project_id}/utilities/available-clusters", tags=["Processes"])
 async def available_clusters(
-    project_id: Optional[str] = None,
     cpu: Optional[str] = None,
     memory: Optional[str] = None,
     deadline_seconds: Optional[int] = None,
+    access: ProjectReadAccess = Depends(resolve_project_for_read),
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -34,7 +34,7 @@ async def available_clusters(
     Sorted by sort_order, same order the process-creation dropdown should present.
     """
     resource_requests = {"cpu": cpu, "memory": memory} if cpu or memory else None
-    clusters = await get_allowed_clusters(db, auth.user, project_id, resource_requests)
+    clusters = await get_allowed_clusters(db, auth.user, access.project.id, resource_requests)
     out = []
     for cluster in clusters:
         limits = await k8s_clients.get(cluster).get_cluster_queue_limits()
@@ -48,21 +48,21 @@ async def available_clusters(
     return out
 
 
-@router.get("/available-storage-backends")
+@router.get("/utilities/available-storage-backends")
 async def available_storage_backends(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Return the storage backends the current user may create a project against.
 
-    Mirrors /utilities/available-clusters: select_storage_backends hook's allowed-backend set,
-    sorted by sort_order — the same order the project-creation dropdown presents.
+    Mirrors /projects/{project_id}/utilities/available-clusters: select_storage_backends hook's
+    allowed-backend set, sorted by sort_order — the same order the project-creation dropdown presents.
     """
     backends = await get_allowed_storage_backends(db, auth.user)
     return [b.to_dict() for b in backends]
 
 
-@router.get("/epsg-codes")
+@router.get("/utilities/epsg-codes")
 async def get_epsg_codes() -> Dict[int, str]:
     """Get all EPSG codes with names for coordinate system selection.
 

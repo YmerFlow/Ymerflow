@@ -15,7 +15,8 @@ router = APIRouter(prefix="/plugins", tags=["plugins"])
 assets_router = APIRouter(prefix="/plugin-assets", tags=["plugin-assets"])
 
 # NOTE: There are intentionally no "build plugin" or "register plugin" endpoints. A frontend plugin
-# is built by submitting a `build_frontend_plugin` Process through the generic POST /process endpoint
+# is built by submitting a `build_frontend_plugin` Process through the generic
+# POST /projects/{project_id}/process endpoint
 # (its parameter schema drives the GUI form, exactly like create_environment). When the build
 # completes, its output auto-registers as a Plugin/PluginVersion in ProcessVersion._create_outputs
 # (via backend/services/plugin_registration.py), like create_environment -> environment.json ->

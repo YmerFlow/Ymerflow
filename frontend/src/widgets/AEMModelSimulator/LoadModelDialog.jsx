@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import DatasetSelector from '../../jsoneditor/DatasetSelector';
 import { loadDataset } from '../../datamodel/dataset';
 import { XYZ } from '../../datamodel/libaarhusxyz';
 import { packBinary } from 'msgpack-numpy-js';
+import { ProcessContext } from '../../ProcessContext';
 
 /**
  * Dialog for loading an existing XYZ resistivity model dataset
  */
 function LoadModelDialog({ onClose, onLoad }) {
+  const { currentProject } = useContext(ProcessContext);
   const [selectedDatasetUrl, setSelectedDatasetUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -44,7 +46,7 @@ function LoadModelDialog({ onClose, onLoad }) {
       }
 
       // Load dataset
-      const dataset = await loadDataset(datasetId);
+      const dataset = await loadDataset(datasetId, currentProject);
       const xyzData = await dataset.fetchData('all');
 
       if (!xyzData || !xyzData.flightlines || !xyzData.layer_data) {

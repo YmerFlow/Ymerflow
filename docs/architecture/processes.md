@@ -65,7 +65,7 @@ To allow a process to reference another process's output dataset, use:
 }
 ```
 
-The frontend will automatically render a searchable dataset selector for this field. The value will be a dataset URL like `http://localhost:8000/dataset/{id}`.
+The frontend will automatically render a searchable dataset selector for this field. The value will be a dataset URL like `http://localhost:8000/projects/{project_id}/dataset/{id}`.
 
 #### Supported Schema Features
 

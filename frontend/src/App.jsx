@@ -36,7 +36,7 @@ import { registerHook, hooks } from './plugins/hooks';
 import { buildDatasetRegistry } from './datamodel/datasetRegistry';
 import { buildLayerTypeRegistry, buildQuantityKindRegistry } from './plugins/registries';
 import { loadPlugins } from './plugins/loadPlugin';
-import { API } from './datamodel/api';
+import { API, getPublicationInfo } from './datamodel/api';
 
 // Expose API URL for plugins that need to call the backend
 if (typeof window !== 'undefined') window.__nagelfluh_api = API;
@@ -242,19 +242,52 @@ function AuthenticatedApp() {
   const location = useLocation();
   const [pluginsReady, setPluginsReady] = useState(false);
   const [widgets, setWidgets] = useState(null);
+  // Tracks whether the URL's /p/:id segment resolves to an anonymous-viewable publication,
+  // so an unauthenticated visitor with a publication link can still render /app/* instead
+  // of being bounced to the login page. { status: 'idle'|'checking'|'done', allowed: bool }
+  const [publicationCheck, setPublicationCheck] = useState({ status: 'idle', allowed: false });
 
-  // Load plugins from GET /plugins/me before rendering the main app.
-  // After plugins load, build all registries so plugin contributions are included.
+  const publicationIdFromUrl = (() => {
+    const match = location.pathname.match(/\/p\/([^/]+)/);
+    return match ? match[1] : null;
+  })();
+
+  // Resolve GET /publications/{id} whenever an unauthenticated visitor's URL names a
+  // project/publication id — determines whether to render read-only or redirect to login.
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (isAuthenticated || !publicationIdFromUrl) {
+      setPublicationCheck({ status: 'idle', allowed: false });
+      return;
+    }
+    let cancelled = false;
+    setPublicationCheck({ status: 'checking', allowed: false });
+    getPublicationInfo(publicationIdFromUrl)
+      .then(info => {
+        if (!cancelled) setPublicationCheck({ status: 'done', allowed: !!info.allow_anonymous });
+      })
+      .catch(() => {
+        if (!cancelled) setPublicationCheck({ status: 'done', allowed: false });
+      });
+    return () => { cancelled = true; };
+  }, [isAuthenticated, publicationIdFromUrl]);
+
+  const anonymousViewingAllowed = !isAuthenticated && publicationCheck.status === 'done' && publicationCheck.allowed;
+
+  // Load plugins from GET /plugins/me before rendering the main app. Anonymous publication
+  // viewers have no session to load user plugins with, so they get the built-in registries
+  // only. After plugins load, build all registries so plugin contributions are included.
+  useEffect(() => {
+    if (!isAuthenticated && !anonymousViewingAllowed) {
       setPluginsReady(false);
       setWidgets(null);
       return;
     }
-    const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
-    fetch(`${API}/plugins/me`, { headers: authHeader })
-      .then(r => r.ok ? r.json() : [])
-      .catch(() => [])
+    const pluginsPromise = isAuthenticated
+      ? fetch(`${API}/plugins/me`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+          .then(r => r.ok ? r.json() : [])
+          .catch(() => [])
+      : Promise.resolve([]);
+    pluginsPromise
       .then(plugins => loadPlugins(plugins))
       .catch(() => {})
       .finally(() => {
@@ -264,7 +297,7 @@ function AuthenticatedApp() {
         setWidgets(buildWidgets());
         setPluginsReady(true);
       });
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated, token, anonymousViewingAllowed]);
 
   // When not logged in on a special URL, persist path/token for post-login redirect
   useEffect(() => {
@@ -281,7 +314,23 @@ function AuthenticatedApp() {
   }, [location.pathname, isAuthenticated]);
 
   if (!isAuthenticated) {
-    return <LandingPage />;
+    if (!publicationIdFromUrl) {
+      return <LandingPage />;
+    }
+    if (publicationCheck.status !== 'done') {
+      // Still resolving the publication link — avoid a login-page flash while we check.
+      return (
+        <div className="d-flex align-items-center justify-content-center h-100">
+          <div className="spinner-border" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+        </div>
+      );
+    }
+    if (!anonymousViewingAllowed) {
+      return <LandingPage />;
+    }
+    // Falls through: valid anonymous-allowed publication link — render /app/* read-only.
   }
 
   if (!pluginsReady) {

@@ -48,7 +48,7 @@ export default function TagSelector({ processId, version, currentTags = [], proj
       onChange([...currentTags, tag]);
     } else {
       try {
-        await addVersionTag.mutateAsync({ processId, version, tagId: tag.id });
+        await addVersionTag.mutateAsync({ processId, version, tagId: tag.id, projectId });
         await invalidateProject(projectId);
       } catch {
         /* ignore */
@@ -61,7 +61,7 @@ export default function TagSelector({ processId, version, currentTags = [], proj
       onChange(currentTags.filter(t => t.id !== tagId));
     } else {
       try {
-        await removeVersionTag.mutateAsync({ processId, version, tagId });
+        await removeVersionTag.mutateAsync({ processId, version, tagId, projectId });
         await invalidateProject(projectId);
       } catch {
         /* ignore */

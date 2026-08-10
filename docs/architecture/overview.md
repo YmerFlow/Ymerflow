@@ -307,10 +307,11 @@ Each process creates a Kubernetes Job with:
    - Creates DEBIT and RELEASE transactions
 
 ### Dataset Access
-1. Frontend requests dataset: GET `/dataset/{id}`
+1. Frontend requests dataset: GET `/projects/{project_id}/dataset/{id}`
 2. Backend:
    - Looks up dataset metadata (storage URL, mime type)
-   - Verifies user has access to parent project
+   - Verifies user has access to the project (real membership, or a read-only publication —
+     see `docs/plans/done/publication-readonly-projects.md`)
    - Fetches data from storage (S3/GCS/MinIO)
    - Returns data with appropriate content-type
 3. Frontend consumes dataset (plots, downloads, etc.)

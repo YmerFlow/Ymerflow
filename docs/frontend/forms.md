@@ -98,7 +98,7 @@ The `DatasetSelector` provides a searchable dropdown for selecting process outpu
 - **Smart grouping**: When >4 processes match, shows first dataset + count
 - **Click to refine**: Click grouped item to add process name to search
 - **Format**: "Process Name / v123 / dataset-name"
-- **Value**: Stores full URL: `http://localhost:8000/dataset/{id}`
+- **Value**: Stores full URL: `http://localhost:8000/projects/{project_id}/dataset/{id}`
 
 **Implementation:** See `frontend/src/jsoneditor/DatasetSelector.js` for the complete implementation including:
 - Debounced search (300ms)

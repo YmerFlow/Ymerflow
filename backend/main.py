@@ -7,6 +7,7 @@ from backend.config import settings
 from backend.routers import (
     auth_router,
     projects_router,
+    publications_router,
     environments_router,
     processes_router,
     datasets_router,
@@ -75,6 +76,7 @@ async def startup_event():
 # Include routers
 app.include_router(auth_router)
 app.include_router(projects_router)
+app.include_router(publications_router)
 app.include_router(environments_router)
 app.include_router(processes_router)
 app.include_router(datasets_router)
@@ -125,15 +127,17 @@ mcp = FastApiMCP(
     description=(
         "Geophysics data processing platform. "
         "Authenticate with an API key (Authorization: Bearer apk_<key>); "
-        "the key is already scoped to a project.\n"
+        "the key is already scoped to a project, but every endpoint still takes that same "
+        "project_id as an explicit path parameter — pass it on every call.\n"
         "Typical workflow:\n"
         "1. list_environments(include_schemas=false) — discover environments and process type names.\n"
         "2. get_environment_process_type(env_id, type_name) — fetch schema for the specific type.\n"
-        "3. For local files: upload_file (JSON+base64 for small files); or request_upload_token "
-        "then curl -H 'Authorization: Bearer upt_...' -F file=@path /upload for large files.\n"
-        "4. create_process — submit a job; save the returned id and version number.\n"
-        "5. get_process(process_id) — poll until versions[-1].state is 'done' or 'failed'.\n"
-        "6. get_dataset(dataset_id) — resolve output URLs from versions[-1].outputs.\n"
+        "3. For local files: upload_file(project_id, ...) (JSON+base64 for small files); or "
+        "request_upload_token then curl -H 'Authorization: Bearer upt_...' -F file=@path "
+        "/projects/{project_id}/upload for large files.\n"
+        "4. create_process(project_id, ...) — submit a job; save the returned id and version number.\n"
+        "5. get_process(project_id, process_id) — poll until versions[-1].state is 'done' or 'failed'.\n"
+        "6. get_dataset(project_id, dataset_id) — resolve output URLs from versions[-1].outputs.\n"
         "7. curl '{url}' — download results; /files/ URLs need no authentication.\n"
         "Use describe_dataset before downloading to check columns, record counts, and bbox."
     ),

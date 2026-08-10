@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Plot, DataGroup, LayerType, registerLayerType, registerAxisQuantityKind } from 'gladly-plot';
 import { ProcessContext } from '../ProcessContext';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { API, WS_API } from '../datamodel/api';
+import { WS_API, getProcessLogs } from '../datamodel/api';
 
 export const STATUS_TAG = '##STATUS##';
 
@@ -77,7 +77,7 @@ function extractStatusEntry(logEntry) {
 }
 
 function ProcessProgress() {
-  const { activeProcess, processes } = useContext(ProcessContext);
+  const { activeProcess, processes, currentProject } = useContext(ProcessContext);
   const [plotData, setPlotData]                 = useState([]);
   const [state, setState]                       = useState(null);
   const [shouldStreamLogs, setShouldStreamLogs] = useState(false);
@@ -137,14 +137,13 @@ function ProcessProgress() {
     setShouldStreamLogs(shouldStream);
 
     if (!shouldStream) {
-      fetch(`${API}/process/${processId}/logs?version=${version}`)
-        .then(res => res.json())
+      getProcessLogs(processId, version, currentProject)
         .then(data => {
           if (Array.isArray(data)) setPlotData(data.map(extractStatusEntry).filter(Boolean));
         })
         .catch(err => console.error('ProcessProgress: failed to fetch logs:', err));
     }
-  }, [processId, version, processes]);
+  }, [processId, version, processes, currentProject]);
 
   // Stream live logs while the process is running.
   useWebSocket(

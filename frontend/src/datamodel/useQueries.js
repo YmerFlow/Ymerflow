@@ -22,6 +22,9 @@ import {
   leaveProject,
   getInviteInfo,
   acceptInvite,
+  getPublications,
+  createPublication,
+  deletePublication,
   getProjectTags,
   createProjectTag,
   updateProjectTag,
@@ -55,6 +58,7 @@ export const queryKeys = {
   availableStorageBackends: ['availableStorageBackends'],
   projectMembers: (projectId) => ['projectMembers', projectId],
   projectInvites: (projectId) => ['projectInvites', projectId],
+  publications: (projectId) => ['publications', projectId],
   inviteInfo: (token) => ['inviteInfo', token],
   projectTags: (projectId) => ['projectTags', projectId],
   workspaces: (projectId) => ['workspaces', projectId],
@@ -62,13 +66,15 @@ export const queryKeys = {
   workspace: (id) => ['workspace', id],
 };
 
-// Hook to fetch all projects
-export function useProjects() {
+// Hook to fetch all projects. viewingId (a project or publication id currently being
+// viewed) is pinned to the front of the list when it isn't already present — this lets
+// an anonymous viewer with a publication link see that one entry even when not logged in.
+export function useProjects(viewingId = null) {
   const { isAuthenticated } = useContext(AuthContext);
   return useQuery({
-    queryKey: queryKeys.projects,
-    queryFn: getProjects,
-    enabled: isAuthenticated,
+    queryKey: [...queryKeys.projects, viewingId],
+    queryFn: () => getProjects(viewingId),
+    enabled: isAuthenticated || !!viewingId,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
@@ -128,11 +134,11 @@ export function useProcesses(projectId = null) {
 }
 
 // Hook to fetch a single dataset
-export function useDataset(datasetId, options = {}) {
+export function useDataset(datasetId, projectId, options = {}) {
   return useQuery({
     queryKey: queryKeys.dataset(datasetId),
-    queryFn: () => getDataset(datasetId),
-    enabled: !!datasetId,
+    queryFn: () => getDataset(datasetId, projectId),
+    enabled: !!datasetId && !!projectId,
     staleTime: 30 * 1000, // 30 seconds
     ...options,
   });
@@ -143,21 +149,22 @@ export function useSearchDatasets(search = "", completedOnly = true, projectId =
   return useQuery({
     queryKey: queryKeys.datasets(search, completedOnly, projectId),
     queryFn: () => searchDatasets(search, completedOnly, projectId),
+    enabled: !!projectId,
     staleTime: 10 * 1000, // 10 seconds
     ...options,
   });
 }
 
 // Hook to fetch process output datasets
-export function useProcessOutputDatasets(process, version, options = {}) {
+export function useProcessOutputDatasets(process, version, projectId, options = {}) {
   // Include process state in query key so it refetches when state changes
   const versionObj = process?.versions?.find(v => v.version === version);
   const state = versionObj?.state || 'unknown';
 
   return useQuery({
     queryKey: [...queryKeys.processOutputDatasets(process?.id, version), state],
-    queryFn: () => getProcessOutputDatasets(process, version),
-    enabled: !!process && version != null,
+    queryFn: () => getProcessOutputDatasets(process, version, projectId),
+    enabled: !!process && version != null && !!projectId,
     staleTime: 30 * 1000, // 30 seconds
     ...options,
   });
@@ -188,7 +195,7 @@ export function useCreateProcess() {
 // NOTE: Does NOT auto-invalidate queries. Callers must use ProcessContext invalidation helpers.
 export function useCancelProcess() {
   return useMutation({
-    mutationFn: ({ processId, version }) => cancelProcessVersion(processId, version),
+    mutationFn: ({ processId, version, projectId }) => cancelProcessVersion(processId, version, projectId),
   });
 }
 
@@ -245,6 +252,35 @@ export function useLeaveProject(projectId) {
     mutationFn: () => leaveProject(projectId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects });
+    },
+  });
+}
+
+export function usePublications(projectId) {
+  return useQuery({
+    queryKey: queryKeys.publications(projectId),
+    queryFn: () => getPublications(projectId),
+    enabled: !!projectId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreatePublication(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ findable, allowAnonymous }) => createPublication(projectId, { findable, allowAnonymous }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.publications(projectId) });
+    },
+  });
+}
+
+export function useDeletePublication(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (publicationId) => deletePublication(projectId, publicationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.publications(projectId) });
     },
   });
 }
@@ -311,14 +347,14 @@ export function useDeleteTag(projectId) {
 // NOTE: Does NOT auto-invalidate. Callers must use ProcessContext invalidation helpers.
 export function useAddVersionTag() {
   return useMutation({
-    mutationFn: ({ processId, version, tagId }) => addVersionTag(processId, version, tagId),
+    mutationFn: ({ processId, version, tagId, projectId }) => addVersionTag(processId, version, tagId, projectId),
   });
 }
 
 // NOTE: Does NOT auto-invalidate. Callers must use ProcessContext invalidation helpers.
 export function useRemoveVersionTag() {
   return useMutation({
-    mutationFn: ({ processId, version, tagId }) => removeVersionTag(processId, version, tagId),
+    mutationFn: ({ processId, version, tagId, projectId }) => removeVersionTag(processId, version, tagId, projectId),
   });
 }
 

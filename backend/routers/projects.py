@@ -10,9 +10,9 @@ import secrets
 import logging
 
 from backend.database import get_db, async_session_maker
-from backend.models import Project, ProjectMember, ProjectInvite, User
+from backend.models import Project, ProjectMember, ProjectInvite, User, Publication
 from backend.models.storage_backend import get_allowed_storage_backends
-from backend.services.auth_service import get_current_user, require_project_member, AuthContext
+from backend.services.auth_service import get_current_user, get_current_user_optional, require_project_member, AuthContext
 from backend.services.storage_credentials import ensure_ready
 from backend.services.email_service import send_invite_email
 from backend.config import settings
@@ -39,27 +39,85 @@ async def _setup_storage_background(project_id: str, force: bool = False):
 
 @router.get("", summary="List accessible projects")
 async def list_projects(
-    auth: AuthContext = Depends(get_current_user),
+    viewing_id: Optional[str] = None,
+    auth: AuthContext | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db)
 ):
-    """Return all projects the authenticated user is a member of.
+    """Return the projects the caller can see, in display order:
+    [pinned currently-viewed publication] → [own projects] → [other findable publications].
 
-    Each project has an 'id' (UUID string) and a 'name'. Pass the project id
-    to other endpoints as project_id. When authenticated via API key, only
-    the key's scoped project is returned.
+    Each real project has an 'id' (UUID string) and a 'name'. A publication entry has
+    'id' (the publication id, usable anywhere a project id is accepted, read-only),
+    'name' (the underlying project's name with " (ro)" appended), 'read_only': true,
+    and 'findable'.
+
+    When authenticated via API key, own projects are restricted to the key's scoped
+    project. When unauthenticated, own projects and other findable publications are
+    omitted entirely — only 'viewing_id' (if it resolves to a valid, anonymous-allowed
+    publication) is returned, as a single-entry list.
     """
-    stmt = (
-        select(Project)
-        .join(ProjectMember, ProjectMember.project_id == Project.id)
-        .where(ProjectMember.user_id == auth.user.id)
-        .order_by(Project.created_at)
-    )
-    # When authenticated via API key, restrict to the key's scoped project
-    if auth.api_key_project_id is not None:
-        stmt = stmt.where(Project.id == auth.api_key_project_id)
-    result = await db.execute(stmt)
-    projects = result.scalars().all()
-    return [p.to_dict() for p in projects]
+    own_projects = []
+    combined_ids = set()
+
+    if auth is not None:
+        stmt = (
+            select(Project)
+            .join(ProjectMember, ProjectMember.project_id == Project.id)
+            .where(ProjectMember.user_id == auth.user.id)
+            .order_by(Project.created_at)
+        )
+        # When authenticated via API key, restrict to the key's scoped project
+        if auth.api_key_project_id is not None:
+            stmt = stmt.where(Project.id == auth.api_key_project_id)
+        result = await db.execute(stmt)
+        own_projects = [p.to_dict() for p in result.scalars().all()]
+        combined_ids = {p["id"] for p in own_projects}
+
+        pub_stmt = (
+            select(Publication)
+            .options(selectinload(Publication.project))
+            .where(Publication.findable == True)  # noqa: E712
+            .order_by(Publication.created_at)
+        )
+        pub_result = await db.execute(pub_stmt)
+        findable_entries = []
+        for pub in pub_result.scalars().all():
+            if pub.project_id in combined_ids:
+                continue
+            findable_entries.append({
+                "id": pub.id,
+                "name": f"{pub.project.name} (ro)",
+                "created_at": pub.project.created_at.isoformat(),
+                "storage_status": None,
+                "read_only": True,
+                "findable": True,
+            })
+        combined_ids |= {e["id"] for e in findable_entries}
+    else:
+        findable_entries = []
+
+    result_list = own_projects + findable_entries
+
+    if viewing_id and viewing_id not in combined_ids:
+        pub_stmt = (
+            select(Publication)
+            .options(selectinload(Publication.project))
+            .where(Publication.id == viewing_id)
+        )
+        pub_result = await db.execute(pub_stmt)
+        publication = pub_result.scalar_one_or_none()
+        if publication is not None and (publication.allow_anonymous or auth is not None):
+            pinned_entry = {
+                "id": publication.id,
+                "name": f"{publication.project.name} (ro)",
+                "created_at": publication.project.created_at.isoformat(),
+                "storage_status": None,
+                "read_only": True,
+                "findable": publication.findable,
+            }
+            result_list = [pinned_entry] + result_list
+
+    return result_list
 
 
 @router.post("", summary="Create a new project")

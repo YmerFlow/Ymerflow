@@ -14,7 +14,7 @@ const PLOT_MARGIN = { top: 50, right: 80, bottom: 60, left: 80 };
 
 export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...rest }) {
   const { fetchedData, datasetsLoading, dataLoading, currentSounding, setCurrentSounding, datasetCollection, processes,
-    inMemoryDiffs, applyInMemoryEdit, inUseAction } = useContext(ProcessContext);
+    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject } = useContext(ProcessContext);
 
   // Map of "procName.version.dsName" → raw data object for non-current process datasets
   const [lazilyLoadedData, setLazilyLoadedData] = useState(new Map());
@@ -71,14 +71,14 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
       if (!dsUrl) continue;
 
       const dsId = dsUrl.split('/').pop();
-      loadDataset(dsId)
+      loadDataset(dsId, currentProject)
         .then(dsObj => dsObj.fetchData('all').then(rawData => ({ dsObj, rawData })))
         .then(({ dsObj, rawData }) => {
           setLazilyLoadedData(prev => new Map(prev).set(dsPath, { dsObj, rawData }));
         })
         .catch(err => console.warn(`Failed to lazily load ${dsPath}:`, err));
     }
-  }, [config, processes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, processes, currentProject]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Create / destroy the Plot instance and register gladly event handlers.
   useEffect(() => {

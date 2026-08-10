@@ -133,7 +133,7 @@ function parseUrlParams(pathname) {
 }
 
 // Helper to build URL path from params
-function buildUrlPath(workspace, project, process, version, part, sounding) {
+export function buildUrlPath(workspace, project, process, version, part, sounding) {
   let path = '/app';
 
   if (workspace) {
@@ -177,7 +177,7 @@ export function ProcessProvider({ children }) {
   const currentPart = urlParams.part || "all";
   const currentSounding = urlParams.sounding !== null ? urlParams.sounding : 0;
 
-  const { data: projects = EMPTY_ARRAY, isLoading: projectsLoading, error: projectsError } = useProjects();
+  const { data: projects = EMPTY_ARRAY, isLoading: projectsLoading, error: projectsError } = useProjects(currentProject);
   const { data: processes = EMPTY_ARRAY, isLoading, error: processesError, refetch } = useProcesses(currentProject);
   const { data: environments = EMPTY_ARRAY, isLoading: environmentsLoading, error: environmentsError } = useEnvironments();
 
@@ -395,7 +395,7 @@ export function ProcessProvider({ children }) {
   const process = activeProcess ? processes.find(p => p.id === activeProcess.processId) : null;
   const version = activeProcess?.version;
 
-  const { data: datasets = EMPTY_ARRAY, isLoading: datasetsQueryLoading } = useProcessOutputDatasets(process, version);
+  const { data: datasets = EMPTY_ARRAY, isLoading: datasetsQueryLoading } = useProcessOutputDatasets(process, version, currentProject);
 
   // State for dataset objects and data - use stable initial values
   const [datasetObjects, setDatasetObjects] = useState(INITIAL_DATASET_OBJECTS);
@@ -411,7 +411,7 @@ export function ProcessProvider({ children }) {
 
       for (const dataset of datasets) {
         try {
-          const datasetObj = await loadDataset(dataset.id);
+          const datasetObj = await loadDataset(dataset.id, currentProject);
           newDatasetObjects[dataset.dataset_name] = datasetObj;
         } catch (error) {
           console.error(`Failed to load dataset ${dataset.dataset_name}:`, error);
@@ -434,7 +434,7 @@ export function ProcessProvider({ children }) {
       setDatasetObjects(INITIAL_DATASET_OBJECTS);
       setDatasetsLoading(false);
     }
-  }, [datasets, addMessage]);
+  }, [datasets, addMessage, currentProject]);
 
   // Fetch data for current part whenever datasetObjects or currentPart changes
   useEffect(() => {
