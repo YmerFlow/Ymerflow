@@ -17,7 +17,7 @@ This document describes the frontend's data fetching and cache invalidation arch
 
 ## Overview
 
-Nagelfluh uses [TanStack Query v4](https://tanstack.com/query/v4) for:
+YmerFlow uses [TanStack Query v4](https://tanstack.com/query/v4) for:
 - Server state management
 - Automatic background refetching
 - Cache management

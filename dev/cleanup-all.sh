@@ -1,5 +1,5 @@
 #!/bin/bash
-# Comprehensive cleanup script for the Nagelfluh development environment.
+# Comprehensive cleanup script for the YmerFlow development environment.
 # This script cleans up:
 # - Screen sessions (dev services)
 # - Stray kubectl port-forwards (informational — MinIO/registry use NodePort, not port-forward)
@@ -38,7 +38,7 @@ print_warning() {
 }
 
 echo "=========================================="
-echo "Nagelfluh Complete Cleanup"
+echo "YmerFlow Complete Cleanup"
 echo "=========================================="
 echo ""
 
@@ -92,7 +92,7 @@ echo "=========================================="
 echo "Cleanup Complete!"
 echo "=========================================="
 echo ""
-echo "The cluster itself was left running (only Nagelfluh's k8s resources were removed)."
+echo "The cluster itself was left running (only YmerFlow's k8s resources were removed)."
 echo ""
 echo "To also stop/delete your cluster, do so manually — e.g. for a local Minikube setup:"
 echo "  minikube stop      # stop the VM (keeps data)"

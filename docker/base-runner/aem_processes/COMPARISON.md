@@ -67,7 +67,7 @@ Note: Line count increase is due to:
 | Data normalization | ✅ | ✅ | Preserved |
 | Inversion columns | ✅ | ✅ | num_* field generation |
 | Flight-line splitting | ✅ | ✅ | Preserved |
-| Diff msgpack | ✅ | ❌ | Not needed in Nagelfluh |
+| Diff msgpack | ✅ | ❌ | Not needed in YmerFlow |
 | **Inversion** |
 | SimPEG integration | ✅ | ✅ | Same framework |
 | Multiple models | ✅ | ✅ | L2, sparse |
@@ -76,11 +76,11 @@ Note: Line count increase is due to:
 | Save iterations | ✅ | ✅ | Optional intermediate models |
 | Flight-line splitting | ✅ | ✅ | Preserved |
 | **Orchestration** |
-| Task dependencies | Luigi | Nagelfluh | Framework change |
+| Task dependencies | Luigi | YmerFlow | Framework change |
 | Config files | YAML | JSON Schema | Dynamic generation |
 | Completion tracking | DONE files | Process status | Framework change |
 | Introspection | Separate task | On-demand | Schemas generated in schema() |
-| Integration task | Luigi task | N/A | Nagelfluh handles |
+| Integration task | Luigi task | N/A | YmerFlow handles |
 
 ## API Comparison
 
@@ -102,7 +102,7 @@ data_path = task.data().path  # s3://bucket/import001/out.xyz
 gex_path = task.system_data().path  # s3://bucket/import001/out.gex
 ```
 
-**Ported (Nagelfluh):**
+**Ported (YmerFlow):**
 ```python
 from aem_processes.import_process import Import
 
@@ -147,7 +147,7 @@ luigi.build([task])
 processed_path = task.data().path
 ```
 
-**Ported (Nagelfluh):**
+**Ported (YmerFlow):**
 ```python
 from aem_processes.processing_process import Processing
 
@@ -176,7 +176,7 @@ smooth_model = task.output().path  # .../smooth_model.xyz
 sparse_model = task.output().path  # .../sparse_model.xyz
 ```
 
-**Ported (Nagelfluh):**
+**Ported (YmerFlow):**
 ```python
 from aem_processes.inversion_process import Inversion
 
@@ -369,7 +369,7 @@ entry_points = {
 
 ```python
 entry_points = {
-    # Process types for Nagelfluh
+    # Process types for YmerFlow
     "nagelfluh.process_types": [
         "import_skytem=aem_processes.import_process:Import",
         "process_tem=aem_processes.processing_process:Processing",
@@ -386,13 +386,13 @@ entry_points = {
 
 ## Migration Checklist
 
-For teams migrating from Luigi pipeline to Nagelfluh:
+For teams migrating from Luigi pipeline to YmerFlow:
 
 - [x] Core processes ported (Import, Processing, Inversion)
 - [x] Entry point system preserved
 - [x] Flight-line splitting maintained
 - [x] Schema generation implemented
-- [x] Dataset format conversion (Luigi → Nagelfluh)
+- [x] Dataset format conversion (Luigi → YmerFlow)
 - [x] URL localization adapted (poltergust → fsspec)
 - [x] Resource monitoring preserved
 - [x] Iteration logging maintained
@@ -425,10 +425,10 @@ Not compatible with:
 - Local file system preferred
 - Manual cleanup required
 
-### Ported (Nagelfluh)
+### Ported (YmerFlow)
 - No built-in caching (relies on fsspec caching)
 - Full re-execution on each run
 - Cloud-native by design
 - Automatic cleanup (temp files)
 
-**Recommendation:** Add caching layer in Nagelfluh framework for frequently accessed datasets.
+**Recommendation:** Add caching layer in YmerFlow framework for frequently accessed datasets.

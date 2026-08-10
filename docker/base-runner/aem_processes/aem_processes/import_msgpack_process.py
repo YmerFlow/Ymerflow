@@ -1,4 +1,4 @@
-"""Import process for XYZ msgpack containers (e.g., from Nagelfluh AEM Model Simulator)."""
+"""Import process for XYZ msgpack containers (e.g., from YmerFlow AEM Model Simulator)."""
 
 import libaarhusxyz
 from libaarhusxyz.export import msgpack as xyz_msgpack

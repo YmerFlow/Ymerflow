@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Create FastAPI app
-app = FastAPI(title="Nagelfluh API", version="2.0.0")
+app = FastAPI(title="YmerFlow API", version="2.0.0")
 
 # Configure CORS
 app.add_middleware(
@@ -93,7 +93,7 @@ app.include_router(admin_router)
 async def root():
     """API root endpoint"""
     return {
-        "name": "Nagelfluh API",
+        "name": "YmerFlow API",
         "version": "2.0.0",
         "status": "running"
     }
@@ -115,7 +115,7 @@ async def health():
 # and download with plain curl instead (no auth required for /files/ URLs).
 mcp = FastApiMCP(
     app,
-    name="Nagelfluh",
+    name="YmerFlow",
     description=(
         "Geophysics data processing platform. "
         "Authenticate with an API key (Authorization: Bearer apk_<key>); "

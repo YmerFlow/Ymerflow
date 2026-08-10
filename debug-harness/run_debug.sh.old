@@ -1,5 +1,5 @@
 #!/bin/bash
-# Debug harness for running Nagelfluh processes with pdb
+# Debug harness for running YmerFlow processes with pdb
 
 set -e
 

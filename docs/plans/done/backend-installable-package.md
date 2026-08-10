@@ -90,7 +90,7 @@ from setuptools import setup, find_namespace_packages
 setup(
     name='nagelfluh-backend',
     version='0.1.0',
-    description='Nagelfluh host backend (FastAPI app + nagelfluh.* entry points).',
+    description='YmerFlow host backend (FastAPI app + nagelfluh.* entry points).',
     # backend/ has no __init__.py (implicit namespace package); enumerate it as a namespace
     # package so the existing tree — including backend/alembic — is packaged without adding
     # __init__.py files that would change import semantics.

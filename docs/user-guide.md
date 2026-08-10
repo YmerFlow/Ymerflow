@@ -1,6 +1,6 @@
-# Nagelfluh User Guide
+# YmerFlow User Guide
 
-This guide explains how to use Nagelfluh for geophysics data processing.
+This guide explains how to use YmerFlow for geophysics data processing.
 
 ## Getting Started
 
@@ -278,7 +278,7 @@ kubectl get workloads -n nagelfluh-jobs
 
 ### How Billing Works
 
-Nagelfluh uses a **hold/release** billing model to ensure fair resource pricing:
+YmerFlow uses a **hold/release** billing model to ensure fair resource pricing:
 
 1. **Process Creation**:
    - System calculates **maximum possible cost** (deadline × resources)

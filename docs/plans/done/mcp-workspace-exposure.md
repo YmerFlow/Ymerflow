@@ -3,7 +3,7 @@
 ## Goal
 
 Expose workspace read/write and widget schema discovery through the MCP server, so AI agents can
-construct, inspect, and modify Nagelfluh layouts programmatically.
+construct, inspect, and modify YmerFlow layouts programmatically.
 
 ---
 
@@ -14,7 +14,7 @@ construct, inspect, and modify Nagelfluh layouts programmatically.
 | `list_workspaces` | List all saved workspaces (id, title, timestamps). Use to discover what layouts exist before reading one. |
 | `get_workspace` | Get the full layout tree for a workspace. Returns a recursive JSON tree of nodes with `id`, `widget`, `children`, and widget-specific `layoutConfig`. Call `get_workspace_schema` first to understand valid structures. |
 | `create_workspace` | Create a new workspace with a title and layout tree. The `layout` field must conform to the schema returned by `get_workspace_schema`. |
-| `get_workspace_schema` | Get the JSON Schema for the entire workspace layout format — the recursive node tree, all valid widget types as a discriminated union, and per-widget `layoutConfig` schemas including Nagelfluh-specific PlotView layer types. **Always call this before constructing a layout.** |
+| `get_workspace_schema` | Get the JSON Schema for the entire workspace layout format — the recursive node tree, all valid widget types as a discriminated union, and per-widget `layoutConfig` schemas including YmerFlow-specific PlotView layer types. **Always call this before constructing a layout.** |
 
 ---
 
@@ -23,7 +23,7 @@ construct, inspect, and modify Nagelfluh layouts programmatically.
 ### Why widget schemas can't be extracted at build time automatically
 
 PlotView's `get_schema()` returns a schema assembled by gladly at import time by merging
-schemas from all registered layer types — including Nagelfluh-specific ones
+schemas from all registered layer types — including YmerFlow-specific ones
 (ResistivityCurtain, FlightlinePlot, MagLinePlot, etc.). This requires:
 
 - A real browser environment (WebGL context)

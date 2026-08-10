@@ -1,6 +1,6 @@
 # Widget System
 
-Nagelfluh's frontend uses a flexible widget system where each pane in the layout can display different types of content. Widgets are React components that can be dragged, dropped, and rearranged within the Flexout layout system.
+YmerFlow's frontend uses a flexible widget system where each pane in the layout can display different types of content. Widgets are React components that can be dragged, dropped, and rearranged within the Flexout layout system.
 
 ## Widget Basics
 

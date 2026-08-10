@@ -1,4 +1,4 @@
-"""Provider-agnostic K8s-API helper for hosting the Nagelfluh application itself (backend +
+"""Provider-agnostic K8s-API helper for hosting the YmerFlow application itself (backend +
 frontend pods, their workload-level config/secrets, and the DB migration) on whatever cluster a
 deployment's default `Cluster` row points at.
 
@@ -67,7 +67,7 @@ HEADLAMP_TOKEN_SECRET_NAME = "headlamp-nginx-token"
 async def apply_app_workloads(k8s_client, namespace: str, images: dict, app_config: dict,
                                secrets: dict, image_pull_credentials: dict | None = None,
                                replicas: dict | None = None) -> None:
-    """Apply every workload-level resource the Nagelfluh app itself needs, in `namespace`, on
+    """Apply every workload-level resource the YmerFlow app itself needs, in `namespace`, on
     whatever cluster `k8s_client` points at. Idempotent — safe to call repeatedly (e.g. on every
     redeploy): every object is created-or-patched, never assumed absent.
 

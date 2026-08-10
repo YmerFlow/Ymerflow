@@ -138,7 +138,7 @@ entirely), but that's a separate future plan, not built here.
 5. **`curl | bash` over plain HTTP is not a special risk to design around.** It's only a risk if the
    backend itself isn't proxied behind TLS — which is a choice already visible and owned by the
    operator via `config.env`/`SERVER_URL`, not something new introduced here.
-6. **Shared provisioning logic is shell, not Python**, since the remote host has no Nagelfluh Python
+6. **Shared provisioning logic is shell, not Python**, since the remote host has no YmerFlow Python
    backend installed on it. The namespace/Kueue-operator/RBAC/queue steps in `dev/setup-minikube.sh`
    get factored into a reusable script/section, sourced by both the local dev/prod bootstrap flow and
    the new remote setup script — not a Python module the shell calls into.

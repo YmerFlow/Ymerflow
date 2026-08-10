@@ -1,11 +1,11 @@
-"""Setup script for Nagelfluh process types."""
+"""Setup script for YmerFlow process types."""
 
 from setuptools import setup, find_packages
 
 setup(
     name="nagelfluh-processes",
     version="0.1.0",
-    description="Process type implementations for Nagelfluh",
+    description="Process type implementations for YmerFlow",
     packages=find_packages(),
     install_requires=[
         "fsspec",

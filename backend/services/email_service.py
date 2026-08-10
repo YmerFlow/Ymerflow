@@ -17,14 +17,14 @@ async def send_invite_email(to_email: str, inviter_name: str, project_name: str,
         from email.mime.text import MIMEText
 
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = f"You've been invited to join {project_name} on Nagelfluh"
+        msg['Subject'] = f"You've been invited to join {project_name} on YmerFlow"
         msg['From'] = settings.smtp_from_email
         msg['To'] = to_email
 
         html = f"""
         <p>Hello,</p>
         <p><strong>{inviter_name}</strong> has invited you to join
-        <strong>{project_name}</strong> on Nagelfluh.</p>
+        <strong>{project_name}</strong> on YmerFlow.</p>
         <p><a href="{invite_url}">Click here to accept the invitation</a></p>
         <p>This invitation expires in 7 days.</p>
         """

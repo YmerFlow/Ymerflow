@@ -1,6 +1,6 @@
 # Storage Architecture
 
-Nagelfluh uses a **per-project bucket** architecture with IAM-enforced security for dataset storage.
+YmerFlow uses a **per-project bucket** architecture with IAM-enforced security for dataset storage.
 
 **Related documentation:**
 - [Process Types](processes.md) - How process types use storage_context in their run() method
@@ -431,7 +431,7 @@ curl -k https://localhost:9000/minio/health/live
 
 ## Migration from Legacy Storage
 
-Older Nagelfluh versions used a shared `DATA_BASE_PATH`. To migrate:
+Older YmerFlow versions used a shared `DATA_BASE_PATH`. To migrate:
 
 1. **Identify datasets**: List all files under old `DATA_BASE_PATH`
 2. **Group by project**: Determine which datasets belong to which projects

@@ -24,7 +24,7 @@ trap 'rm -f "$KUBECONFIG_FILE"' EXIT
 env/bin/python backend/bin/nagelfluh-materialize-kubeconfig > "$KUBECONFIG_FILE"
 export KUBECONFIG="$KUBECONFIG_FILE"
 
-echo "=== Nagelfluh Restore from $BACKUP_DIR ==="
+echo "=== YmerFlow Restore from $BACKUP_DIR ==="
 echo ""
 
 restore_secrets() {

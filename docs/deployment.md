@@ -1,6 +1,6 @@
 # Deployment Guide
 
-This guide covers setting up Nagelfluh for development and production environments.
+This guide covers setting up YmerFlow for development and production environments.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ This guide covers setting up Nagelfluh for development and production environmen
 
 ## Deployment Modes
 
-There are two ways to run Nagelfluh, differing in where the backend, frontend, and database live:
+There are two ways to run YmerFlow, differing in where the backend, frontend, and database live:
 
 | | Dev | Prod |
 |---|---|---|
@@ -468,7 +468,7 @@ SA_NAME="nagelfluh-process-${PROCESS_ID}"
 
 gcloud iam service-accounts create ${SA_NAME} \
   --project=${GCP_PROJECT} \
-  --display-name="Nagelfluh Process ${PROCESS_ID}"
+  --display-name="YmerFlow Process ${PROCESS_ID}"
 ```
 
 **3. Grant scoped IAM permissions:**
@@ -641,7 +641,7 @@ Pods will automatically use IRSA - no explicit credentials needed.
 
 ### Kubernetes Cluster
 
-Once either cluster below exists and you register it with Nagelfluh (Admin → Clusters → Add
+Once either cluster below exists and you register it with YmerFlow (Admin → Clusters → Add
 Cluster, or the self-service registration flow for a supported `cluster_type`), the backend
 installs Kueue (currently v0.16.4), sizes and applies its queue/quota configuration from the
 cluster's real node capacity, and applies the required RBAC automatically — see [System Overview §
@@ -676,7 +676,7 @@ eksctl create cluster \
   --nodes-max 10
 ```
 
-Register the resulting cluster's kubeconfig with Nagelfluh (Admin → Clusters); Kueue/RBAC
+Register the resulting cluster's kubeconfig with YmerFlow (Admin → Clusters); Kueue/RBAC
 provisioning happens automatically once it connects successfully.
 kubectl create namespace nagelfluh-jobs
 kubectl apply -f k8s/kueue-config.yaml
@@ -840,7 +840,7 @@ Both paths are protected by nginx HTTP basic auth. The credentials are stored in
 | Image | `dpage/pgadmin4:latest` |
 | Namespace | `nagelfluh` |
 
-The Nagelfluh PostgreSQL server (`postgres.nagelfluh.svc.cluster.local:5432`) is pre-configured via a mounted `servers.json` ConfigMap. On first connection you will be prompted for the database password (`nagelfluhpass`).
+The YmerFlow PostgreSQL server (`postgres.nagelfluh.svc.cluster.local:5432`) is pre-configured via a mounted `servers.json` ConfigMap. On first connection you will be prompted for the database password (`nagelfluhpass`).
 
 pgAdmin is configured with `SCRIPT_NAME=/pgadmin` so it generates correct URLs when sitting behind the nginx subpath proxy.
 
@@ -1106,7 +1106,7 @@ gsutil du -s gs://nagelfluh-project-*
 ### Clean Up Minikube
 
 ```bash
-# Remove Nagelfluh resources only
+# Remove YmerFlow resources only
 ./dev/cleanup-all.sh
 
 # Complete cluster deletion

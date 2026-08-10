@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Nagelfluh exposes a subset of its REST API as MCP (Model Context Protocol) tools via [fastapi-mcp](https://github.com/tadata-ru/fastapi-mcp), mounted at `/mcp` using the Streamable HTTP transport.
+YmerFlow exposes a subset of its REST API as MCP (Model Context Protocol) tools via [fastapi-mcp](https://github.com/tadata-ru/fastapi-mcp), mounted at `/mcp` using the Streamable HTTP transport.
 
 ## Authentication
 

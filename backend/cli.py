@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Nagelfluh CLI - Command-line tool for workspace management
+YmerFlow CLI - Command-line tool for workspace management
 
 Usage:
     python backend/cli.py workspace get <workspace_id>
@@ -39,7 +39,7 @@ SessionLocal = sessionmaker(bind=engine)
 
 @click.group()
 def cli():
-    """Nagelfluh CLI - Manage workspaces and more"""
+    """YmerFlow CLI - Manage workspaces and more"""
     pass
 
 

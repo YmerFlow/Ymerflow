@@ -11,11 +11,11 @@ export default function LandingPage() {
         <div className="text-center mb-5">
           <img
             src="/Nagelfluh.jpg"
-            alt="Nagelfluh"
+            alt="YmerFlow"
             style={{ maxWidth: '300px', width: '100%', height: 'auto' }}
             className="mb-3"
           />
-          <h1>Nagelfluh Geophysics</h1>
+          <h1>YmerFlow Geophysics</h1>
         </div>
         <Row className="g-4">
           <Col md={4}>
@@ -224,7 +224,7 @@ function OpenSourceCard() {
         <h4 className="my-0 fw-normal">Open Source</h4>
       </div>
       <Card.Body>
-        <p>Nagelfluh is open source and available on GitHub.</p>
+        <p>YmerFlow is open source and available on GitHub.</p>
         <Button
           variant="outline-primary"
           className="w-100 mb-2"
@@ -234,7 +234,7 @@ function OpenSourceCard() {
         </Button>
         <hr />
         <h6>Deploy on Kubernetes</h6>
-        <p className="small">Self-host Nagelfluh on your own infrastructure.</p>
+        <p className="small">Self-host YmerFlow on your own infrastructure.</p>
         <Button
           variant="outline-secondary"
           className="w-100"

@@ -1,6 +1,6 @@
 # Process Type Development
 
-Process types are the core computational units in Nagelfluh. They are implemented as Python classes and registered via setuptools entrypoints, allowing for a plugin-based architecture.
+Process types are the core computational units in YmerFlow. They are implemented as Python classes and registered via setuptools entrypoints, allowing for a plugin-based architecture.
 
 **Related documentation:**
 - [Environment](environment.md) - How process types are packaged in Docker images and executed
