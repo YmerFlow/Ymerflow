@@ -17,6 +17,7 @@ function ProjectDropdown() {
     if (projectId === '_create_new') {
       setShowCreateModal(true);
     } else if (projectId === '_manage_members') {
+      if (currentProjectObj?.read_only) return;
       setShowMembersModal(true);
     } else {
       setCurrentProject(projectId);
@@ -55,7 +56,11 @@ function ProjectDropdown() {
           ))}
           {projects.length > 0 && <Dropdown.Divider />}
           {currentProject && (
-            <Dropdown.Item eventKey="_manage_members">
+            <Dropdown.Item
+              eventKey="_manage_members"
+              disabled={!!currentProjectObj?.read_only}
+              title={currentProjectObj?.read_only ? 'Read-only publication — membership cannot be managed here' : undefined}
+            >
               Manage Members...
             </Dropdown.Item>
           )}
