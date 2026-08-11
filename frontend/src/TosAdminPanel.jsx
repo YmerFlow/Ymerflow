@@ -1,16 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Modal, Form, Alert, Row, Col } from 'react-bootstrap';
 import Markdown from 'markdown-to-jsx';
 import { useAdminTosVersions, useCreateAdminTosVersion } from './datamodel/useAuthQueries';
 
-function CreateTosVersionModal({ show, onHide }) {
+function CreateTosVersionModal({ show, onHide, previousBody }) {
   const createMutation = useCreateAdminTosVersion();
   const [body, setBody] = useState('');
   const [error, setError] = useState(null);
 
-  const handleClose = () => {
-    setBody('');
+  // Default the form to the previous version's text on every open, so an admin publishing a
+  // small edit doesn't have to retype the whole document from scratch.
+  useEffect(() => {
+    if (!show) return;
+    setBody(previousBody || '');
     setError(null);
+  }, [show, previousBody]);
+
+  const handleClose = () => {
     onHide();
   };
 
@@ -101,7 +107,7 @@ export default function TosAdminPanel() {
           </tbody>
         </Table>
       </Card.Body>
-      <CreateTosVersionModal show={showModal} onHide={() => setShowModal(false)} />
+      <CreateTosVersionModal show={showModal} onHide={() => setShowModal(false)} previousBody={versions[0]?.body} />
     </Card>
   );
 }
