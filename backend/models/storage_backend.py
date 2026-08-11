@@ -45,7 +45,7 @@ async def get_allowed_storage_backends(db, user) -> list["StorageBackend"]:
     union means no backends are allowed, not a fallback to "all active".
     """
     if hooks.any_registered("select_storage_backends"):
-        allowed_ids = set(hooks.run.select_storage_backends(db, user))
+        allowed_ids = set(await hooks.run_async.select_storage_backends(db, user))
         stmt = select(StorageBackend).where(StorageBackend.id.in_(allowed_ids), StorageBackend.active == True)
     else:
         stmt = select(StorageBackend).where(StorageBackend.active == True)
