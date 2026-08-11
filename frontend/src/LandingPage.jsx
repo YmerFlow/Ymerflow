@@ -2,7 +2,7 @@ import React, { useState, useContext } from 'react';
 import { Card, Container, Row, Col, Button, Form, Modal } from 'react-bootstrap';
 import Markdown from 'markdown-to-jsx';
 import { AuthContext } from './AuthContext';
-import { useLogin, useSignup, useForgotPassword, usePublicConfig, useTos } from './datamodel/useAuthQueries';
+import { useLogin, useSignup, useForgotPassword, usePublicConfig, useTos, useAcceptTos } from './datamodel/useAuthQueries';
 import { setAuthToken } from './datamodel/api';
 
 export default function LandingPage() {
@@ -52,30 +52,48 @@ function SignInCard({ initialMode = 'signin', allowBackToSignIn = true }) {
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
   const [showTosModal, setShowTosModal] = useState(false);
+  const [pendingLogin, setPendingLogin] = useState(null);  // { user, access_token, tos_pending }
   const { login: authLogin } = useContext(AuthContext);
   const loginMutation = useLogin();
   const signupMutation = useSignup();
   const forgotPasswordMutation = useForgotPassword();
+  const acceptTosMutation = useAcceptTos();
   const { data: tos } = useTos();
 
   const handleSignIn = async (e) => {
     e.preventDefault();
     try {
-      console.log('Attempting login with:', username);
       const result = await loginMutation.mutateAsync({ username, password });
-      console.log('Login result:', result);
       setAuthToken(result.access_token);
-      authLogin(result.user, result.access_token);
-      console.log('Login successful, user:', result.user);
+      if (result.tos_pending) {
+        setPendingLogin({ user: result.user, access_token: result.access_token, tos_pending: result.tos_pending });
+      } else {
+        authLogin(result.user, result.access_token);
+      }
     } catch (error) {
       console.error('Login error:', error);
       alert('Login failed: ' + (error.response?.data?.detail || error.message));
     }
   };
 
+  const handleAgreeLoginTos = async () => {
+    try {
+      await acceptTosMutation.mutateAsync({ version: pendingLogin.tos_pending.version });
+      authLogin(pendingLogin.user, pendingLogin.access_token);
+      setPendingLogin(null);
+    } catch (error) {
+      alert('Failed to record agreement: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  const handleCancelLoginTos = () => {
+    setAuthToken(null);
+    setPendingLogin(null);
+  };
+
   const doSignup = async () => {
     try {
-      const result = await signupMutation.mutateAsync({ username, password, email: email || undefined });
+      const result = await signupMutation.mutateAsync({ username, password, email: email || undefined, agreedTosVersion: tos?.version });
       setAuthToken(result.access_token);
       authLogin(result.user, result.access_token);
     } catch (error) {
@@ -85,7 +103,7 @@ function SignInCard({ initialMode = 'signin', allowBackToSignIn = true }) {
 
   const handleSignUp = (e) => {
     e.preventDefault();
-    if (tos?.text) {
+    if (tos?.body) {
       setShowTosModal(true);
     } else {
       doSignup();
@@ -222,12 +240,28 @@ function SignInCard({ initialMode = 'signin', allowBackToSignIn = true }) {
         <Modal.Header>
           <Modal.Title>Terms of Service</Modal.Title>
         </Modal.Header>
-        <Modal.Body style={{ maxHeight: '60vh', overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
-          {tos?.text}
+        <Modal.Body style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+          <Markdown>{tos?.body || ''}</Markdown>
         </Modal.Body>
         <Modal.Footer>
           <Button variant="secondary" onClick={() => setShowTosModal(false)}>Cancel</Button>
           <Button variant="primary" onClick={handleAgreeTos}>I Agree</Button>
+        </Modal.Footer>
+      </Modal>
+
+      <Modal show={!!pendingLogin} backdrop="static" keyboard={false} size="lg">
+        <Modal.Header>
+          <Modal.Title>Terms of Service Updated</Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+          <p>The Terms of Service have been updated since you last agreed. Please review and agree to continue.</p>
+          <Markdown>{pendingLogin?.tos_pending?.body || ''}</Markdown>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleCancelLoginTos}>Cancel</Button>
+          <Button variant="primary" onClick={handleAgreeLoginTos} disabled={acceptTosMutation.isPending}>
+            {acceptTosMutation.isPending ? 'Saving...' : 'I Agree'}
+          </Button>
         </Modal.Footer>
       </Modal>
     </Card>

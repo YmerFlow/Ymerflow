@@ -45,10 +45,26 @@ export async function login(username, password) {
   return response.data;
 }
 
-export async function signup(username, password, email = null) {
+export async function signup(username, password, email = null, agreedTosVersion = null) {
   const body = { username, password };
   if (email) body.email = email;
+  if (agreedTosVersion !== null && agreedTosVersion !== undefined) body.agreed_tos_version = agreedTosVersion;
   const response = await apiClient.post('/auth/signup', body);
+  return response.data;
+}
+
+export async function acceptTos(version) {
+  const response = await apiClient.post('/auth/tos/accept', { version });
+  return response.data;
+}
+
+export async function listAdminTosVersions() {
+  const response = await apiClient.get('/admin/tos-versions');
+  return response.data;
+}
+
+export async function createAdminTosVersion(body) {
+  const response = await apiClient.post('/admin/tos-versions', body);
   return response.data;
 }
 

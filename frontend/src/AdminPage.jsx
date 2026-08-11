@@ -6,6 +6,7 @@ import { useAdminUsers, useSetUserAdmin } from './datamodel/useAuthQueries';
 import TabbedPage from './TabbedPage';
 import ClustersAdminPanel from './ClustersAdminPanel';
 import StorageBackendsAdminPanel from './StorageBackendsAdminPanel';
+import TosAdminPanel from './TosAdminPanel';
 
 function UsersAdminPanel({ currentUser }) {
   const { data: users = [], isLoading } = useAdminUsers();
@@ -70,6 +71,11 @@ export default function AdminPage() {
       key: 'storage',
       title: 'Storage',
       render: () => <StorageBackendsAdminPanel />,
+    },
+    {
+      key: 'tos',
+      title: 'Terms of Service',
+      render: () => <TosAdminPanel />,
     },
   ];
 

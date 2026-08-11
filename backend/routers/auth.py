@@ -3,13 +3,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
-from typing import Dict, Optional
+from sqlalchemy import func
+from typing import Any, Dict, Optional
 from datetime import datetime
 import asyncio
 import secrets
 
 from backend.database import get_db
 from backend.models import User, Project, ProjectMember, ProjectInvite, ApiKey
+from backend.models.tos import TosVersion, UserTosAcceptance
 from backend.services.auth_service import (
     hash_password,
     verify_password,
@@ -18,14 +20,13 @@ from backend.services.auth_service import (
     get_current_user,
     AuthContext,
 )
-from backend.config import settings
 from backend.auth_deps import require_admin
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/signup")
-async def signup(credentials: Dict[str, str], db: AsyncSession = Depends(get_db)):
+async def signup(credentials: Dict[str, Any], db: AsyncSession = Depends(get_db)):
     """Sign up with username and password"""
     import logging
     logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ async def signup(credentials: Dict[str, str], db: AsyncSession = Depends(get_db)
     username = credentials.get("username")
     password = credentials.get("password")
     email = credentials.get("email") or None
+    agreed_tos_version = credentials.get("agreed_tos_version")
 
     if not username or not password:
         raise HTTPException(
@@ -51,6 +53,16 @@ async def signup(credentials: Dict[str, str], db: AsyncSession = Depends(get_db)
                 detail="Username already exists"
             )
 
+        latest_tos_stmt = select(TosVersion).order_by(TosVersion.version.desc()).limit(1)
+        latest_tos_result = await db.execute(latest_tos_stmt)
+        latest_tos = latest_tos_result.scalar_one_or_none()
+
+        if latest_tos is not None and agreed_tos_version != latest_tos.version:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You must agree to the current Terms of Service to sign up"
+            )
+
         password_hash = await asyncio.to_thread(hash_password, password)
         user = User(
             username=username.lower(),
@@ -60,6 +72,9 @@ async def signup(credentials: Dict[str, str], db: AsyncSession = Depends(get_db)
         )
         db.add(user)
         await db.flush()
+
+        if latest_tos is not None:
+            db.add(UserTosAcceptance(user_id=user.id, tos_version_id=latest_tos.id))
 
         from backend.hooks import hooks
         await hooks.run_async.user_created(db, user)
@@ -89,20 +104,20 @@ async def signup(credentials: Dict[str, str], db: AsyncSession = Depends(get_db)
 
 
 @router.get("/tos")
-async def get_tos():
-    """Public endpoint: returns the configured Terms of Service text, if any.
+async def get_tos(db: AsyncSession = Depends(get_db)):
+    """Public endpoint: returns the latest Terms of Service version, if any.
 
-    Read from disk on every request (no caching) so edits to TOS_FILE take effect without a
-    restart. If TOS_FILE is unset, {"text": null} tells the frontend to skip the ToS modal
-    entirely and proceed with signup as before.
+    {"version": None, "body": None} means no TosVersion exists yet (should not happen after the
+    seeding migration, but is handled defensively).
     """
-    if not settings.tos_file:
-        return {"text": None}
+    stmt = select(TosVersion).order_by(TosVersion.version.desc()).limit(1)
+    result = await db.execute(stmt)
+    latest = result.scalar_one_or_none()
 
-    with open(settings.tos_file, "r") as f:
-        text = f.read()
+    if latest is None:
+        return {"version": None, "body": None}
 
-    return {"text": text}
+    return {"version": latest.version, "body": latest.body}
 
 
 @router.post("/login")
@@ -132,10 +147,28 @@ async def login(credentials: Dict[str, str], db: AsyncSession = Depends(get_db))
 
     access_token = create_access_token(data={"sub": user.username})
 
+    latest_tos_stmt = select(TosVersion).order_by(TosVersion.version.desc()).limit(1)
+    latest_tos_result = await db.execute(latest_tos_stmt)
+    latest_tos = latest_tos_result.scalar_one_or_none()
+
+    tos_pending = None
+    if latest_tos is not None:
+        accepted_stmt = (
+            select(func.max(TosVersion.version))
+            .join(UserTosAcceptance, UserTosAcceptance.tos_version_id == TosVersion.id)
+            .where(UserTosAcceptance.user_id == user.id)
+        )
+        accepted_result = await db.execute(accepted_stmt)
+        accepted_version = accepted_result.scalar_one_or_none()
+
+        if accepted_version is None or accepted_version < latest_tos.version:
+            tos_pending = {"version": latest_tos.version, "body": latest_tos.body}
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": user.to_dict()
+        "user": user.to_dict(),
+        "tos_pending": tos_pending,
     }
 
 
@@ -201,6 +234,33 @@ async def update_email(
     result = await db.execute(stmt)
     user = result.scalar_one()
     return user.to_dict()
+
+
+@router.post("/tos/accept")
+async def accept_tos(
+    body: Dict,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Record that the current user has agreed to a given ToS version."""
+    version = body.get("version")
+    if not isinstance(version, int):
+        raise HTTPException(status_code=400, detail="version is required")
+
+    stmt = select(TosVersion).where(TosVersion.version == version)
+    result = await db.execute(stmt)
+    tos_version = result.scalar_one_or_none()
+
+    if tos_version is None:
+        raise HTTPException(status_code=404, detail="Terms of Service version not found")
+
+    db.add(UserTosAcceptance(user_id=auth.user.id, tos_version_id=tos_version.id))
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()  # already accepted this version — not an error
+
+    return {"version": version}
 
 
 @router.get("/invites/{token}")
