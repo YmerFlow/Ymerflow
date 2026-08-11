@@ -1,136 +1,37 @@
-import React, { useState, useRef, useEffect, useContext } from 'react';
-import { Modal, Tab, Tabs, Table, Button, Form, Spinner } from 'react-bootstrap';
-import {
-  useWorkspaces,
-  usePublicWorkspaces,
-  useUpdateWorkspace,
-} from './datamodel/useQueries';
-import { ProcessContext } from './ProcessContext';
+import React, { useContext } from 'react';
+import { Modal, Table, Form, Spinner } from 'react-bootstrap';
+import { useWorkspaces, useUpdateWorkspace } from './datamodel/useQueries';
+import { AuthContext } from './AuthContext';
 
 export default function WorkspaceSharingModal({ show, onHide, currentProject }) {
   return (
     <Modal show={show} onHide={onHide} size="lg">
       <Modal.Header closeButton>
-        <Modal.Title>Workspaces</Modal.Title>
+        <Modal.Title>Publish Workspaces</Modal.Title>
       </Modal.Header>
       <Modal.Body>
-        <Tabs defaultActiveKey="add" className="mb-3">
-          <Tab eventKey="add" title="View public workspaces">
-            <AddPublicWorkspacesTab currentProject={currentProject} onAdded={onHide} />
-          </Tab>
-          <Tab eventKey="publish" title="Publish workspaces">
-            <PublishWorkspacesTab currentProject={currentProject} />
-          </Tab>
-        </Tabs>
+        <PublishWorkspacesTab currentProject={currentProject} />
       </Modal.Body>
     </Modal>
   );
 }
 
-function AddPublicWorkspacesTab({ currentProject, onAdded }) {
-  const { data: publicWorkspaces = [], isLoading } = usePublicWorkspaces();
-  const { setSelectedEnvironment } = useContext(ProcessContext);
-
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [selected, setSelected] = useState(null);
-  const [selectedVersion, setSelectedVersion] = useState(null);
-  const dropdownRef = useRef(null);
-
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setShowDropdown(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const filtered = publicWorkspaces.filter(w =>
-    w.title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const handleSelect = (workspace) => {
-    setSelected(workspace);
-    const latest = workspace.versions?.[workspace.versions.length - 1]?.version ?? null;
-    setSelectedVersion(latest);
-    setSearchTerm(workspace.title);
-    setShowDropdown(false);
-  };
-
-  // Just navigate to it — no mutation, no new workspace created. The only way today to reach
-  // an unowned public workspace without this is to already have its URL; this is the
-  // discoverable in-app path to the same thing.
-  const handleView = () => {
-    if (!selected) return;
-    setSelectedEnvironment(selected.id, selectedVersion);
-    if (onAdded) onAdded();
-  };
-
-  if (isLoading) return <Spinner animation="border" />;
-
-  return (
-    <>
-      <div className="position-relative mb-3" ref={dropdownRef}>
-        <Form.Control
-          type="text"
-          placeholder="Search public workspaces..."
-          value={searchTerm}
-          onChange={e => {
-            setSearchTerm(e.target.value);
-            setSelected(null);
-            setShowDropdown(true);
-          }}
-          onFocus={() => setShowDropdown(true)}
-        />
-        {showDropdown && filtered.length > 0 && (
-          <div
-            className="dropdown-menu show"
-            style={{ position: 'absolute', top: '100%', left: 0, maxHeight: '300px', overflowY: 'auto', width: '100%' }}
-          >
-            {filtered.map(w => (
-              <button
-                key={w.id}
-                type="button"
-                className="dropdown-item"
-                onClick={() => handleSelect(w)}
-              >
-                {w.title} <small className="text-muted">— {w.project_name}</small>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {selected && (
-        <div className="d-flex align-items-center gap-2 mb-3">
-          <Form.Label className="mb-0">Version:</Form.Label>
-          <Form.Select
-            style={{ width: 'auto' }}
-            value={selectedVersion ?? ''}
-            onChange={e => setSelectedVersion(parseInt(e.target.value, 10))}
-          >
-            {(selected.versions || []).map(v => (
-              <option key={v.version} value={v.version}>v{v.version}</option>
-            ))}
-          </Form.Select>
-          <Button onClick={handleView}>
-            View
-          </Button>
-        </div>
-      )}
-    </>
-  );
-}
-
 function PublishWorkspacesTab({ currentProject }) {
+  const { user } = useContext(AuthContext);
   const { data: workspaces = [], isLoading } = useWorkspaces(currentProject);
   const updateWorkspace = useUpdateWorkspace(currentProject);
 
-  const handleToggle = async (workspace) => {
+  const handleTogglePublic = async (workspace) => {
     try {
       await updateWorkspace.mutateAsync({ workspaceId: workspace.id, is_public: !workspace.is_public });
+    } catch (error) {
+      alert('Failed to update workspace: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  const handleToggleSuperpublic = async (workspace) => {
+    try {
+      await updateWorkspace.mutateAsync({ workspaceId: workspace.id, superpublic: !workspace.superpublic });
     } catch (error) {
       alert('Failed to update workspace: ' + (error.response?.data?.detail || error.message));
     }
@@ -146,6 +47,7 @@ function PublishWorkspacesTab({ currentProject }) {
           <th>Title</th>
           <th>Versions</th>
           <th>Public</th>
+          {user?.is_admin && <th>Superpublic</th>}
         </tr>
       </thead>
       <tbody>
@@ -157,10 +59,21 @@ function PublishWorkspacesTab({ currentProject }) {
               <Form.Check
                 type="checkbox"
                 checked={ws.is_public}
-                onChange={() => handleToggle(ws)}
-                disabled={updateWorkspace.isPending}
+                onChange={() => handleTogglePublic(ws)}
+                disabled={updateWorkspace.isPending || ws.superpublic}
+                title={ws.superpublic ? 'Superpublic implies public — unset superpublic first' : undefined}
               />
             </td>
+            {user?.is_admin && (
+              <td>
+                <Form.Check
+                  type="checkbox"
+                  checked={ws.superpublic}
+                  onChange={() => handleToggleSuperpublic(ws)}
+                  disabled={updateWorkspace.isPending}
+                />
+              </td>
+            )}
           </tr>
         ))}
       </tbody>

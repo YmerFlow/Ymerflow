@@ -29,6 +29,8 @@ import {
   getPublications,
   createPublication,
   deletePublication,
+  getPublicPublications,
+  updatePublication,
   getProjectTags,
   createProjectTag,
   updateProjectTag,
@@ -65,6 +67,7 @@ export const queryKeys = {
   projectMembers: (projectId) => ['projectMembers', projectId],
   projectInvites: (projectId) => ['projectInvites', projectId],
   publications: (projectId) => ['publications', projectId],
+  publicPublications: ['publicPublications'],
   inviteInfo: (token) => ['inviteInfo', token],
   projectTags: (projectId) => ['projectTags', projectId],
   workspaces: (projectId) => ['workspaces', projectId],
@@ -334,6 +337,26 @@ export function useDeletePublication(projectId) {
   });
 }
 
+export function usePublicPublications() {
+  return useQuery({
+    queryKey: queryKeys.publicPublications,
+    queryFn: getPublicPublications,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useUpdatePublication(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ publicationId, findable, superpublic }) => updatePublication(projectId, publicationId, { findable, superpublic }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.publications(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects });
+      queryClient.invalidateQueries({ queryKey: queryKeys.publicPublications });
+    },
+  });
+}
+
 export function useInviteInfo(token) {
   return useQuery({
     queryKey: queryKeys.inviteInfo(token),
@@ -502,7 +525,7 @@ export function useSaveWorkspaceVersion(projectId) {
 export function useUpdateWorkspace(projectId) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ workspaceId, title, is_public }) => updateWorkspace(workspaceId, { title, is_public }),
+    mutationFn: ({ workspaceId, title, is_public, superpublic }) => updateWorkspace(workspaceId, { title, is_public, superpublic }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaces(projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.publicWorkspaces });

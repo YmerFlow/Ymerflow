@@ -14,6 +14,7 @@ class Workspace(Base):
     project_id = Column(String(255), ForeignKey("projects.id", ondelete="CASCADE"),
                          nullable=False, index=True)
     is_public = Column(Boolean, nullable=False, default=False, server_default="0")
+    superpublic = Column(Boolean, nullable=False, default=False, server_default="0")
     forked_from_workspace_id = Column(String(255), ForeignKey("workspaces.id", ondelete="SET NULL"),
                                        nullable=True)
     forked_from_version = Column(Integer, nullable=True)
@@ -31,6 +32,7 @@ class Workspace(Base):
             "title": self.title,
             "project_id": self.project_id,
             "is_public": self.is_public,
+            "superpublic": self.superpublic,
             "forked_from_workspace_id": self.forked_from_workspace_id,
             "forked_from_version": self.forked_from_version,
             "created_at": self.created_at.isoformat(),

@@ -93,6 +93,7 @@ class Publication(Base):
     project_id = Column(String(255), ForeignKey("projects.id", ondelete="CASCADE"),
                          nullable=False, index=True)
     findable = Column(Boolean, nullable=False, default=False)
+    superpublic = Column(Boolean, nullable=False, default=False, server_default="0")
     allow_anonymous = Column(Boolean, nullable=False, default=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -105,6 +106,7 @@ class Publication(Base):
             "id": self.id,
             "project_id": self.project_id,
             "findable": self.findable,
+            "superpublic": self.superpublic,
             "allow_anonymous": self.allow_anonymous,
             "created_by": self.created_by_user.username if self.created_by_user else None,
             "created_at": self.created_at.isoformat(),

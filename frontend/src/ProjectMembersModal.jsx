@@ -1,6 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { Modal, Tab, Tabs, Table, Button, Form, InputGroup, Spinner, Alert } from 'react-bootstrap';
 import { ProcessContext, buildUrlPath } from './ProcessContext';
+import { AuthContext } from './AuthContext';
 import {
   useProjectMembers,
   useProjectInvites,
@@ -10,6 +11,7 @@ import {
   usePublications,
   useCreatePublication,
   useDeletePublication,
+  useUpdatePublication,
 } from './datamodel/useQueries';
 
 export default function ProjectMembersModal({ show, onHide, projectId, projectName }) {
@@ -207,10 +209,12 @@ function PendingInvitesTab({ projectId }) {
 }
 
 function PublicationsTab({ projectId }) {
+  const { user } = useContext(AuthContext);
   const { selectedEnvironment, selectedEnvironmentVersion, activeProcess, currentPart, currentSounding } = useContext(ProcessContext);
   const { data: publications = [], isLoading } = usePublications(projectId);
   const createPublication = useCreatePublication(projectId);
   const deletePublication = useDeletePublication(projectId);
+  const updatePublication = useUpdatePublication(projectId);
   const [findable, setFindable] = useState(false);
   const [allowAnonymous, setAllowAnonymous] = useState(true);
   const [copiedId, setCopiedId] = useState(null);
@@ -249,6 +253,22 @@ function PublicationsTab({ projectId }) {
     }
   };
 
+  const handleToggleFindable = async (pub) => {
+    try {
+      await updatePublication.mutateAsync({ publicationId: pub.id, findable: !pub.findable });
+    } catch (error) {
+      alert('Failed to update publication: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  const handleToggleSuperpublic = async (pub) => {
+    try {
+      await updatePublication.mutateAsync({ publicationId: pub.id, superpublic: !pub.superpublic });
+    } catch (error) {
+      alert('Failed to update publication: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
   if (isLoading) return <Spinner animation="border" />;
 
   return (
@@ -261,7 +281,8 @@ function PublicationsTab({ projectId }) {
         <Table size="sm" hover className="mb-3">
           <thead>
             <tr>
-              <th>Findable</th>
+              <th>Public</th>
+              {user?.is_admin && <th>Superpublic</th>}
               <th>Anonymous</th>
               <th>Created</th>
               <th></th>
@@ -270,7 +291,25 @@ function PublicationsTab({ projectId }) {
           <tbody>
             {publications.map(pub => (
               <tr key={pub.id}>
-                <td>{pub.findable ? 'Yes' : 'No'}</td>
+                <td>
+                  <Form.Check
+                    type="checkbox"
+                    checked={pub.findable}
+                    onChange={() => handleToggleFindable(pub)}
+                    disabled={updatePublication.isPending || pub.superpublic}
+                    title={pub.superpublic ? 'Superpublic implies public — unset superpublic first' : undefined}
+                  />
+                </td>
+                {user?.is_admin && (
+                  <td>
+                    <Form.Check
+                      type="checkbox"
+                      checked={pub.superpublic}
+                      onChange={() => handleToggleSuperpublic(pub)}
+                      disabled={updatePublication.isPending}
+                    />
+                  </td>
+                )}
                 <td>{pub.allow_anonymous ? 'Yes' : 'No'}</td>
                 <td>{new Date(pub.created_at).toLocaleDateString()}</td>
                 <td className="text-end">
@@ -301,7 +340,7 @@ function PublicationsTab({ projectId }) {
         <Form.Check
           type="checkbox"
           id="publication-findable"
-          label="Findable — show up in every user's Projects list"
+          label="Public — discoverable via search"
           checked={findable}
           onChange={e => setFindable(e.target.checked)}
           className="mb-2"

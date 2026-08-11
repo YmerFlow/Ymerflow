@@ -109,6 +109,19 @@ export async function getPublicationInfo(publicationId) {
   return response.data;
 }
 
+export async function getPublicPublications() {
+  const response = await apiClient.get('/publications/public');
+  return response.data;
+}
+
+export async function updatePublication(projectId, publicationId, { findable, superpublic } = {}) {
+  const body = {};
+  if (findable !== undefined) body.findable = findable;
+  if (superpublic !== undefined) body.superpublic = superpublic;
+  const response = await apiClient.patch(`/projects/${projectId}/publications/${publicationId}`, body);
+  return response.data;
+}
+
 export async function getApiKeys() {
   const response = await apiClient.get('/auth/api-keys');
   return response.data;
@@ -509,10 +522,11 @@ export async function saveWorkspaceVersion(workspaceId, layout) {
   return response.data;
 }
 
-export async function updateWorkspace(workspaceId, { title, is_public } = {}) {
+export async function updateWorkspace(workspaceId, { title, is_public, superpublic } = {}) {
   const body = {};
   if (title !== undefined) body.title = title;
   if (is_public !== undefined) body.is_public = is_public;
+  if (superpublic !== undefined) body.superpublic = superpublic;
   const response = await apiClient.patch(`/workspace/${workspaceId}`, body);
   return response.data;
 }

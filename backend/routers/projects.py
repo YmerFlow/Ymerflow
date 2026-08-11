@@ -47,12 +47,13 @@ async def list_projects(
     db: AsyncSession = Depends(get_db)
 ):
     """Return the projects the caller can see, in display order:
-    [pinned currently-viewed publication] → [own projects] → [other findable publications].
+    [pinned currently-viewed publication] → [own projects] → [other superpublic publications].
 
     Each real project has an 'id' (UUID string) and a 'name'. A publication entry has
     'id' (the publication id, usable anywhere a project id is accepted, read-only),
     'name' (the underlying project's name with " (ro)" appended), 'read_only': true,
-    and 'findable'.
+    'findable' (public/searchable), and 'superpublic' (listed directly here — implies
+    findable).
 
     When authenticated via API key, own projects are restricted to the key's scoped
     project. When unauthenticated, own projects and other findable publications are
@@ -79,7 +80,7 @@ async def list_projects(
         pub_stmt = (
             select(Publication)
             .options(selectinload(Publication.project))
-            .where(Publication.findable == True)  # noqa: E712
+            .where(Publication.superpublic == True)  # noqa: E712
             .order_by(Publication.created_at)
         )
         pub_result = await db.execute(pub_stmt)
@@ -93,7 +94,8 @@ async def list_projects(
                 "created_at": pub.project.created_at.isoformat(),
                 "storage_status": None,
                 "read_only": True,
-                "findable": True,
+                "findable": pub.findable,
+                "superpublic": pub.superpublic,
             })
         combined_ids |= {e["id"] for e in findable_entries}
     else:
@@ -117,6 +119,7 @@ async def list_projects(
                 "storage_status": None,
                 "read_only": True,
                 "findable": publication.findable,
+                "superpublic": publication.superpublic,
             }
             result_list = [pinned_entry] + result_list
 

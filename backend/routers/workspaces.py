@@ -323,17 +323,23 @@ async def update_workspace(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Rename a workspace and/or toggle whether it's listed in the public gallery.
+    Rename a workspace and/or toggle its public/superpublic status.
 
-    Any member of the workspace's home project may publish or unpublish it — there's
-    no creator-only or admin-only restriction, matching this codebase's binary
-    (member/non-member) project permission model.
+    Any member of the workspace's home project may publish/unpublish it (public tier).
+    Only site admins may set it superpublic (listed directly in the toolbar dropdown).
+    Setting superpublic=true always also sets is_public=true.
     """
     workspace = await _require_workspace_member(workspace_id, auth, db)
 
     if "title" in body:
         workspace.title = body["title"]
-    if "is_public" in body:
+    if "superpublic" in body:
+        if not auth.user.is_admin:
+            raise HTTPException(status_code=403, detail="Admin access required")
+        workspace.superpublic = bool(body["superpublic"])
+        if workspace.superpublic:
+            workspace.is_public = True
+    if "is_public" in body and not workspace.superpublic:
         workspace.is_public = bool(body["is_public"])
 
     await db.commit()
