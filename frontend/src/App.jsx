@@ -137,9 +137,10 @@ var initial_layout = {
 
 function MenuBarWithComponents() {
   useRegisterMenuComponent(["_projectDropdown"], ProjectDropdown, -2);
+  useRegisterMenuComponent(["_workspaceMenu"], WorkspaceMenu, 2);
   useRegisterMenuComponent(["_processSelector"], ProcessSelector, -1);
 
-  return <><UserMenu /><WorkspaceMenu /><MenuBar /></>;
+  return <><UserMenu /><MenuBar /></>;
 }
 
 function PageChrome({ children }) {
