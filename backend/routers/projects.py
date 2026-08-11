@@ -10,7 +10,7 @@ import secrets
 import logging
 
 from backend.database import get_db, async_session_maker
-from backend.models import Project, ProjectMember, ProjectInvite, User, Publication, Upload
+from backend.models import Project, ProjectMember, ProjectInvite, User, Publication, Upload, Process
 from backend.models.storage_backend import get_allowed_storage_backends
 from backend.models.project_export import ProjectExport, ProjectImport
 from backend.services.auth_service import get_current_user, get_current_user_optional, require_project_member, AuthContext
@@ -220,28 +220,38 @@ async def get_project_export(
     return export_row.to_dict()
 
 
-@router.post("/import", summary="Import a project from a previously-uploaded export zip")
+@router.post("/{project_id}/import", summary="Seed a project from a previously-uploaded export zip")
 async def import_project(
     body: Dict,
+    project: Project = Depends(require_project_member),
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Start a background job that unpacks an export zip (submitted via the normal
-    /projects/{project_id}/upload flow, into any project the caller is a member of) into a
-    brand-new project owned solely by the caller. Body: { "upload_id": "<id>" }.
-    Poll GET /projects/import/{import_id} for progress; once state is "done", it returns
-    the new project_id.
+    """Start a background job that unpacks an export zip INTO this project. The project must be
+    freshly created and empty — this backs the "seed from export" option in the Create Project
+    dialog: the client creates the project (POST /projects, which sets its name/storage backend),
+    uploads the zip into that same project (POST /projects/{id}/upload), then calls this. The
+    project's own name and storage backend are used as-is; nothing from the export overrides them.
+
+    Body: { "upload_id": "<id>" }. Poll GET /projects/import/{import_id}; on "done" it returns
+    this project_id. On failure the whole project is deleted (it was empty), rolling the
+    create+import back as one action.
     """
     upload_id = body.get("upload_id")
     if not upload_id:
         raise HTTPException(status_code=400, detail="upload_id is required")
 
-    stmt = select(Upload).where(Upload.id == upload_id)
-    result = await db.execute(stmt)
-    if result.scalar_one_or_none() is None:
+    if (await db.execute(select(Upload).where(Upload.id == upload_id))).scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Upload not found")
 
-    import_row = ProjectImport(upload_id=upload_id, created_by_id=auth.user.id)
+    # Guard: only seed an empty project. Cleanup-on-failure deletes the whole target project, so
+    # importing into a populated project could destroy pre-existing data — and merging an import
+    # into existing content isn't a supported operation anyway.
+    existing = await db.execute(select(Process.id).where(Process.project_id == project.id).limit(1))
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=400, detail="Import requires an empty project (this one already has content)")
+
+    import_row = ProjectImport(upload_id=upload_id, created_by_id=auth.user.id, project_id=project.id)
     db.add(import_row)
     await db.commit()
     await db.refresh(import_row)

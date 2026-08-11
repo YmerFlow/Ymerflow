@@ -257,8 +257,10 @@ export async function getProjectExport(projectId, exportId) {
   return response.data;
 }
 
-export async function importProject(uploadId) {
-  const response = await apiClient.post('/projects/import', { upload_id: uploadId });
+// Seed an already-created (empty) project from a previously-uploaded export zip. The zip must
+// have been uploaded into this same project (POST /projects/{projectId}/upload).
+export async function importProject(projectId, uploadId) {
+  const response = await apiClient.post(`/projects/${projectId}/import`, { upload_id: uploadId });
   return response.data;
 }
 

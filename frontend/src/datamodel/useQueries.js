@@ -119,10 +119,11 @@ export function useProjectExport(projectId, exportId, options = {}) {
   });
 }
 
-// Hook to start a project import job from a previously-uploaded zip.
+// Hook to seed an already-created (empty) project from a previously-uploaded export zip.
+// The zip must have been uploaded into that same project.
 export function useImportProject() {
   return useMutation({
-    mutationFn: (uploadId) => importProject(uploadId),
+    mutationFn: ({ projectId, uploadId }) => importProject(projectId, uploadId),
   });
 }
 

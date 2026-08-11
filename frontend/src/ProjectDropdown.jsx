@@ -2,28 +2,23 @@ import React, { useContext, useState } from 'react';
 import { Dropdown } from 'react-bootstrap';
 import { useQueryClient } from '@tanstack/react-query';
 import { ProcessContext } from './ProcessContext';
-import { useCreateProject, queryKeys } from './datamodel/useQueries';
+import { queryKeys } from './datamodel/useQueries';
 import ProjectModal from './ProjectModal';
 import ProjectMembersModal from './ProjectMembersModal';
 import ProjectExportModal from './ProjectExportModal';
-import ProjectImportModal from './ProjectImportModal';
 
 function ProjectDropdown() {
   const { projects, currentProject, setCurrentProject, projectsLoading } = useContext(ProcessContext);
   const queryClient = useQueryClient();
-  const createProjectMutation = useCreateProject();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
 
   const currentProjectObj = projects.find(p => p.id === currentProject);
 
   const handleProjectSelect = (projectId) => {
     if (projectId === '_create_new') {
       setShowCreateModal(true);
-    } else if (projectId === '_import_project') {
-      setShowImportModal(true);
     } else if (projectId === '_export_project') {
       if (currentProjectObj?.read_only) return;
       setShowExportModal(true);
@@ -35,20 +30,11 @@ function ProjectDropdown() {
     }
   };
 
-  const handleImported = async (newProjectId) => {
+  // Called by ProjectModal once a project is created — whether empty or seeded from an import.
+  const handleProjectCreated = async (newProjectId) => {
     await queryClient.invalidateQueries({ queryKey: queryKeys.projects });
     setCurrentProject(newProjectId);
-    setShowImportModal(false);
-  };
-
-  const handleCreateProject = async (name, storageBackendId) => {
-    try {
-      const newProject = await createProjectMutation.mutateAsync({ name, storageBackendId });
-      setCurrentProject(newProject.id);
-      setShowCreateModal(false);
-    } catch (error) {
-      console.error('Failed to create project:', error);
-    }
+    setShowCreateModal(false);
   };
 
   if (projectsLoading) {
@@ -90,13 +76,6 @@ function ProjectDropdown() {
               Export Project...
             </Dropdown.Item>
           )}
-          <Dropdown.Item
-            eventKey="_import_project"
-            disabled={!currentProject}
-            title={!currentProject ? 'Create or join a project first — the import zip is staged there' : undefined}
-          >
-            Import Project...
-          </Dropdown.Item>
           <Dropdown.Item eventKey="_create_new">
             Create New Project...
           </Dropdown.Item>
@@ -106,7 +85,7 @@ function ProjectDropdown() {
       <ProjectModal
         show={showCreateModal}
         onHide={() => setShowCreateModal(false)}
-        onSubmit={handleCreateProject}
+        onCreated={handleProjectCreated}
       />
 
       {currentProject && (
@@ -126,12 +105,6 @@ function ProjectDropdown() {
           projectName={currentProjectObj?.name || ''}
         />
       )}
-
-      <ProjectImportModal
-        show={showImportModal}
-        onHide={() => setShowImportModal(false)}
-        onImported={handleImported}
-      />
     </>
   );
 }

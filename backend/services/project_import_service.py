@@ -13,15 +13,14 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 import fsspec
-from sqlalchemy import select, insert
+from sqlalchemy import select, insert, delete
 
 from backend.database import async_session_maker
 from backend.models import (
     Process, ProcessVersion, ProcessLog, ProcessTag, Environment, Dataset, Upload, User, ProcessState,
 )
 from backend.models.process import process_version_tags_table
-from backend.models.project import Project, ProjectMember
-from backend.models.storage_backend import get_allowed_storage_backends
+from backend.models.project import Project
 from backend.models.project_export import ProjectImport
 from backend.services.storage_service import (
     get_storage_base_url, get_fsspec_storage_options, resolve_bucket,
@@ -61,36 +60,25 @@ def _resolve_zip_entry(zip_path: str) -> str:
     return zip_path[2:] if zip_path.startswith("./") else zip_path
 
 
-async def _do_import(db, import_row: ProjectImport, manifest: dict, zf: zipfile.ZipFile, created: dict) -> str:
-    """created is a mutable out-param: created['project_id'] is set the moment the Project row
-    is committed, so run_import can find (and clean up) it even if we raise before returning —
-    e.g. mid-way through storage provisioning or blob copying.
+async def _do_import(db, import_row: ProjectImport, manifest: dict, zf: zipfile.ZipFile) -> str:
+    """Import the manifest's contents INTO the caller-created target project
+    (import_row.project_id). The target is created by POST /projects (which sets its name,
+    storage backend and sole-owner membership) and is guaranteed empty — this only seeds it,
+    it never creates a second project. On failure run_import deletes that target project (safe
+    precisely because it was empty), rolling the whole create+import action back.
     """
-    user = (await db.execute(select(User).where(User.id == import_row.created_by_id))).scalar_one()
+    project = (await db.execute(
+        select(Project).where(Project.id == import_row.project_id)
+    )).scalar_one_or_none()
+    if project is None:
+        raise RuntimeError("Target project not found")
 
-    allowed_backends = await get_allowed_storage_backends(db, user)
-    if not allowed_backends:
-        raise RuntimeError("No storage backend available to create the imported project against")
-    backend = allowed_backends[0]
-
-    project = Project(
-        id=str(uuid.uuid4()),
-        name=manifest.get("project", {}).get("name", "Imported Project"),
-        created_at=datetime.utcnow(),
-        storage_status="pending",
-        storage_backend_id=backend.id,
-    )
-    db.add(project)
-
-    # Design Decision 5: importing user becomes sole owner — source ProjectMember/ProjectInvite
-    # rows aren't even in the manifest.
-    db.add(ProjectMember(project_id=project.id, user_id=user.id, joined_at=datetime.utcnow()))
-    await db.commit()
-    created["project_id"] = project.id
-
+    # Storage was provisioned by the create step, but ensure_ready is idempotent — call it so a
+    # blob copy never races an unprovisioned bucket.
     await ensure_ready(db, project)
-    project.storage_status = "ready"
-    await db.commit()
+    if project.storage_status != "ready":
+        project.storage_status = "ready"
+        await db.commit()
 
     target_storage_base = await get_storage_base_url(db, project.id)
     target_scheme = target_storage_base.split("://", 1)[0]
@@ -257,10 +245,7 @@ async def _do_import(db, import_row: ProjectImport, manifest: dict, zf: zipfile.
 
 
 async def run_import(import_id: str):
-    # created['project_id'] is set by _do_import the moment the Project row is committed, so
-    # it's visible here even if _do_import later raises (e.g. mid-way through storage
-    # provisioning or blob copying) — needed to clean up the partial project on failure.
-    created = {}
+    target_project_id = None
     try:
         async with async_session_maker() as db:
             import_row = (await db.execute(
@@ -269,6 +254,7 @@ async def run_import(import_id: str):
             if import_row is None:
                 logger.error(f"ProjectImport not found: {import_id}")
                 return
+            target_project_id = import_row.project_id
 
             import_row.state = "running"
             await db.commit()
@@ -289,38 +275,48 @@ async def run_import(import_id: str):
 
             with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
                 manifest = json.loads(zf.read("manifest.json"))
-                created_project_id = await _do_import(db, import_row, manifest, zf, created)
+                await _do_import(db, import_row, manifest, zf)
 
-            import_row.project_id = created_project_id
             import_row.state = "done"
             import_row.completed_at = datetime.utcnow()
             await db.commit()
             await ws_manager.broadcast_state({
-                "type": "project_import", "id": import_id, "state": "done", "project_id": created_project_id,
+                "type": "project_import", "id": import_id, "state": "done", "project_id": target_project_id,
             })
 
     except Exception as e:
         logger.error(f"Project import failed: {import_id} - {e}", exc_info=True)
         try:
             async with async_session_maker() as db:
-                created_project_id = created.get("project_id")
-                if created_project_id is not None:
-                    # Design Decision 7: import is idempotent-on-retry — a partial Project
-                    # (and everything cascaded from it) is deleted rather than left dangling.
-                    proj = (await db.execute(
-                        select(Project).where(Project.id == created_project_id)
-                    )).scalar_one_or_none()
-                    if proj is not None:
-                        await db.delete(proj)
-
                 import_row = (await db.execute(
                     select(ProjectImport).where(ProjectImport.id == import_id)
                 )).scalar_one_or_none()
                 if import_row is not None:
+                    # Detach the FK before deleting the project, then mark failed.
                     import_row.state = "failed"
                     import_row.error = str(e)
                     import_row.project_id = None
-                    await db.commit()
+                    await db.flush()
+
+                if target_project_id is not None:
+                    # Roll the whole create+import back: the target project was created empty for
+                    # this import (POST /projects/{id}/import requires an empty project), so
+                    # deleting it — and everything the import cascaded into it — loses no
+                    # pre-existing data and never leaves a half-imported project dangling.
+                    #
+                    # ProcessTag has a project_id FK but no ORM relationship on Project, so the
+                    # SQLAlchemy delete-cascade that removes processes/datasets/members won't touch
+                    # tags the import already created — and dev SQLite doesn't enforce the DB-level
+                    # ON DELETE CASCADE either. Delete them explicitly so the rollback is clean on
+                    # every backend, not just Postgres.
+                    await db.execute(delete(ProcessTag).where(ProcessTag.project_id == target_project_id))
+                    proj = (await db.execute(
+                        select(Project).where(Project.id == target_project_id)
+                    )).scalar_one_or_none()
+                    if proj is not None:
+                        await db.delete(proj)
+
+                await db.commit()
             await ws_manager.broadcast_state({"type": "project_import", "id": import_id, "state": "failed"})
         except Exception as inner_e:
             logger.error(f"Failed to record import failure for {import_id}: {inner_e}", exc_info=True)
