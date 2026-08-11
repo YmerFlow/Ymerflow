@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
 import { Modal, Tab, Tabs, Table, Button, Form, Spinner, Alert } from 'react-bootstrap';
 import {
   useWorkspaces,
@@ -6,6 +6,7 @@ import {
   useUpdateWorkspace,
   useForkWorkspace,
 } from './datamodel/useQueries';
+import { ProcessContext } from './ProcessContext';
 
 export default function WorkspaceSharingModal({ show, onHide, currentProject }) {
   return (
@@ -30,6 +31,7 @@ export default function WorkspaceSharingModal({ show, onHide, currentProject }) 
 function AddPublicWorkspacesTab({ currentProject, onAdded }) {
   const { data: publicWorkspaces = [], isLoading } = usePublicWorkspaces();
   const forkWorkspace = useForkWorkspace(currentProject);
+  const { setSelectedEnvironment } = useContext(ProcessContext);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -73,6 +75,15 @@ function AddPublicWorkspacesTab({ currentProject, onAdded }) {
     } catch (err) {
       setError(err.response?.data?.detail || err.message);
     }
+  };
+
+  // Just navigate to it — no mutation, no new workspace created. The only way today to reach
+  // an unowned public workspace without forking is to already have its URL; this is the
+  // discoverable in-app path to the same thing.
+  const handleView = () => {
+    if (!selected) return;
+    setSelectedEnvironment(selected.id, selectedVersion);
+    if (onAdded) onAdded();
   };
 
   if (isLoading) return <Spinner animation="border" />;
@@ -122,6 +133,9 @@ function AddPublicWorkspacesTab({ currentProject, onAdded }) {
               <option key={v.version} value={v.version}>v{v.version}</option>
             ))}
           </Form.Select>
+          <Button variant="outline-secondary" onClick={handleView}>
+            View
+          </Button>
           <Button onClick={handleAdd} disabled={forkWorkspace.isPending}>
             {forkWorkspace.isPending ? <Spinner animation="border" size="sm" /> : 'Add to Project'}
           </Button>

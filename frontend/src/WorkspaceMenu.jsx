@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useState, useRef } from 'react';
 import { useRegisterMenu, useRegisterMenuComponent } from './flexout/MenuContext';
 import { LayoutContext } from './flexout/LayoutContext';
 import { ProcessContext } from './ProcessContext';
-import { useWorkspaces, useSaveWorkspace, useSaveWorkspaceVersion } from './datamodel/useQueries';
+import { useWorkspaces, useWorkspace, useSaveWorkspace, useSaveWorkspaceVersion } from './datamodel/useQueries';
 import WorkspaceSharingModal from './WorkspaceSharingModal';
 
 // One row per workspace: clickable title (loads the selected version, default latest) plus an
@@ -39,6 +39,7 @@ function WorkspaceRow({ workspace }) {
         onClick={() => loadVersion(displayedVersion)}
       >
         {workspace.title}
+        {workspace.is_public && <span className="badge bg-secondary ms-2">public</span>}
       </button>
       <select
         className="form-select form-select-sm"
@@ -56,8 +57,8 @@ function WorkspaceRow({ workspace }) {
 }
 
 export default function WorkspaceMenu() {
-  const { layout } = useContext(LayoutContext);
-  const { currentProject } = useContext(ProcessContext);
+  const { layout, updateLayout } = useContext(LayoutContext);
+  const { currentProject, selectedEnvironment } = useContext(ProcessContext);
   const saveWorkspace = useSaveWorkspace(currentProject);
   const layoutRef = useRef(layout);
   const [showSharingModal, setShowSharingModal] = useState(false);
@@ -66,18 +67,30 @@ export default function WorkspaceMenu() {
     layoutRef.current = layout;
   }, [layout]);
 
+  // A private workspace dropped by setCurrentProject's switch logic (ProcessContext, Decision 4)
+  // leaves selectedEnvironment null. Clear the layout too, so the previous project's panes don't
+  // stay on screen referencing processes/datasets the new project has no relationship to.
+  useEffect(() => {
+    if (!selectedEnvironment) {
+      updateLayout({ id: 'root', widget: 'Empty' });
+    }
+  }, [selectedEnvironment]);
+
   // "Save" — write the current layout back as a NEW version of the currently-loaded workspace.
   // A menu component (rather than a static useRegisterMenu action) so the label can name the
   // target workspace and disable itself when nothing is loaded — the "remembers where it came
   // from" affordance. Registered once; it reads live state from context/hooks internally.
   const [SaveCurrentWorkspace] = useState(() => function SaveCurrentWorkspaceComponent() {
-    const { currentProject: proj, selectedEnvironment, setSelectedEnvironment } = useContext(ProcessContext);
-    const { data: workspaces = [] } = useWorkspaces(proj);
-    const saveVersion = useSaveWorkspaceVersion(proj);
-    const current = workspaces.find(w => w.id === selectedEnvironment);
+    const { currentProject: proj, selectedEnvironment, setSelectedEnvironment, projects } = useContext(ProcessContext);
+    const { data: current } = useWorkspace(selectedEnvironment);
+    // Editability is membership in the workspace's home project, not whether that project
+    // happens to be the currently-open one. The `!p.read_only` guard excludes pinned
+    // read-only publication entries in `projects` — those aren't real memberships.
+    const canEdit = !!current && projects.some(p => p.id === current.project_id && !p.read_only);
+    const saveVersion = useSaveWorkspaceVersion(current?.project_id);
 
     const handleSave = async () => {
-      if (!current) return;
+      if (!current || !canEdit) return;
       try {
         const saved = await saveVersion.mutateAsync({ workspaceId: current.id, layout: layoutRef.current });
         setSelectedEnvironment(current.id, saved.version);
@@ -87,15 +100,29 @@ export default function WorkspaceMenu() {
       }
     };
 
+    const awayFromHome = current && current.project_id !== proj;
+    const label = !current
+      ? 'Save (no workspace loaded)'
+      : awayFromHome
+        ? `Save to "${current.project_name}"`
+        : `Save "${current.title}"`;
+    const title = !current
+      ? 'Load a workspace first'
+      : !canEdit
+        ? `You are not a member of "${current.project_name}" — cannot save`
+        : awayFromHome
+          ? `Save a new version to "${current.project_name}"`
+          : `Save a new version of "${current.title}"`;
+
     return (
       <button
         type="button"
         className="dropdown-item"
         onClick={handleSave}
-        disabled={!current || saveVersion.isPending}
-        title={current ? `Save a new version of "${current.title}"` : 'Load a workspace first'}
+        disabled={!canEdit || saveVersion.isPending}
+        title={title}
       >
-        {current ? `Save "${current.title}"` : 'Save (no workspace loaded)'}
+        {label}
       </button>
     );
   });
@@ -130,11 +157,17 @@ export default function WorkspaceMenu() {
   // switches — the flexout menu system has no unregister, so per-row registration would leave
   // the previous project's rows stranded in the tree.
   const [WorkspaceList] = useState(() => function WorkspaceListComponent() {
-    const { currentProject: proj } = useContext(ProcessContext);
+    const { currentProject: proj, selectedEnvironment } = useContext(ProcessContext);
     const { data: workspaces = [] } = useWorkspaces(proj);
+    const isOwned = workspaces.some(w => w.id === selectedEnvironment);
+    // Pin the URL's workspace into the list even when the current project doesn't own it —
+    // otherwise navigating to a public workspace owned by another project leaves the menu
+    // with no active row, even though the workspace loads and is perfectly viewable.
+    const { data: pinned } = useWorkspace(selectedEnvironment, { enabled: !!selectedEnvironment && !isOwned });
+    const rows = pinned && !isOwned ? [pinned, ...workspaces] : workspaces;
     return (
       <>
-        {workspaces.map(ws => (
+        {rows.map(ws => (
           <WorkspaceRow key={ws.id} workspace={ws} />
         ))}
       </>

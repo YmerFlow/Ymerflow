@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useMemo, useState, useEffect, useContext, useReducer } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useProcesses, useEnvironments, useProcessOutputDatasets, useProjects, useCreateProcess } from "./datamodel/useQueries";
+import { useProcesses, useEnvironments, useProcessOutputDatasets, useProjects, useCreateProcess, useWorkspace } from "./datamodel/useQueries";
 import { loadDataset, DatasetCollectionAdapter } from './datamodel/dataset';
 import XYZ from './datamodel/libaarhusxyz';
 import { useWebSocket } from './hooks/useWebSocket';
@@ -188,6 +188,9 @@ export function ProcessProvider({ children }) {
   const { data: projects = EMPTY_ARRAY, isLoading: projectsLoading, error: projectsError } = useProjects(currentProject);
   const { data: processes = EMPTY_ARRAY, isLoading, error: processesError, refetch } = useProcesses(currentProject);
   const { data: environments = EMPTY_ARRAY, isLoading: environmentsLoading, error: environmentsError } = useEnvironments();
+  // Needed by setCurrentProject below to decide whether the currently-selected workspace
+  // (which may be owned by a different project, or public) should carry across a project switch.
+  const { data: currentWorkspace } = useWorkspace(selectedEnvironment);
 
   // InUse diff state
   const [inUseDiffState, dispatchInUseDiff] = useReducer(inUseDiffReducer, { diffs: {}, history: {} });
@@ -240,9 +243,15 @@ export function ProcessProvider({ children }) {
   }, [navigate, currentProject, activeProcess, currentPart, currentSounding]);
 
   const setCurrentProject = useCallback((project) => {
-    const path = buildUrlPath(selectedEnvironment, selectedEnvironmentVersion, project, null, null, null, null);
+    // A public workspace's identity is independent of "current project", so it stays open
+    // across a switch. A private workspace has no meaning outside its owning project, so it's
+    // dropped rather than left stranded pointing at a project that doesn't have it.
+    const [carryWorkspace, carryWorkspaceVersion] = currentWorkspace?.is_public
+      ? [selectedEnvironment, selectedEnvironmentVersion]
+      : [null, null];
+    const path = buildUrlPath(carryWorkspace, carryWorkspaceVersion, project, null, null, null, null);
     navigate(path);
-  }, [navigate, selectedEnvironment, selectedEnvironmentVersion]);
+  }, [navigate, selectedEnvironment, selectedEnvironmentVersion, currentWorkspace]);
 
   const setActiveProcess = useCallback((process) => {
     const path = buildUrlPath(selectedEnvironment, selectedEnvironmentVersion, currentProject, process?.processId, process?.version, null, null);
@@ -489,15 +498,6 @@ export function ProcessProvider({ children }) {
       setCurrentProject(projects[0].id);
     }
   }, [projects, currentProject, setCurrentProject, location.pathname]);
-
-  // Auto-select latest environment if none selected (only on /app routes)
-  React.useEffect(() => {
-    if (!selectedEnvironment && environments.length > 0 && location.pathname.startsWith('/app')) {
-      // Select the last environment (most recently created)
-      const latestEnv = environments[environments.length - 1];
-      setSelectedEnvironment(latestEnv.id);
-    }
-  }, [environments, selectedEnvironment, setSelectedEnvironment, location.pathname]);
 
   const contextValue = useMemo(
     () => ({
