@@ -48,7 +48,7 @@ implementation already has to `registry-backend-hooks.md`.
   - Exposure is a hardcoded `NodePort` (`k8s/frontend/service.yaml`, port 30080), published on the
     host by Minikube's docker driver; `SERVER_URL` defaults to `http://$(hostname -I):30080`.
   - The DB migration step is a raw `kubectl apply` of a `batch/v1 Job` with a **hardcoded**
-    `image: nagelfluh-backend:prod` and a literal `DATABASE_URL` (lines ~374–398 of the script) —
+    `image: ymerflow-backend:prod` and a literal `DATABASE_URL` (lines ~374–398 of the script) —
     duplicated again as an initContainer on the backend Deployment itself.
   - `kubectl apply -R -f "${PROJECT_ROOT}/k8s/"` applies namespaces, Postgres, backend/frontend,
     RBAC, Headlamp/pgAdmin — assumes one single reachable cluster/kubeconfig context for
@@ -63,7 +63,7 @@ implementation already has to `registry-backend-hooks.md`.
   `docs/plans/done/registry-backend-hooks.md` added `RegistryBackend`/`RegistryProtocolHandler`,
   `image_url()`/`pull_credentials()`/`configure_push_auth()`, and per-Job ephemeral pull secrets —
   today wired up only for the process-runner image (`docker/build.sh` →
-  `backend/bin/nagelfluh-registry-push`). Backend/frontend images are not pushed through it at
+  `backend/bin/yf-registry-push`). Backend/frontend images are not pushed through it at
   all. Any cluster that isn't sharing a Docker daemon with the build host (i.e. anything but
   Minikube's local-daemon trick) needs its app images to go through this same axis.
 - **`self_service_registration` on `ClusterProvider`** is the existing precedent for a per-type
@@ -94,9 +94,9 @@ implementation already has to `registry-backend-hooks.md`.
    `kubernetes_asyncio` (same library `K8sClient`/`ensure_cluster_job_ready()` already use, not
    shell/`kubectl`), applying:
    - backend + frontend `Deployment`/`Service` (parameterized by `images["backend"]`/
-     `images["frontend"]`, replacing the hardcoded `nagelfluh-backend:prod`/
+     `images["frontend"]`, replacing the hardcoded `ymerflow-backend:prod`/
      `nagelfluh-frontend:prod` + `imagePullPolicy: Never`),
-   - the `nagelfluh-backend-config`/`nagelfluh-backend-secret` `ConfigMap`/`Secret` (replacing the
+   - the `ymerflow-backend-config`/`nagelfluh-backend-secret` `ConfigMap`/`Secret` (replacing the
      imperative `kubectl create secret` block),
    - the DB migration `Job` (replacing the hardcoded-image heredoc in `runall-minikube.sh`).
    This mirrors the shape of `cluster_job_provisioning.py`'s `ensure_cluster_job_ready()`: a shared
@@ -137,11 +137,11 @@ implementation already has to `registry-backend-hooks.md`.
   for the same reason
   `ensure_cluster_job_ready()` replaced *both* existing shell implementations rather than just the
   new one — but flag as open since it's a larger refactor of a script that works today.
-- New orchestration entry point name/shape — `backend/bin/nagelfluh-deploy-app` (new, shell-into-
-  Python bridge like `nagelfluh-bootstrap-provision`) vs. folding into
-  `nagelfluh-bootstrap-provision` itself — decide once Phase 5 is scoped.
+- New orchestration entry point name/shape — `backend/bin/yf-deploy-app` (new, shell-into-
+  Python bridge like `yf-bootstrap-provision`) vs. folding into
+  `yf-bootstrap-provision` itself — decide once Phase 5 is scoped.
 - Whether `Secret`/`ConfigMap` field names change at all from today's `nagelfluh-backend-secret`/
-  `nagelfluh-backend-config` (Design decision 3 assumes they stay the same) — confirm no other code
+  `ymerflow-backend-config` (Design decision 3 assumes they stay the same) — confirm no other code
   depends on the exact `kubectl create secret --dry-run=client` invocation shape rather than just
   the resulting object.
 

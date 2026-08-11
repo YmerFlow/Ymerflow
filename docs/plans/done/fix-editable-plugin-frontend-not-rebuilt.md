@@ -10,7 +10,7 @@ served bundle is a stale, pre-existing build artifact that no install step regen
 ## Background — the bug
 
 A fix to `plugins/ymerflow-gcp/frontend/src/GkeClusterForm.jsx` was committed to the plugin's git
-repo, `APP_IMAGE_VERSION` (from `backend/bin/nagelfluh-resolve-app-image-tag`, which hashes each
+repo, `APP_IMAGE_VERSION` (from `backend/bin/yf-resolve-app-image-tag`, which hashes each
 local-path plugin's `git rev-parse HEAD`) correctly changed, and a fresh backend image was built and
 pulled — yet the browser still ran the old code. Root cause, traced end to end:
 
@@ -42,7 +42,7 @@ Net effect: the frontend build is a step that, in practice, only ever ran manual
 non-editable install. The normal `runall.sh` path (dev or prod) does not rebuild it. This is **not**
 prod-specific — `dev/runall.sh:107` calls the same `install-backend-plugins.sh`.
 
-Note the tag machinery is working correctly and needs no change: `nagelfluh-resolve-app-image-tag`
+Note the tag machinery is working correctly and needs no change: `yf-resolve-app-image-tag`
 already changed the tag off the plugin's git HEAD. The defect is purely that `frontend_dist/` is not
 regenerated from that committed source at install time.
 
@@ -158,6 +158,6 @@ No change to `scripts/install-backend-plugins.sh`, the Dockerfiles, `runall.sh`,
 
 - The immediate operational unblock (manually rebuilding the two stale `frontend_dist/` dirs for the
   current deploy) — a separate one-off action, not part of this pipeline fix.
-- Content-addressed tagging (`nagelfluh-resolve-app-image-tag`) — already correct; unchanged.
+- Content-addressed tagging (`yf-resolve-app-image-tag`) — already correct; unchanged.
 - Any change to how the host loads remotes or to `frontend_dist` content-addressing in
   `backend/plugin_assets.py`.

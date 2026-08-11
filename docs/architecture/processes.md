@@ -214,7 +214,7 @@ The `get_schema.py` script:
 
 ## Example Process Types
 
-See `docker/base-runner/nagelfluh_processes/fake_processes.py` for reference implementations:
+See `docker/base-runner/ymerflow_processes/fake_processes.py` for reference implementations:
 
 ### FFT Process
 

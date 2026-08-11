@@ -3,7 +3,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="nagelfluh-processes",
+    name="ymerflow-processes",
     version="0.1.0",
     description="Process type implementations for Nagelfluh",
     packages=find_packages(),
@@ -21,9 +21,9 @@ setup(
     ],
     entry_points={
         "nagelfluh.process_types": [
-            "create_environment=nagelfluh_processes.fake_processes:create_environment",
-            "compound_filter=nagelfluh_processes.compound_filter:compound_filter",
-            "build_frontend_plugin=nagelfluh_processes.build_frontend_plugin:build_frontend_plugin",
+            "create_environment=ymerflow_processes.fake_processes:create_environment",
+            "compound_filter=ymerflow_processes.compound_filter:compound_filter",
+            "build_frontend_plugin=ymerflow_processes.build_frontend_plugin:build_frontend_plugin",
         ],
     },
 )

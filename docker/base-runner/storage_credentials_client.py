@@ -72,7 +72,7 @@ def spawn_refresher(env: dict) -> subprocess.Popen:
 class RefreshableStorageKwargs(collections.abc.Mapping):
     """Drop-in replacement for the plain fsspec storage_kwargs dict, usable via `**storage_kwargs`
     (dict-unpacking only needs `.keys()` and `__getitem__`, both of which this implements) — so
-    every existing process type (nagelfluh_processes/aem_processes/mag_processes) that does
+    every existing process type (ymerflow_processes/aem_processes/mag_processes) that does
     `storage_kwargs = storage_context['storage_kwargs']; ...; fsspec.open(url, **storage_kwargs)`
     keeps working unmodified, transparently getting freshly-minted kwargs on every single call
     instead of the stale ones from job launch.

@@ -3,7 +3,7 @@
 Makes a `Cluster` actually ready to run Nagelfluh Jobs: creates the jobs namespace, installs the
 Kueue operator (if not already present) and waits for it to become fully ready, sizes and applies
 a Kueue `ResourceFlavor`/`ClusterQueue`/`LocalQueue` from real node allocatable capacity, and
-applies the backend's `nagelfluh-backend-jobs`/`nagelfluh-backend-kueue-reader` RBAC.
+applies the backend's `ymerflow-backend-jobs`/`ymerflow-backend-kueue-reader` RBAC.
 
 This replaces two independent, duplicated shell implementations (the minikube-only
 `plugins/ymerflow-minikube`'s provision-nagelfluh-jobs.sh and the GCP plugin's own GKE setup script) with one
@@ -84,8 +84,8 @@ KUEUE_WEBHOOK_POLL_INTERVAL_SECONDS = 5
 # through ensure_cluster_job_ready()'s signature for a value that's effectively always constant.
 BACKEND_SERVICE_ACCOUNT_NAMESPACE = "nagelfluh"
 
-RBAC_ROLE_NAME = "nagelfluh-backend-jobs"
-RBAC_CLUSTERROLE_NAME = "nagelfluh-backend-kueue-reader"
+RBAC_ROLE_NAME = "ymerflow-backend-jobs"
+RBAC_CLUSTERROLE_NAME = "ymerflow-backend-kueue-reader"
 
 
 async def ensure_cluster_job_ready(k8s_client, namespace: str, quota_config: dict | None = None) -> None:

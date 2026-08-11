@@ -10,14 +10,14 @@ same library `K8sClient`/`ensure_cluster_job_ready()` already use), not shell/`k
 
 What this module does NOT own — stays outside app-hosting scope: the jobs namespace, Postgres,
 pgAdmin/Headlamp (applied identically for every cluster type via the existing `k8s/*.yaml`
-manifests, against whatever cluster `nagelfluh-materialize-kubeconfig` resolves — see
+manifests, against whatever cluster `yf-materialize-kubeconfig` resolves — see
 docs/plans/base-infrastructure-via-cluster-provider.md), MinIO/the Docker registry (NOT static
 manifests since the minikube-plugin migration — deployed per-protocol by each axis's own
 `bootstrap()`, see docs/plans/done/generic-deployment-orchestration.md), and the backend's
 job-running RBAC (`ensure_cluster_job_ready()`'s concern). This module owns only: the backend/frontend
 Deployments, the backend's in-namespace ClusterIP Service (`backend-service` — also the target of
 the separate, unrelated `nagelfluh-jobs` ExternalName Service job pods use to reach the backend,
-which stays a static k8s/ manifest), the `nagelfluh-backend-config`/`nagelfluh-backend-secret`
+which stays a static k8s/ manifest), the `ymerflow-backend-config`/`nagelfluh-backend-secret`
 ConfigMap/Secret, and the one-shot DB migration Job. How external traffic actually reaches the
 frontend (NodePort, LoadBalancer, Ingress, ...) is deliberately NOT this module's job — that's the
 "genuinely provider-specific part" a `ClusterProvider.expose_app()` implementation owns (Design
@@ -44,7 +44,7 @@ from backend.services.k8s_client import API_REQUEST_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
-CONFIG_MAP_NAME = "nagelfluh-backend-config"
+CONFIG_MAP_NAME = "ymerflow-backend-config"
 SECRET_NAME = "nagelfluh-backend-secret"
 IMAGE_PULL_SECRET_NAME = "nagelfluh-app-pull"
 MIGRATION_JOB_NAME = "nagelfluh-app-migrate"
@@ -81,7 +81,7 @@ async def apply_app_workloads(k8s_client, namespace: str, images: dict, app_conf
         images: `{"backend": <fully-resolved image ref>, "frontend": <fully-resolved image ref>}`
             — already-resolved `RegistryProtocolHandler.image_url()` strings (Design decision 4);
             this module never resolves a registry itself.
-        app_config: flat str->str ConfigMap data merged into `nagelfluh-backend-config`.
+        app_config: flat str->str ConfigMap data merged into `ymerflow-backend-config`.
         secrets: flat str->str Secret data merged into `nagelfluh-backend-secret` — must include
             "DATABASE_URL" (already fully resolved, e.g. with the Postgres password inlined;
             Postgres itself is outside this module's scope, see module docstring). May include
@@ -265,7 +265,7 @@ async def _run_migration_job(k8s_client, namespace, backend_image, pull_secret_n
                         # content — so IfNotPresent is correct and faster than an unconditional
                         # re-pull, same as job_orchestrator.py's existing IfNotPresent precedent.
                         image_pull_policy="IfNotPresent",
-                        command=["python", "backend/bin/nagelfluh-migrate"],
+                        command=["python", "backend/bin/yf-migrate"],
                         env_from=_env_from(),
                     )],
                 ),

@@ -82,7 +82,7 @@ to a single generic entry point, used identically for the backend, frontend, and
 images:
 
 ```
-backend/bin/nagelfluh-build-and-push <dockerfile> <build-context> <repository> <tag> [docker build args...]
+backend/bin/yf-build-and-push <dockerfile> <build-context> <repository> <tag> [docker build args...]
 ```
 
 which:
@@ -160,19 +160,19 @@ CLUSTER_TYPE=minikube
 CLUSTER_CONFIG_JSON={}
 ```
 
-`backend/bin/nagelfluh-bootstrap-provision` (run before migrations in both `dev/runall.sh` and
+`backend/bin/yf-bootstrap-provision` (run before migrations in both `dev/runall.sh` and
 `prod/runall-production.sh`) resolves the matching handler/provider and calls `.bootstrap(config)`;
 the enriched `{protocol, config}` result is what the generic seed migrations (`9623bab8493d` for
 storage, `d1266f2f6e68` for cluster, `50dd9ce3311b` for registry) persist onto the default row.
 Every one of `plugins/ymerflow-minikube`'s three `bootstrap()`s is idempotent (a no-op once
 already provisioned) and internally makes sure the local Minikube VM is up first
 (`minikube_plugin.minikube_vm.ensure_minikube_running()`), regardless of which axis happens to run
-first. In `prod/runall-production.sh`, since `nagelfluh-bootstrap-provision` needs the full backend
+first. In `prod/runall-production.sh`, since `yf-bootstrap-provision` needs the full backend
 Python environment plus control of the host's own Minikube/Docker, it's run host-side via a
 one-off `docker run` against the freshly built backend image — with the host's Docker socket,
 `~/.minikube`, `~/.kube`, and `NAGELFLUH_DATA_DIR` bind-mounted and `--network host` (see
 `docs/plans/minikube-provisioning-plugin.md`, Design decision 2) — and its output is folded into
-`nagelfluh-backend-secret`/`nagelfluh-backend-config`, which the in-cluster `alembic-migrate` Job
+`nagelfluh-backend-secret`/`ymerflow-backend-config`, which the in-cluster `alembic-migrate` Job
 also receives via `envFrom`.
 
 See `docs/plans/done/registry-backend-hooks.md` for the full design history and rationale, and the

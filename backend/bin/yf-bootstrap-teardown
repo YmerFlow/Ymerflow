@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Resolve each configured axis's protocol/provider handler and call its teardown() hook.
 
-The teardown mirror of `nagelfluh-bootstrap-provision` (see
+The teardown mirror of `yf-bootstrap-provision` (see
 docs/plans/generic-deployment-orchestration.md, Phase 7). For each of the three pluggable-backend
 axes (registry, storage, cluster) where BOTH `<AXIS>_PROTOCOL`/`<AXIS>_CONFIG_JSON` env vars of
 the pair are set, this script:
@@ -11,7 +11,7 @@ the pair are set, this script:
     3. calls `.teardown(config)`.
 
 An axis whose env var pair is not fully set is skipped entirely — same opt-in semantics as
-nagelfluh-bootstrap-provision. Each teardown() is required to be idempotent (a no-op when nothing
+yf-bootstrap-provision. Each teardown() is required to be idempotent (a no-op when nothing
 is provisioned), so running this when the cluster is already clean, or twice in a row, is
 harmless.
 

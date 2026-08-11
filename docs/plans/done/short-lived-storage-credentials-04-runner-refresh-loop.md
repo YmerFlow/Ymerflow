@@ -57,7 +57,7 @@ refresh loop must **not** be a background thread in that same process:
   ever observes a partial write. The main process's storage_context wrapper re-reads this file
   (checking mtime) before constructing/rebuilding its fsspec filesystem instance. This is what
   makes storage_context need to become "mutable/rebuildable" rather than the plain dict it is
-  today (a real code change to how `nagelfluh_processes`/`aem_processes` obtain their filesystem
+  today (a real code change to how `ymerflow_processes`/`aem_processes` obtain their filesystem
   object) — true regardless of thread vs. process, but the file-based handoff is what makes it
   safe across a process boundary.
 - On exit (success or failure), the main process terminates the refresher subprocess

@@ -49,7 +49,7 @@ nagelfluh/
 │   └── base-runner/           # Process runner container
 │       ├── Dockerfile
 │       ├── runner.py          # Process execution script
-│       └── nagelfluh_processes/  # Process type implementations
+│       └── ymerflow_processes/  # Process type implementations
 ├── dev/                        # Development scripts
 │   ├── runall.sh              # Complete setup script (Minikube/MinIO/registry provisioning
 │   │                          #   itself now happens via plugins/ymerflow-minikube's bootstrap()
@@ -134,7 +134,7 @@ def downgrade():
 **Apply migrations:**
 
 ```bash
-env/bin/python backend/bin/nagelfluh-migrate
+env/bin/python backend/bin/yf-migrate
 ```
 
 **Rollback migration:**
@@ -409,7 +409,7 @@ See [Process Development](architecture/processes.md) for details.
 **Quick example:**
 
 ```python
-# docker/base-runner/nagelfluh_processes/my_processes.py
+# docker/base-runner/ymerflow_processes/my_processes.py
 
 class my_process:
     """My custom process."""
@@ -443,14 +443,14 @@ class my_process:
 **Register in setup.py:**
 
 ```python
-# docker/base-runner/nagelfluh_processes/setup.py
+# docker/base-runner/ymerflow_processes/setup.py
 
 setup(
-    name="nagelfluh_processes",
+    name="ymerflow_processes",
     entry_points={
         "nagelfluh.process_types": [
-            "fft=nagelfluh_processes.fake_processes:fft",
-            "my_process=nagelfluh_processes.my_processes:my_process",
+            "fft=ymerflow_processes.fake_processes:fft",
+            "my_process=ymerflow_processes.my_processes:my_process",
         ],
     },
 )
@@ -749,7 +749,7 @@ kubectl get pods -n minio -l app=minio
 ```
 
 If the host port isn't published, re-run `PYTHONPATH=. env/bin/python
-backend/bin/nagelfluh-bootstrap-provision` — `plugins/ymerflow-minikube`'s
+backend/bin/yf-bootstrap-provision` — `plugins/ymerflow-minikube`'s
 `MinikubeClusterProvider.bootstrap()` detects the missing publish and recreates minikube.
 
 ## Performance Optimization

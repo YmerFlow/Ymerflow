@@ -12,8 +12,8 @@ daemon — only against the host's own. Whatever machinery a registry needs to a
 concern, not this script's.
 
 Usage:
-    nagelfluh-build-and-push <dockerfile> <build-context> <repository> <tag> [docker build args...]
-    nagelfluh-build-and-push --resolve-only
+    yf-build-and-push <dockerfile> <build-context> <repository> <tag> [docker build args...]
+    yf-build-and-push --resolve-only
 
 `--resolve-only` prints the active RegistryBackend's `{"protocol": ..., "config": ...}` as JSON
 and exits without building or pushing anything — for the same production (all-in-cluster)

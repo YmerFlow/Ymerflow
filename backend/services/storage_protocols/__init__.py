@@ -77,14 +77,14 @@ class StorageProtocolHandler:
         service account or minting a first credential. Every core-provided handler implements
         this as a passthrough (`return config`); live-provisioning bootstrap is entirely plugin
         territory (see Design decision 6 in docs/plans/registry-backend-hooks.md). Resolved and
-        called by `backend/bin/nagelfluh-bootstrap-provision`; wiring its output into the dev/
+        called by `backend/bin/yf-bootstrap-provision`; wiring its output into the dev/
         prod-minikube flows and the seed migrations is a later phase's concern (Phases 5/6)."""
         raise NotImplementedError
 
     def teardown(self, config: dict) -> None:
         """Remove the k8s-level resources this protocol's `bootstrap()` created (namespaces,
         Deployments, Services, PV/PVC, etc.). The teardown mirror of `bootstrap()`, resolved and
-        called by `backend/bin/nagelfluh-bootstrap-teardown`
+        called by `backend/bin/yf-bootstrap-teardown`
         (docs/plans/generic-deployment-orchestration.md, Phase 7). Default is a no-op passthrough,
         exactly like `bootstrap()`'s default for core-provided handlers — a protocol that
         provisions nothing local (a managed object store) tears nothing down. MUST be idempotent

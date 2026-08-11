@@ -16,7 +16,7 @@ The session is exposed in the frontend as an xterm.js terminal widget connected 
 
 ### Process Runner (new process type)
 
-A new process type `InteractiveProcess` in `docker/base-runner/nagelfluh_processes/`:
+A new process type `InteractiveProcess` in `docker/base-runner/ymerflow_processes/`:
 
 ```python
 class InteractiveProcess:

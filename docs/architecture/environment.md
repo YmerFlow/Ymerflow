@@ -37,8 +37,8 @@ Process types are organized into Python packages with setuptools entrypoints:
 
 ```dockerfile
 # Copy and install process packages
-COPY docker/base-runner/nagelfluh_processes /app/nagelfluh_processes
-RUN pip install --no-cache-dir -e /app/nagelfluh_processes
+COPY docker/base-runner/ymerflow_processes /app/ymerflow_processes
+RUN pip install --no-cache-dir -e /app/ymerflow_processes
 
 COPY docker/base-runner/aem_processes /app/aem_processes
 RUN pip install --no-cache-dir -e '/app/aem_processes[all]'
@@ -51,7 +51,7 @@ Each package contains:
 
 **Example package structure:**
 ```
-nagelfluh_processes/
+ymerflow_processes/
 ├── __init__.py
 ├── fake_processes.py          # Process type classes
 └── setup.py                   # Entrypoint registration

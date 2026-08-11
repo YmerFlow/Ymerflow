@@ -4,7 +4,7 @@
 # - Screen sessions (dev services)
 # - Stray kubectl port-forwards (informational — MinIO/registry use NodePort, not port-forward)
 # - All bootstrap-provisioned backends (registry/storage/cluster), via the generic
-#   nagelfluh-bootstrap-teardown entry point — whatever REGISTRY_PROTOCOL/STORAGE_PROTOCOL/
+#   yf-bootstrap-teardown entry point — whatever REGISTRY_PROTOCOL/STORAGE_PROTOCOL/
 #   CLUSTER_TYPE resolve to, NOT a hardcoded registry/MinIO/Kueue teardown (see
 #   docs/plans/generic-deployment-orchestration.md, Phase 8).
 #
@@ -68,7 +68,7 @@ fi
 # ==========================================
 # Step 3: Tear down bootstrap-provisioned backends
 # ==========================================
-# Generic teardown — the mirror of dev/runall.sh Step 2's nagelfluh-bootstrap-provision. Resolves
+# Generic teardown — the mirror of dev/runall.sh Step 2's yf-bootstrap-provision. Resolves
 # each configured axis's handler and calls its teardown() hook (registry/storage delete their
 # namespaces; the cluster provider deletes the jobs namespace + Kueue config). Each teardown() is
 # idempotent, so this is a clean no-op if nothing was ever provisioned OR if it's run twice in a
@@ -77,7 +77,7 @@ fi
 echo ""
 echo "Step 3: Tearing down bootstrap-provisioned backends..."
 if [ -d env ]; then
-    PYTHONPATH=. env/bin/python backend/bin/nagelfluh-bootstrap-teardown || \
+    PYTHONPATH=. env/bin/python backend/bin/yf-bootstrap-teardown || \
         print_warning "Teardown reported an error (cluster may already be gone) — continuing"
 else
     print_warning "No Python venv (env/) found — skipping backend teardown"

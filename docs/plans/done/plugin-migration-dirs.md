@@ -36,8 +36,8 @@ migrations simply extend them.
 | Each app's `migrations/` directory | Each plugin's `migrations/versions/` directory |
 | `INSTALLED_APPS` discovery | `nagelfluh.migration_dirs` entry point group |
 | `(app_label, name)` identity | Alembic branch label + revision ID |
-| `manage.py migrate` | `nagelfluh-migrate` wrapper → `alembic upgrade heads` |
-| `manage.py makemigrations billing` | `nagelfluh-makemigrations billing` wrapper |
+| `manage.py migrate` | `yf-migrate` wrapper → `alembic upgrade heads` |
+| `manage.py makemigrations billing` | `yf-makemigrations billing` wrapper |
 
 ### Entry point conventions (two groups)
 
@@ -65,16 +65,16 @@ billing = "billing.models"
 
 Two thin shell scripts (or a `nagelfluh.cli` entry point) in `backend/bin/`:
 
-**`nagelfluh-migrate`**
+**`yf-migrate`**
 ```bash
 #!/bin/bash
 alembic -c backend/alembic.ini upgrade heads
 ```
 
-**`nagelfluh-makemigrations`**
+**`yf-makemigrations`**
 ```bash
 #!/bin/bash
-# Usage: nagelfluh-makemigrations <plugin_name> "migration message"
+# Usage: yf-makemigrations <plugin_name> "migration message"
 PLUGIN=$1
 MSG=$2
 # Resolve version path from entry point
@@ -139,7 +139,7 @@ alembic -c backend/alembic.ini revision --autogenerate \
     → g5c6d7e8f9a0     down_revision=a9b0c1d2e3f4     ← BILLING HEAD
 ```
 
-`alembic heads` shows exactly two entries. `nagelfluh-migrate` runs `upgrade heads` to advance both.
+`alembic heads` shows exactly two entries. `yf-migrate` runs `upgrade heads` to advance both.
 
 ### What goes in the billing root migration
 
@@ -178,11 +178,11 @@ initial schema, the billing root does not need to create it.
   next new main-chain migration.
 
 **1.3 Add wrapper scripts**
-- Create `backend/bin/nagelfluh-migrate` (see Design section).
-- Create `backend/bin/nagelfluh-makemigrations` (see Design section).
+- Create `backend/bin/yf-migrate` (see Design section).
+- Create `backend/bin/yf-makemigrations` (see Design section).
 - Make both executable (`chmod +x`).
 - Update `backend/requirements.txt` if a CLI entry point is preferred over shell scripts.
-- Update deployment docs to use `nagelfluh-migrate` instead of `alembic upgrade head`.
+- Update deployment docs to use `yf-migrate` instead of `alembic upgrade head`.
 
 ---
 
@@ -288,7 +288,7 @@ alembic -c backend/alembic.ini heads
 alembic -c backend/alembic.ini history --verbose
 # Should show two separate branch trees
 
-nagelfluh-migrate   # dry-run with --sql to inspect; then run for real
+yf-migrate   # dry-run with --sql to inspect; then run for real
 ```
 
 ---
@@ -298,8 +298,8 @@ nagelfluh-migrate   # dry-run with --sql to inspect; then run for real
 **4.1 Update `plugins/billing/CLAUDE.md`**
 
 Add a "Database Migrations" section:
-- How to run `nagelfluh-makemigrations billing "description"` to autogenerate
-- How to run `nagelfluh-migrate` to apply
+- How to run `yf-makemigrations billing "description"` to autogenerate
+- How to run `yf-migrate` to apply
 - Rule: never write a migration that drops tables or columns
 - Where migration files live (`billing/migrations/versions/`)
 
@@ -311,18 +311,18 @@ Add a "Database Migrations" section covering:
 - How to write the first migration (branch root pattern with `down_revision=None`,
   `branch_labels=('<plugin_name>',)`, `depends_on=('<last_safe_main_revision>',)`)
 - How subsequent migrations chain normally within the branch
-- `nagelfluh-makemigrations <plugin> "message"` for autogenerate
-- `nagelfluh-migrate` for applying all branches
+- `yf-makemigrations <plugin> "message"` for autogenerate
+- `yf-migrate` for applying all branches
 - **Hard rule**: migrations may never drop tables or columns — uninstalling a plugin must leave the
   schema untouched
 - Cross-branch `depends_on`: when and how to use it (e.g., billing root depends on the main chain
   reaching a stable point before billing tables are added)
 - Note that `alembic upgrade head` (singular) is wrong in a multi-branch setup — always use
-  `nagelfluh-migrate`
+  `yf-migrate`
 
 **4.3 Update deployment docs**
 
-Replace all occurrences of `alembic upgrade head` with `nagelfluh-migrate` in
+Replace all occurrences of `alembic upgrade head` with `yf-migrate` in
 `docs/deployment.md` and `docs/development.md`.
 
 ---

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Replace the floating `nagelfluh-backend:prod` / `nagelfluh-frontend:prod` tags — re-pushed with
+Replace the floating `ymerflow-backend:prod` / `nagelfluh-frontend:prod` tags — re-pushed with
 new content on every `runall-production.sh` run — with a tag that changes whenever the built
 content actually changes. This removes the need for the `imagePullPolicy: Always` stopgap applied
 today (see Background) and makes redeploys correct by construction instead of by "always re-pull
@@ -12,18 +12,18 @@ and hope the registry has the right thing."
 
 `prod/runall-production.sh` (Step 2, Step 5) and `docker/build.sh` (its `db-update-*` Job) all
 build/reference the backend and frontend images under the literal tag `"prod"`. Because the tag
-never changes, a GKE node that already pulled `nagelfluh-backend:prod` once keeps reusing its
+never changes, a GKE node that already pulled `ymerflow-backend:prod` once keeps reusing its
 locally cached image on every subsequent deploy unless `imagePullPolicy` forces a re-pull —
 `IfNotPresent` (Kubernetes' default for any non-`:latest` tag) does not. This was hit directly: a
 plugin bugfix (`plugins/ymerflow-gcp`, commit `e6edab0`) was pushed under the same `:prod` tag, but
-the already-failed `nagelfluh-deploy-app` Job's node kept running the pre-fix image, reproducing
+the already-failed `yf-deploy-app` Job's node kept running the pre-fix image, reproducing
 the exact same traceback even after every image was deleted locally and in GAR and rebuilt from
 scratch.
 
 **Current stopgap** (applied same session, not yet reverted): `image_pull_policy="Always"` added
 to three `V1Container` specs in `backend/services/app_deployment.py` (migration Job, backend
 Deployment, frontend Deployment) and `imagePullPolicy: Always` added to the two inline Job manifests
-in `prod/runall-production.sh` (the `nagelfluh-deploy-app` Job) and `docker/build.sh` (the
+in `prod/runall-production.sh` (the `yf-deploy-app` Job) and `docker/build.sh` (the
 `db-update-*` Job). This plan's implementation step 4 reverts all five back toward
 `IfNotPresent` (see Design decision 3) once tags are actually content-addressed.
 
@@ -70,9 +70,9 @@ URL and PyPI entries too: a `git+` spec pinned to a moving branch/tag ref, or a 
 under the same version number, now changes the tag because the *actually installed* commit/version
 is hashed, not the literal spec string.
 
-### 2. New helper script: `backend/bin/nagelfluh-resolve-app-image-tag`
+### 2. New helper script: `backend/bin/yf-resolve-app-image-tag`
 
-A single Python entry point (mirroring the `backend/bin/nagelfluh-*` precedent) that:
+A single Python entry point (mirroring the `backend/bin/yf-*` precedent) that:
 - Takes the project root and the `BACKEND_PLUGINS` string (same env var already used by
   `scripts/install-backend-plugins.sh`).
 - Computes the main repo's fingerprint (`git rev-parse HEAD`), then classifies each `BACKEND_PLUGINS`
@@ -95,15 +95,15 @@ computing two different tags for what should be the same build.
 sourced, before Step 2's `docker build`), and exports it as `APP_IMAGE_VERSION`. Every place that
 currently hardcodes `"prod"` switches to `"${APP_IMAGE_VERSION}"`:
 
-- `prod/runall-production.sh` line 60 (`docker build -t nagelfluh-backend:prod`)
-- `prod/runall-production.sh` lines 184/188 (the two `nagelfluh-build-and-push` calls)
-- `docker/build.sh` line 100 (`image_url(config, "nagelfluh-backend", "prod")`)
+- `prod/runall-production.sh` line 60 (`docker build -t ymerflow-backend:prod`)
+- `prod/runall-production.sh` lines 184/188 (the two `yf-build-and-push` calls)
+- `docker/build.sh` line 100 (`image_url(config, "ymerflow-backend", "prod")`)
 
 `docker/build.sh` is invoked as a subprocess from Step 10 of `prod/runall-production.sh` — it reads
 `APP_IMAGE_VERSION` from the environment (already exported by its caller) rather than recomputing
 it, so both scripts agree on one tag per deploy run. When `docker/build.sh` is invoked standalone
 (not from `runall-production.sh`), it falls back to calling
-`nagelfluh-resolve-app-image-tag` itself.
+`yf-resolve-app-image-tag` itself.
 
 Once tags are content-addressed, the `imagePullPolicy: Always` stopgap is no longer needed — revert
 all five spots (Background) to `imagePullPolicy: IfNotPresent`, explicitly set with a comment
@@ -131,11 +131,11 @@ implement the policy itself.
 
 ## Implementation steps
 
-1. `backend/bin/nagelfluh-resolve-app-image-tag` — new script implementing Design decisions 1–2.
+1. `backend/bin/yf-resolve-app-image-tag` — new script implementing Design decisions 1–2.
 2. `prod/runall-production.sh` — compute `APP_IMAGE_VERSION` once near the top, export it, replace
    the three `"prod"` literals (lines 60, 184, 188) with `"${APP_IMAGE_VERSION}"`.
 3. `docker/build.sh` — replace the hardcoded `"prod"` literal (line 100) with
-   `${APP_IMAGE_VERSION:-$(env/bin/python backend/bin/nagelfluh-resolve-app-image-tag ...)}` so it
+   `${APP_IMAGE_VERSION:-$(env/bin/python backend/bin/yf-resolve-app-image-tag ...)}` so it
    works both threaded-through-from-caller and standalone.
 4. `backend/services/app_deployment.py` — change the three `image_pull_policy="Always"` (migration
    Job, backend Deployment, frontend Deployment) to `image_pull_policy="IfNotPresent"`, with a

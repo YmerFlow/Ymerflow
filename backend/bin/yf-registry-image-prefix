@@ -2,7 +2,7 @@
 """Print a registry protocol's image-reference prefix — the part of image_url()'s address that
 comes before `/{repository}:{tag}`.
 
-Usage: nagelfluh-registry-image-prefix <protocol> <config-json>
+Usage: yf-registry-image-prefix <protocol> <config-json>
 
 Resolves via RegistryProtocolHandler.image_prefix(config) — the SAME mechanism image_url() itself
 is built on — so a caller needing to construct its OWN sub-repository image reference (e.g.

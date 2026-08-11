@@ -36,9 +36,9 @@ Verification for the exact command.)
 
 - `ClusterProvider`/`RegistryProtocolHandler`/`StorageProtocolHandler` ABCs, each with `bootstrap()`,
   discovered via the `nagelfluh.hooks` fan-out.
-- `backend/bin/nagelfluh-bootstrap-provision` — resolves whichever `<AXIS>_PROTOCOL`/
+- `backend/bin/yf-bootstrap-provision` — resolves whichever `<AXIS>_PROTOCOL`/
   `<AXIS>_CONFIG_JSON` pairs are set and calls `.bootstrap()` on each; zero minikube-specific logic.
-- `backend/bin/nagelfluh-deploy-app` — resolves the registry + cluster axes generically and calls
+- `backend/bin/yf-deploy-app` — resolves the registry + cluster axes generically and calls
   `provider.deploy_app()`/`provider.expose_app()`; zero minikube-specific logic.
 - `backend/services/app_deployment.py` (`apply_app_workloads`), `NodePortAppDeploymentMixin` —
   provider-agnostic (NodePort exposure is shared by `same-as-backend` *and* `minikube`, not itself
@@ -70,7 +70,7 @@ Verification for the exact command.)
   duplicated instead of living on `RegistryProtocolHandler`.
 
 **Config/secrets:**
-- **`prod/runall-minikube.sh` Step 6**: the `nagelfluh-backend-config` ConfigMap hardcodes
+- **`prod/runall-minikube.sh` Step 6**: the `ymerflow-backend-config` ConfigMap hardcodes
   `STORAGE_PROTOCOL: "s3"`, `STORAGE_ENDPOINT: "https://minio.minio.svc.cluster.local:9000"`,
   `MINIO_ROOT_USER`. Grepped `backend/config.py` and `backend/services/storage_protocols/*.py` —
   zero hits. Likely dead weight from before `STORAGE_CONFIG_JSON` existed (verify and drop).
@@ -97,7 +97,7 @@ Verification for the exact command.)
   counterpart to that function exists yet.
 - **`dev/cleanup-all.sh`**: genuinely minikube-specific — gates on `minikube status`, hardcodes
   deleting the `registry`/`minio` namespaces by name, prints `minikube stop`/`minikube delete`
-  hints. No generic teardown entry point exists to mirror `nagelfluh-bootstrap-provision`.
+  hints. No generic teardown entry point exists to mirror `yf-bootstrap-provision`.
 
 **Host prep:**
 - **`scripts/install-deps-on-debian.sh`**: unconditionally installs the `minikube` binary and
@@ -228,8 +228,8 @@ Verification for the exact command.)
   helper in `backend/services/cluster_job_provisioning.py`, e.g. `teardown_cluster_job_ready()`,
   mirroring `ensure_cluster_job_ready()`, so any provider can call it, not just minikube's). Per
   Design decision 6, does **not** touch the Minikube VM itself.
-- New `backend/bin/nagelfluh-bootstrap-teardown`, structurally mirroring
-  `nagelfluh-bootstrap-provision`: resolves whichever `<AXIS>_PROTOCOL`/`<AXIS>_CONFIG_JSON` pairs
+- New `backend/bin/yf-bootstrap-teardown`, structurally mirroring
+  `yf-bootstrap-provision`: resolves whichever `<AXIS>_PROTOCOL`/`<AXIS>_CONFIG_JSON` pairs
   are set and calls `.teardown()` on each.
 
 ### Phase 8 — generic cleanup scripts
@@ -237,7 +237,7 @@ Verification for the exact command.)
 - Delete `dev/cleanup-minikube.sh` (Design decision 7).
 - `dev/cleanup-all.sh` becomes protocol-agnostic: screen-session/port-forward cleanup stays as
   plain shell (not cluster-specific), but the registry/MinIO/Kueue/namespace teardown steps are
-  replaced by one call to `nagelfluh-bootstrap-teardown`. Drop the `minikube status` gate (the
+  replaced by one call to `yf-bootstrap-teardown`. Drop the `minikube status` gate (the
   teardown entry point should itself be a no-op/harmless if nothing is bootstrapped). Keep the
   final `minikube stop`/`minikube delete` hint text as manual guidance only (Design decision 6) —
   but phrase it generically ("stop/delete your cluster, e.g. `minikube delete` for a local

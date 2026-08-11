@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Generate a new migration for a plugin branch.
 
-Usage: nagelfluh-makemigrations <plugin_name> "migration message"
+Usage: yf-makemigrations <plugin_name> "migration message"
 """
 import importlib.metadata
 import os

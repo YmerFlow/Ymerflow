@@ -6,7 +6,7 @@ Every `kubernetes_asyncio` API class (`CoreV1Api()`, `AppsV1Api()`, `BatchV1Api(
 with no explicit `api_client` argument builds its own throwaway `ApiClient`, which opens its own
 `aiohttp.ClientSession`/`TCPConnector`. None of these are ever closed, so garbage collection
 prints "Unclosed client session" / "Unclosed connector" warnings — most visibly during
-`nagelfluh-bootstrap-provision` (`prod/runall-minikube.sh` Step 3), where each `bootstrap()` call
+`yf-bootstrap-provision` (`prod/runall-minikube.sh` Step 3), where each `bootstrap()` call
 tears its event loop down (`asyncio.run()`) immediately after leaking several sessions. Fix this by
 sharing one `ApiClient` per logical unit of work and closing it explicitly, instead of leaving
 cleanup to the garbage collector.
@@ -144,7 +144,7 @@ cleanup to the garbage collector.
 
 ## Verification
 
-- Run `backend/bin/nagelfluh-bootstrap-provision` directly (or `prod/runall-minikube.sh` end to
+- Run `backend/bin/yf-bootstrap-provision` directly (or `prod/runall-minikube.sh` end to
   end) against a fresh/existing Minikube and confirm stderr no longer contains "Unclosed client
   session" / "Unclosed connector" — registry and storage bootstrap should both still succeed
   (registry reachable, MinIO reachable, returned JSON on stdout unchanged).

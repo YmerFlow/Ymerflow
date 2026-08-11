@@ -36,13 +36,13 @@ fi
 # even when this script's kubectl-using (production) branch doesn't run.
 KUBECONFIG_FILE="$(mktemp)"
 trap 'rm -f "$KUBECONFIG_FILE"' EXIT
-env/bin/python backend/bin/nagelfluh-materialize-kubeconfig > "$KUBECONFIG_FILE"
+env/bin/python backend/bin/yf-materialize-kubeconfig > "$KUBECONFIG_FILE"
 export KUBECONFIG="$KUBECONFIG_FILE"
 
 # Content-addressed tag for the backend/frontend images (see docs/plans/versioned-app-image-tags.md).
 # Threaded through from prod/runall-production.sh's Step 10 invocation when this script runs as
 # its subprocess; resolved directly when this script runs standalone.
-APP_IMAGE_VERSION="${APP_IMAGE_VERSION:-$(env/bin/python backend/bin/nagelfluh-resolve-app-image-tag)}"
+APP_IMAGE_VERSION="${APP_IMAGE_VERSION:-$(env/bin/python backend/bin/yf-resolve-app-image-tag)}"
 
 echo "=== Building Nagelfluh Runner Image for ${ENV_NAME} Environment ==="
 echo "    Repository: nagelfluh-base-runner:${ENV_TAG}"
@@ -52,12 +52,12 @@ echo ""
 # daemon — never `minikube docker-env` or any other cluster-provider daemon (see
 # docs/plans/generic-deployment-orchestration.md, Design decision 2) — then the result is pushed
 # through whatever RegistryProtocolHandler the active RegistryBackend resolves to via
-# backend/bin/nagelfluh-build-and-push. It prints only the resolved full image reference to
+# backend/bin/yf-build-and-push. It prints only the resolved full image reference to
 # stdout; the build log and all diagnostics go to stderr.
 echo "Building and pushing nagelfluh-base-runner:${ENV_TAG}..."
 
 if [ "${DEPLOYMENT:-}" = "production" ]; then
-    # nagelfluh-build-and-push needs a DB connection to look up the active RegistryBackend, but
+    # yf-build-and-push needs a DB connection to look up the active RegistryBackend, but
     # in production mode (all services in-cluster) Postgres is ClusterIP-only (no host-reachable
     # port) — the host can't query it directly. REGISTRY_PROTOCOL/REGISTRY_CONFIG_JSON are already
     # sitting in this shell's own environment though — exported by
@@ -69,10 +69,10 @@ if [ "${DEPLOYMENT:-}" = "production" ]; then
 import json, os
 print(json.dumps({"protocol": os.environ["REGISTRY_PROTOCOL"], "config": json.loads(os.environ["REGISTRY_CONFIG_JSON"])}))
 ')
-    FULL_IMAGE=$(NAGELFLUH_RESOLVED_REGISTRY_JSON="${RESOLVED_JSON}" env/bin/python backend/bin/nagelfluh-build-and-push \
+    FULL_IMAGE=$(NAGELFLUH_RESOLVED_REGISTRY_JSON="${RESOLVED_JSON}" env/bin/python backend/bin/yf-build-and-push \
         docker/base-runner/Dockerfile . nagelfluh-base-runner "${ENV_TAG}")
 else
-    FULL_IMAGE=$(env/bin/python backend/bin/nagelfluh-build-and-push \
+    FULL_IMAGE=$(env/bin/python backend/bin/yf-build-and-push \
         docker/base-runner/Dockerfile . nagelfluh-base-runner "${ENV_TAG}")
 fi
 
@@ -100,7 +100,7 @@ if docker run --rm --entrypoint cat "nagelfluh-base-runner:${ENV_TAG}" /app/proc
     echo ""
     echo "Updating ${ENV_NAME} environment in database..."
 
-    # FULL_IMAGE was already resolved above (backend/bin/nagelfluh-build-and-push) — reused here
+    # FULL_IMAGE was already resolved above (backend/bin/yf-build-and-push) — reused here
     # for the database/schema-extraction step instead of being reconstructed.
 
     if [ "${DEPLOYMENT:-}" = "production" ]; then
@@ -108,8 +108,8 @@ if docker run --rm --entrypoint cat "nagelfluh-base-runner:${ENV_TAG}" /app/proc
         echo "  Running database update as kubernetes job..."
 
         # The Job needs a resolved, pullable backend image ref (registry-agnostic — the same one
-        # nagelfluh-deploy-app resolves for its own Deployments) instead of the old hardcoded
-        # `nagelfluh-backend:prod` + `imagePullPolicy: Never` (only worked when that exact tag
+        # yf-deploy-app resolves for its own Deployments) instead of the old hardcoded
+        # `ymerflow-backend:prod` + `imagePullPolicy: Never` (only worked when that exact tag
         # already sat in whatever local daemon the target node used — never true for a
         # non-same-as-backend cluster). REGISTRY_PROTOCOL/REGISTRY_CONFIG_JSON are the same
         # already-local env vars used above for the runner image push.
@@ -118,7 +118,7 @@ import json, os
 from backend.services.registry_protocols import get_registry_protocol_handler
 protocol = os.environ["REGISTRY_PROTOCOL"]
 config = json.loads(os.environ["REGISTRY_CONFIG_JSON"])
-print(get_registry_protocol_handler(protocol).image_url(config, "nagelfluh-backend", os.environ["APP_IMAGE_VERSION"]))
+print(get_registry_protocol_handler(protocol).image_url(config, "ymerflow-backend", os.environ["APP_IMAGE_VERSION"]))
 ')
 
         kubectl delete configmap "runner-schemas-${ENV_TAG}" -n nagelfluh --ignore-not-found=true 2>/dev/null
@@ -149,7 +149,7 @@ spec:
                   "/schemas/process_schemas.json", "${ENV_NAME}", "${FULL_IMAGE}"]
         envFrom:
         - configMapRef:
-            name: nagelfluh-backend-config
+            name: ymerflow-backend-config
         - secretRef:
             name: nagelfluh-backend-secret
         volumeMounts:

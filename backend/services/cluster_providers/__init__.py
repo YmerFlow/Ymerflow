@@ -76,14 +76,14 @@ class ClusterProvider:
         provider implements this as a passthrough (`return provider_config`); live-provisioning
         bootstrap is entirely plugin territory (see Design decision 6 in
         docs/plans/registry-backend-hooks.md). Resolved and called by
-        `backend/bin/nagelfluh-bootstrap-provision`; wiring its output into the dev/prod-minikube
+        `backend/bin/yf-bootstrap-provision`; wiring its output into the dev/prod-minikube
         flows and the seed migrations is a later phase's concern (Phases 5/6)."""
         raise NotImplementedError
 
     def teardown(self, provider_config: dict) -> None:
         """Remove the k8s-level resources this provider's `bootstrap()` created (the jobs
         namespace, Kueue config, etc.). The teardown mirror of `bootstrap()`, resolved and called
-        by `backend/bin/nagelfluh-bootstrap-teardown`
+        by `backend/bin/yf-bootstrap-teardown`
         (docs/plans/generic-deployment-orchestration.md, Phase 7). Default is a no-op passthrough,
         exactly like `bootstrap()`'s default for core-provided providers. Per Design decision 6,
         a provider that manages a local VM (e.g. minikube) must NOT stop/delete the VM itself here
@@ -105,7 +105,7 @@ class ClusterProvider:
     async def deploy_app(self, k8s_client, provider_config: dict, namespace: str, images: dict,
                          app_config: dict, secrets: dict) -> None:
         """Apply the Nagelfluh application's own workload-level resources (backend + frontend
-        Deployments/Service, the nagelfluh-backend-config/nagelfluh-backend-secret ConfigMap/
+        Deployments/Service, the ymerflow-backend-config/nagelfluh-backend-secret ConfigMap/
         Secret, the DB migration Job) onto this provider's cluster. Optional — only ever called
         when `supports_app_deployment` is True; the default raises so a provider that sets the
         flag but forgets to implement this fails loudly rather than silently no-op'ing.

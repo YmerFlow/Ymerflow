@@ -1,5 +1,5 @@
 # MANUAL / OPT-OUT PATH ONLY. prod/runall-production.sh no longer applies this manifest — for the
-# default same-as-backend/minikube cluster type it deploys the backend via nagelfluh-deploy-app
+# default same-as-backend/minikube cluster type it deploys the backend via yf-deploy-app
 # (backend.services.app_deployment.apply_app_workloads), which parameterizes the image through the
 # registry axis instead of the imagePullPolicy:Never local-daemon assumption below. This file is
 # kept for operators on a cluster type that does NOT set supports_app_deployment (e.g. the generic
@@ -28,12 +28,12 @@ spec:
         - -c
         - until pg_isready -h postgres -p 5432 -U nagelfluh; do echo "Waiting for postgres..."; sleep 2; done
       - name: migrate
-        image: nagelfluh-backend:prod
+        image: ymerflow-backend:prod
         imagePullPolicy: Never
         command: ["alembic", "-c", "backend/alembic.ini", "upgrade", "head"]
         envFrom:
         - configMapRef:
-            name: nagelfluh-backend-config
+            name: ymerflow-backend-config
         - secretRef:
             name: nagelfluh-backend-secret
         env:
@@ -46,13 +46,13 @@ spec:
           value: "postgresql+asyncpg://nagelfluh:$(POSTGRES_PASSWORD)@postgres.nagelfluh.svc.cluster.local:5432/nagelfluh"
       containers:
       - name: backend
-        image: nagelfluh-backend:prod
+        image: ymerflow-backend:prod
         imagePullPolicy: Never
         ports:
         - containerPort: 8000
         envFrom:
         - configMapRef:
-            name: nagelfluh-backend-config
+            name: ymerflow-backend-config
         - secretRef:
             name: nagelfluh-backend-secret
         env:
