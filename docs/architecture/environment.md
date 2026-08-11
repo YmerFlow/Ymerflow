@@ -23,25 +23,55 @@ An environment is a complete execution environment that:
 
 ### Base Image
 
+The real `docker/base-runner/Dockerfile` is multi-stage and considerably heavier than a plain
+Python base:
+
 ```dockerfile
-FROM python:3.11-slim
+FROM gcr.io/kaniko-project/executor:v1.24.0 AS kaniko
+
+FROM python:3.11-slim-trixie
 
 WORKDIR /app
 ```
 
-All environments start from a Python 3.11 base image.
+The final image is based on `python:3.11-slim-trixie` (not plain `python:3.11-slim`). A separate
+build stage pulls in the Kaniko executor binary, which is copied into the final image (see
+[`create_environment` process](#create_environment-process) below for why the runner image needs
+Kaniko at all).
+
+Beyond Python, the image also installs:
+- A full C++ toolchain (`build-essential`, `cmake`, `clang`, `libboost-dev`, `libeigen3-dev`) —
+  needed to compile `pyinterp` (an `aem_processes` dependency) from source, which requires
+  Boost >= 1.79
+- The `crane` binary (`go-containerregistry`) — used to export files from a just-built image
+  without a running Docker daemon
+- Node.js 22 + npm — required by the `build_frontend_plugin` process type to run real
+  npm/vite Module-Federation builds
+- `ymerflow-plugin-sdk`, installed via git URL, providing the shared frontend-plugin build
+  harness used by `build_frontend_plugin`
+
+Compiling `aem_processes` (specifically `pyinterp`) uses `CC=clang CXX=clang++` as a workaround
+for a GCC 14 internal compiler error in `boost/multiprecision/cpp_int/literals.hpp`.
 
 ### Process Type Packages
 
-Process types are organized into Python packages with setuptools entrypoints:
+Process types are organized into three separately-installed Python packages, each with its own
+setuptools entrypoints (see [Process Types - Example Process Types](processes.md#example-process-types)
+for what each package provides):
 
 ```dockerfile
-# Copy and install process packages
+# Copy and install nagelfluh_processes package
 COPY docker/base-runner/nagelfluh_processes /app/nagelfluh_processes
 RUN pip install --no-cache-dir -e /app/nagelfluh_processes
 
+# Copy and install aem_processes package
 COPY docker/base-runner/aem_processes /app/aem_processes
-RUN pip install --no-cache-dir -e '/app/aem_processes[all]'
+# Use clang to avoid GCC 14 ICE in boost/multiprecision/cpp_int/literals.hpp (pyinterp dep)
+RUN CC=clang CXX=clang++ pip install --no-cache-dir -e '/app/aem_processes[all]'
+
+# Copy and install mag_processes package
+COPY docker/base-runner/mag_processes /app/mag_processes
+RUN pip install --no-cache-dir -e /app/mag_processes
 ```
 
 Each package contains:
@@ -53,7 +83,9 @@ Each package contains:
 ```
 nagelfluh_processes/
 ├── __init__.py
-├── fake_processes.py          # Process type classes
+├── fake_processes.py          # create_environment
+├── compound_filter.py
+├── build_frontend_plugin.py
 └── setup.py                   # Entrypoint registration
 ```
 
@@ -62,14 +94,19 @@ nagelfluh_processes/
 ```dockerfile
 # Copy runner and schema generator scripts
 COPY docker/base-runner/runner.py /app/runner.py
+COPY docker/base-runner/storage_credentials_client.py /app/storage_credentials_client.py
+COPY docker/base-runner/storage_credential_refresher.py /app/storage_credential_refresher.py
 COPY docker/base-runner/get_schema.py /app/get_schema.py
 
-# Generate process schemas JSON file at build time
+# Generate process schemas JSON file
 RUN python /app/get_schema.py
 
-# Set entrypoint
-ENTRYPOINT ["python", "/app/runner.py"]
+ENTRYPOINT ["python", "-u", "/app/runner.py"]
 ```
+
+Note the `-u` flag: it forces unbuffered stdout/stderr, which matters because process logs are
+streamed to the UI via captured `print()` output (see [Logging](processes.md#logging)) — buffered
+output would delay or batch log lines instead of streaming them in real time.
 
 ## Setuptools Entrypoints
 
@@ -187,25 +224,51 @@ When a Kubernetes pod runs a process, it executes `runner.py` with environment v
 
 **Entrypoint:**
 ```dockerfile
-ENTRYPOINT ["python", "/app/runner.py"]
+ENTRYPOINT ["python", "-u", "/app/runner.py"]
 ```
 
 ### Environment Variables
 
-The runner receives configuration via environment variables:
+The runner receives configuration via environment variables, set by the backend's job
+orchestrator (`backend/services/job_orchestrator.py`):
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `PROCESS_TYPE` | Process type to execute | `"fft"` |
+| `PROCESS_TYPE` | Process type to execute | `"import_skytem"` |
 | `PROCESS_ID` | Unique process identifier | `"process-abc-123"` |
 | `VERSION` | Process version number | `"0"` |
 | `PROJECT_ID` | Project identifier | `"project-xyz-789"` |
 | `PARAMETERS_JSON` | JSON-encoded parameters | `'{"input_data":"http://..."}}'` |
-| `BACKEND_URL` | Backend API endpoint | `"http://backend:8000"` |
+| `BACKEND_URL` | Backend API endpoint | `"http://backend-service:8000"` |
 | `STORAGE_BASE` | Storage bucket URL | `"s3://nagelfluh-project-xyz"` |
-| `STORAGE_ENDPOINT` | Storage endpoint (MinIO) | `"http://minio:9000"` (optional) |
-| `AWS_ACCESS_KEY_ID` | Storage credentials | From Kubernetes secret |
-| `AWS_SECRET_ACCESS_KEY` | Storage credentials | From Kubernetes secret |
+| `STORAGE_KWARGS_JSON` | Protocol-general fsspec kwargs, JSON-encoded (e.g. `endpoint_url`, `key`/`secret` for S3; `token` for GCS) — built by the project's `StorageProtocolHandler` | `'{"key":"...","secret":"...","client_kwargs":{"endpoint_url":"http://minio:9000"}}'` |
+| `CREDENTIAL_STRATEGY` | `"static-key"` (default) or `"short-lived"` — selects whether `storage_kwargs` is a plain dict or a live, self-refreshing view (see below) | `"short-lived"` |
+| `STORAGE_CREDENTIALS_EXPIRES_AT` | (short-lived only) ISO timestamp when the initial minted credential expires | `"2026-08-12T00:00:00"` |
+| `STORAGE_REFRESH_TOKEN` | (short-lived only) token used by the refresher subprocess to mint fresh credentials | From backend |
+| `REGISTRY_URL` / `REGISTRY_AUTH` | (only for `build_frontend_plugin`/`create_environment`-style jobs) registry to push/pull images, and its auth | From backend settings |
+| `PLUGIN_SHARED_VERSIONS` / `PLUGIN_NPM_SOURCE_MODE` / `PLUGIN_NPM_SOURCE_DIR` / `PLUGIN_NPM_REGISTRY` | (only for `build_frontend_plugin` jobs) how to resolve the plugin's npm dependencies during the in-pod build | From backend settings |
+
+There is no `STORAGE_ENDPOINT`, `AWS_ACCESS_KEY_ID`, or `AWS_SECRET_ACCESS_KEY` — all storage
+credentials and endpoint configuration are folded into the single `STORAGE_KWARGS_JSON` dict and
+passed straight to `fsspec.open(url, **storage_kwargs)`; fsspec dispatches on the URL scheme in
+`STORAGE_BASE` (`s3://`, `gs://`, …), so there's no protocol-specific env var construction.
+
+#### Credential Refresh Subsystem
+
+When `CREDENTIAL_STRATEGY=short-lived`, the initial `STORAGE_KWARGS_JSON` credential is only a
+starting point — it can expire mid-job (jobs can run for many hours), and environment variables
+of an already-running process can't be updated. To handle this, `runner.py` spawns a separate
+**refresher subprocess** (`storage_credential_refresher.py`, using
+`storage_credentials_client.py`) at startup. The refresher periodically re-mints credentials and
+writes them, atomically, to a local file (`/tmp/storage-credentials.json`); the main process reads
+that file on *every* storage access (via a `RefreshableStorageKwargs` mapping passed as
+`storage_context['storage_kwargs']`) instead of trusting the credential it started with. The
+refresher runs as a separate OS process rather than a thread specifically because inversion/
+processing code is often CPU-bound and can hold the GIL for long stretches — a thread-based
+refresher could end up starved right when a refresh is needed. On exit, `runner.py` terminates
+the refresher so the pod doesn't hang waiting on a lingering child. For
+`CREDENTIAL_STRATEGY=static-key` (the default), none of this runs — `storage_kwargs` is just a
+plain dict computed once at startup.
 
 ### Execution Flow
 
@@ -292,8 +355,14 @@ The `storage_context` parameter provides process ID, project ID, storage base UR
    # Generate schemas
    RUN python /app/get_schema.py
 
-   ENTRYPOINT ["python", "/app/runner.py"]
+   # -u forces unbuffered stdout/stderr, required for real-time print()-based log streaming
+   ENTRYPOINT ["python", "-u", "/app/runner.py"]
    ```
+
+   This is a minimal from-scratch example. The actual `docker/base-runner/Dockerfile` is
+   considerably more involved (multi-stage with a Kaniko executor stage, C++ toolchain, Node.js,
+   `crane`, and three process packages) — see [Base Image](#base-image) above for the real
+   structure.
 
 2. **Create process package with entrypoints:**
    ```python
@@ -320,8 +389,9 @@ The `storage_context` parameter provides process ID, project ID, storage base UR
    ```
 
 5. **Create environment in Nagelfluh:**
-   - Use `create_environment` process (coming soon)
-   - Or manually register in database
+   - Use the `create_environment` process type (fully implemented, see
+     [`create_environment` process](#create_environment-process) below)
+   - Or manually register in the database
 
 ### Environment Versioning
 
@@ -340,36 +410,64 @@ spec:
       - image: gcr.io/project/my-environment:v1.2.3
 ```
 
+### `create_environment` Process
+
+`create_environment` (`docker/base-runner/nagelfluh_processes/fake_processes.py`) is a fully
+implemented process type — not a stub — that builds and registers a brand-new environment image
+entirely from within a running process job, without any privileged Docker daemon access:
+
+1. Takes `environment_name`, `base_image`, optional `python_packages` and
+   `dockerfile_instructions` as parameters, and constructs a `Dockerfile` from them
+2. Builds and pushes the image using the **Kaniko executor** (`/kaniko-executor`, baked into the
+   runner image — see [Base Image](#base-image) above), which needs no Docker daemon and works
+   inside an unprivileged container. Registry auth, if any, comes from the `REGISTRY_AUTH`
+   env var and is written out as a Docker `config.json` that both Kaniko and `crane` read
+3. After the push succeeds, runs `crane export` on the freshly-built image to pull
+   `app/process_schemas.json` out of it directly (again with no Docker daemon involved) and
+   parses the schemas
+4. Writes an `environment.json` file (containing the image reference, source process id, and the
+   extracted `process_types`) to `{storage_base}/processes/{process_id}/environment.json`
+
+That `environment.json` file is the handoff point to the backend — see
+[Backend Integration](#backend-integration) below for how it gets picked up automatically, no
+API call from the process required.
+
 ## Backend Integration
 
-### Reading Schemas from Image
+### Reading Schemas from a Built Environment
 
-The backend extracts schemas from the Docker image:
+There is no `docker create`/`docker cp` step in the backend — the backend never touches Docker or
+any container runtime directly. Instead (`backend/models/process.py`, in and around
+`_create_outputs`): after **any** process version's job finishes, the backend checks whether
+`{storage_base}/processes/{process.id}/environment.json` exists in storage. If it does (this file
+is written by the `create_environment` process — see above), the backend reads it directly with
+fsspec and constructs an `Environment` database row from its `name`, `docker_image`, and
+`process_types` fields. No image pull, no container creation, no subprocess calls of any kind —
+the schemas were already extracted at build time (by `create_environment` itself, via `crane`) and
+simply travel to the backend as a JSON file in the project's own storage bucket. If
+`environment.json` is absent — the normal case for every process type other than
+`create_environment` — this check is a no-op.
 
-1. **Pull image** (or use existing in registry)
-2. **Extract `/app/process_schemas.json`** from image filesystem
-3. **Parse JSON** to get available process types
-4. **Store in database** or cache in memory
-5. **Serve to frontend** via `/process-types` API endpoint
+Once registered, environments and their process types are served to the frontend via
+`backend/routers/environments.py` — there is no bare `/process-types` endpoint. The real
+endpoints are:
+- `GET /environments` - list all environments (id, name, process type names; pass
+  `include_schemas=true` to embed full schemas)
+- `GET /environments/{env_id}/process-types` - all process type schemas for one environment,
+  keyed by type name
+- `GET /environments/{env_id}/process-types/{type_name}` - the schema for a single named
+  process type
 
-**Example extraction (using Docker):**
-```python
-import subprocess
-import json
+### Bootstrap Environment via `docker/build.sh`
 
-# Create temporary container
-subprocess.run(["docker", "create", "--name", "temp", "my-environment:latest"])
-
-# Copy schemas file from container
-subprocess.run(["docker", "cp", "temp:/app/process_schemas.json", "./schemas.json"])
-
-# Remove temporary container
-subprocess.run(["docker", "rm", "temp"])
-
-# Parse schemas
-with open("./schemas.json") as f:
-    schemas = json.load(f)
-```
+A second, separate path exists purely for bootstrapping the initial "Bootstrap" environment at
+image-build time, bypassing HTTP and the `create_environment` process entirely:
+`docker/build.sh` builds and pushes the base-runner image, then invokes
+`docker/update_bootstrap_environment.py`, which connects **directly to the database** and
+UPSERTs an `environments` row (by name) with the image reference and the `process_schemas.json`
+generated during the image build. This is how the environment used to run `create_environment`
+itself (and everything else, before any custom environment exists) gets into the database in the
+first place.
 
 ### Creating Kubernetes Jobs
 
@@ -377,8 +475,8 @@ When a process is created, the backend:
 
 1. **Selects environment image** based on environment ID
 2. **Creates Kubernetes Job** with image
-3. **Sets environment variables** for runner.py
-4. **Injects storage credentials** via Kubernetes secrets
+3. **Sets environment variables** for runner.py, including the resolved `STORAGE_KWARGS_JSON`
+   (credentials and endpoint config folded together, not injected as separate `AWS_*` vars)
 
 **Job manifest:**
 ```yaml
@@ -394,20 +492,23 @@ spec:
         image: gcr.io/project/my-environment:v1.2.3
         env:
         - name: PROCESS_TYPE
-          value: "fft"
+          value: "import_skytem"
         - name: PROCESS_ID
           value: "process-abc-123"
         - name: VERSION
           value: "0"
+        - name: PROJECT_ID
+          value: "project-xyz-789"
         - name: PARAMETERS_JSON
           value: '{"input_data":"http://..."}'
+        - name: BACKEND_URL
+          value: "http://backend-service:8000"
         - name: STORAGE_BASE
           value: "s3://nagelfluh-project-xyz"
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: project-xyz-storage
-              key: access_key
+        - name: STORAGE_KWARGS_JSON
+          value: '{"key":"...","secret":"...","client_kwargs":{"endpoint_url":"http://minio:9000"}}'
+        - name: CREDENTIAL_STRATEGY
+          value: "static-key"
         # ... more env vars
 ```
 

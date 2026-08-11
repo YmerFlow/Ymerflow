@@ -11,7 +11,8 @@ Nagelfluh uses a **per-project bucket** architecture with IAM-enforced security 
 ### Development: MinIO
 - S3-compatible object storage running in Minikube
 - Automatic bucket/user/policy creation on project creation
-- Credentials injected via Kubernetes secrets
+- Credentials delivered per-job via the `STORAGE_KWARGS_JSON` env var (static or short-lived,
+  per the backend's `credential_strategy` — see Credential Injection below), not a Kubernetes secret
 - Port-forwarded to `localhost:9000` for backend access
 - The `minio` `StorageBackend.protocol` (deploying the MinIO server itself into Minikube, TLS
   cert, bucket/user provisioning) is implemented by the `plugins/ymerflow-minikube` plugin's
@@ -40,14 +41,17 @@ s3://nagelfluh-project-{project-id}/
 │       └── uploaded-file.xyz
 └── processes/
     └── {process-id}/
-        └── datasets/
-            └── {dataset-id}/
-                ├── root.msgpack        # Main dataset file
-                ├── root.geojson        # Alternative format
-                └── parts/
-                    ├── chunk-0.msgpack
-                    ├── chunk-1.msgpack
-                    └── ...
+        └── {version}/
+            └── datasets/
+                └── {dataset-id}/
+                    ├── info.json        # Dataset metadata: dataset_name, mime_type,
+                    │                    # and a files/parts map of relative path -> data file
+                    ├── root.msgpack     # A data file referenced from info.json (name is
+                    │                    # whatever the process chose, not fixed)
+                    └── parts/
+                        ├── chunk-0.msgpack
+                        ├── chunk-1.msgpack
+                        └── ...
 ```
 
 ### Path Breakdown
@@ -57,10 +61,16 @@ s3://nagelfluh-project-{project-id}/
   - Accessible by all processes in the project
   - Immutable after upload
 
-- **`processes/{process-id}/datasets/{dataset-id}/`**: Process outputs
-  - Written by process pods
-  - Each process writes to its own directory
-  - No overwrites possible (unique IDs per execution)
+- **`processes/{process-id}/{version}/datasets/{dataset-id}/`**: Process outputs
+  - Written by process pods; scanned by the backend once the job completes
+    (`ProcessVersion._create_outputs`, `backend/models/process.py`)
+  - `info.json` is authoritative: the backend reads `dataset_name`/`mime_type` and the
+    `files`/`parts` map from it to create the `Dataset` DB record — there is no fixed
+    `root.msgpack` filename, the process chooses its own data file names and info.json points at
+    them
+  - Keyed by process **version**, not just process id, so re-running a process as a new version
+    cannot collide with or overwrite a prior version's output
+  - No overwrites possible (unique dataset IDs per execution)
   - Multiple files supported (root + parts)
 
 ## Security Model
@@ -110,25 +120,55 @@ Process pods receive scoped credentials with:
 
 ### Credential Injection
 
-Credentials are injected into process pods via Kubernetes secrets:
+Credentials are not a static, per-project secret synced into Kubernetes. Each `StorageBackend`
+row has a `credential_strategy` (`backend/services/storage_credentials.py`) that decides how a
+job's credentials are obtained and how long they last:
+
+- **`static-key`** (`StaticKeyStrategy`) — the protocol handler's `provision()` runs once, at
+  project creation, and the resulting access/secret key pair is persisted on the `Project` row.
+  Every job launch reuses that same pair; `mint()` just returns it. It never expires on its own.
+- **`short-lived`** (`ShortLivedStrategy`) — the protocol handler's `mint()` is called fresh at
+  every job launch, and the runner refreshes it again mid-job (see below). Lifetime is pegged to
+  the shortest common cap across backends actually in use (~1h) for a uniform refresh cadence.
+
+Either strategy, the resulting credentials are delivered to the pod as a single
+`STORAGE_KWARGS_JSON` environment variable — the exact kwargs
+`StorageProtocolHandler.fsspec_kwargs()` built for that credential set, passed straight to
+`fsspec.open(url, **kwargs)` — not a Kubernetes Secret:
 
 ```yaml
 env:
-  - name: AWS_ACCESS_KEY_ID
-    valueFrom:
-      secretKeyRef:
-        name: project-{project_id}-storage
-        key: access_key
-  - name: AWS_SECRET_ACCESS_KEY
-    valueFrom:
-      secretKeyRef:
-        name: project-{project_id}-storage
-        key: secret_key
   - name: STORAGE_BASE
     value: s3://nagelfluh-project-{project_id}
-  - name: STORAGE_ENDPOINT
-    value: http://minio.minio.svc.cluster.local:9000  # MinIO only
+  - name: STORAGE_KWARGS_JSON
+    value: '{"key": "...", "secret": "...", "client_kwargs": {"endpoint_url": "..."}}'
+  - name: CREDENTIAL_STRATEGY
+    value: static-key   # or short-lived
 ```
+
+This is cluster-agnostic: nothing is mounted from a per-cluster Kubernetes secret, so a job
+running on a remote/GKE cluster gets its credentials the same way a local Minikube job does. See
+`docs/plans/done/per-project-storage-routing.md`.
+
+#### Short-Lived Credential Refresh
+
+For `credential_strategy=short-lived`, the pod also receives `STORAGE_REFRESH_TOKEN` (an opaque
+per-job token, hash-compared server-side) and `STORAGE_CREDENTIALS_EXPIRES_AT`. `runner.py` forks
+a separate refresher **OS process** (not a thread — process code is often CPU-bound numpy/scipy
+that can hold the GIL, which would starve a same-process thread right up to expiry) that:
+
+1. Sleeps until roughly half the remaining credential lifetime
+2. Calls `POST /internal/process/{process_id}/versions/{version}/storage-credentials/refresh`
+   (authenticated by the refresh token, re-running `strategy.mint()` server-side)
+3. Writes the new `{credentials, expires_at}` to a local file via
+   write-to-tempfile-then-atomic-rename
+4. Repeats until the job exits
+
+The main process's `storage_context['storage_kwargs']` is a `RefreshableStorageKwargs` object
+(`docker/base-runner/storage_credentials_client.py`) that re-reads this file on every fsspec call
+— env vars can't be updated on an already-running process, so the initial `STORAGE_KWARGS_JSON`
+is only good for the first mint, not for a long-running job. See
+`docs/plans/done/short-lived-storage-credentials-00-overview.md` for the full design.
 
 ## Dataset I/O with fsspec
 
@@ -282,33 +322,52 @@ Common formats:
 
 ## Storage Configuration
 
-### Backend Configuration
+### Per-Project Storage Backends
 
-Configure storage in `backend/config.py` or via environment variables:
+Storage is not configured once, globally. Each project is bound to one row in the
+`storage_backends` table (`backend/models/storage_backend.py`, `StorageBackend`), and every
+read/write for that project resolves through it — never through global settings at request time.
+A `StorageBackend` carries:
 
-```python
-# config.py
-STORAGE_PROTOCOL = os.getenv("STORAGE_PROTOCOL", "s3")  # s3, gcs, az, file
-STORAGE_ENDPOINT = os.getenv("STORAGE_ENDPOINT", "")    # MinIO URL or empty
-STORAGE_BUCKET_PREFIX = os.getenv("STORAGE_BUCKET_PREFIX", "nagelfluh-project-")
-```
+- `protocol` — `s3`, `gcs`, `az`, `file`, or a plugin-provided value (e.g. `minio`, from
+  `plugins/ymerflow-minikube`)
+- `bucket_prefix` — combined with the project id to form the bucket name
+- `credential_strategy` — `static-key` or `short-lived` (see Credential Injection above)
+- `config` — an opaque JSON blob meaningful only to that protocol's handler (MinIO admin alias,
+  GCP service account to impersonate, AWS role ARN, etc.)
 
-### Environment Variables
+All addressing and fsspec-kwarg construction for a backend is delegated to a
+`StorageProtocolHandler` (`backend/services/storage_protocols/__init__.py`), resolved from
+`backend.protocol`:
+
+- `provision(project, backend)` — one-time bucket/user/policy setup at project creation
+- `mint(project, backend)` — mint a (possibly short-lived) credential
+- `storage_base_url(project, backend)` — the `<scheme>://<bucket_prefix><project_id>` root for
+  that project's data
+- `fsspec_kwargs(backend, credentials, for_pod=False)` — the kwargs handed to
+  `fsspec.open()`/`fsspec.filesystem()`
+- `admin_credentials(backend)` — the backend's own trusted credentials, used for backend-side
+  (trusted) I/O, which may read/write any project's bucket on that backend
+- `bootstrap()`/`teardown()` — provision/tear down whatever infrastructure the protocol needs at
+  install time (see [Registry Architecture](registry.md) for the sibling pattern)
+
+Backend-side services (`backend/services/storage_service.py`: dataset scanning, the `/files/`
+proxy, upload handling) and job-launch credential minting (`backend/services/job_orchestrator.py`)
+all resolve the *project's own* `StorageBackend` this way. Core ships one built-in handler (`s3`);
+MinIO's handler lives in `plugins/ymerflow-minikube` (see the Storage Backends section above).
+
+### Install-Time Defaults
+
+`backend/config.py`'s `storage_protocol` / `storage_endpoint` / `storage_bucket_prefix` settings
+still exist, but only as seed values: the bootstrap migrations copy them into the default
+`StorageBackend` row the first time the database is set up. After that, nothing reads them at
+runtime — changing these env vars on an existing deployment has no effect. Reconfigure storage
+through the admin storage-backends API instead (see "Choosing a Storage Backend" below).
 
 ```bash
-# .env file for development
+# .env file — used once, at install time, to seed the default StorageBackend row
 STORAGE_PROTOCOL=s3
-STORAGE_ENDPOINT=http://localhost:9000      # MinIO
-STORAGE_BUCKET_PREFIX=nagelfluh-project-
-
-# Production (GCS)
-STORAGE_PROTOCOL=gcs
-STORAGE_ENDPOINT=                            # Empty for cloud
-STORAGE_BUCKET_PREFIX=nagelfluh-project-
-
-# Production (S3)
-STORAGE_PROTOCOL=s3
-STORAGE_ENDPOINT=                            # Empty for AWS S3
+STORAGE_ENDPOINT=http://localhost:9000      # MinIO, or empty for cloud S3/GCS
 STORAGE_BUCKET_PREFIX=nagelfluh-project-
 ```
 
@@ -318,15 +377,17 @@ When a new project is created:
 
 1. **Backend generates**:
    - Unique project ID
-   - Bucket name: `{STORAGE_BUCKET_PREFIX}{project_id}`
-   - Access credentials (MinIO) or service account (cloud)
+   - Bucket name: `{backend.bucket_prefix}{project_id}` (the project's `StorageBackend` row)
+   - Access credentials (MinIO) or service account (cloud), via the backend's `credential_strategy`
 
 2. **MinIO setup** (development):
    - Create bucket via MinIO API
    - Create dedicated user
    - Create IAM policy with path-based permissions
    - Attach policy to user
-   - Store credentials in Kubernetes secret
+   - Persist the credential pair on the `Project` row (`static-key`) or mint one fresh per job
+     (`short-lived`) — see Credential Injection above; delivered to job pods as `STORAGE_KWARGS_JSON`,
+     not a Kubernetes secret
 
 3. **Cloud setup** (production):
    - Create GCS bucket with uniform access control
@@ -336,6 +397,25 @@ When a new project is created:
 
 4. **Database record**:
    - Store project ID, bucket name, credential reference
+
+## Choosing a Storage Backend
+
+Which `StorageBackend` a project uses is a user-facing choice, not a fixed setting:
+
+- `GET /utilities/available-storage-backends` returns the backends the current user is allowed to
+  create a project against, resolved by `get_allowed_storage_backends()`
+  (`backend/models/storage_backend.py`). If no `select_storage_backends` plugin hook is
+  registered, every active backend is allowed; if one or more plugins register the hook (e.g. a
+  billing plugin gating backends by plan), the allowed set is the union of what they return —
+  mirrors how `select_clusters` already gates cluster choice.
+- The create-project dialog (`frontend/src/ProjectModal.jsx`) shows that list and submits the
+  chosen id as a required `storage_backend_id` on `POST /projects`; the backend re-validates it
+  against the allowed set server-side rather than trusting the client. Unlike cluster selection,
+  there is no server-side default — a request that omits `storage_backend_id` is rejected.
+- Admins manage the backend catalog itself under `/admin/storage-backends`
+  (`backend/routers/admin.py`) — list/create/update, plus a stateless "test connection" endpoint
+  used before saving. `config` values the protocol handler flags as secret
+  (`StorageProtocolHandler.SECRET_CONFIG_KEYS`) are masked in every admin API response.
 
 ## Best Practices
 
@@ -386,22 +466,23 @@ except Exception as e:
 
 ### Permission Denied
 
+Credentials are not a Kubernetes secret to inspect — they arrive in the pod as the
+`STORAGE_KWARGS_JSON` env var (see Credential Injection above). To debug:
+
 ```bash
-# Check Kubernetes secret exists
-kubectl get secret project-{project_id}-storage -n nagelfluh-jobs
+# Confirm the pod actually received storage kwargs, and which credential_strategy it's using
+kubectl exec -it {pod-name} -n nagelfluh-jobs -- printenv STORAGE_KWARGS_JSON CREDENTIAL_STRATEGY
 
-# View secret contents
-kubectl get secret project-{project_id}-storage -n nagelfluh-jobs -o yaml
-
-# Test credentials from pod
+# Test the credentials from inside the pod
 kubectl exec -it {pod-name} -n nagelfluh-jobs -- python3 -c "
-import fsspec, os
-fs = fsspec.filesystem('s3',
-    key=os.environ['AWS_ACCESS_KEY_ID'],
-    secret=os.environ['AWS_SECRET_ACCESS_KEY'],
-    client_kwargs={'endpoint_url': os.environ.get('STORAGE_ENDPOINT')})
+import fsspec, json, os
+kwargs = json.loads(os.environ['STORAGE_KWARGS_JSON'])
+fs = fsspec.filesystem(os.environ['STORAGE_BASE'].split('://')[0], **kwargs)
 print(fs.ls('nagelfluh-project-{project_id}'))
 "
+
+# If credentials look wrong at the source, check the project's StorageBackend (as admin)
+curl -H "Authorization: Bearer $TOKEN" https://localhost:8000/admin/storage-backends
 ```
 
 ### File Not Found
@@ -428,16 +509,3 @@ kubectl get pods -n minio -l app=minio
 # Test connection
 curl -k https://localhost:9000/minio/health/live
 ```
-
-## Migration from Legacy Storage
-
-Older Nagelfluh versions used a shared `DATA_BASE_PATH`. To migrate:
-
-1. **Identify datasets**: List all files under old `DATA_BASE_PATH`
-2. **Group by project**: Determine which datasets belong to which projects
-3. **Copy to new buckets**: Use `mc mirror` or `gsutil rsync`
-4. **Update database**: Update `storage_path` in dataset records
-5. **Verify access**: Test processes can read migrated datasets
-6. **Remove old storage**: Clean up `DATA_BASE_PATH` after verification
-
-See migration scripts in `backend/migrations/` for automated tools.

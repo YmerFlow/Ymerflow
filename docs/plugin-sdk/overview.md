@@ -38,7 +38,9 @@ Consumers:
 - `tests/plugins/test-backend-plugin/setup.py` (its `build_py` calls `build_frontend` at install time).
 - `docker/base-runner/Dockerfile` — `pip install "git+https://…/Ymerflow-plugin-sdk.git"`. The repo
   is public, so https needs no build credentials; for a private repo use a BuildKit ssh mount or a
-  token. The `build_frontend_plugin` process type then runs `python -m ymerflow_plugin_build` in-pod.
+  token. The `build_frontend_plugin` process type then imports and calls
+  `ymerflow_plugin_build.build_frontend()` in-pod (the CLI/`python -m` form is only used for the
+  Dockerfile's build-time warmup smoke-test).
 
 **JavaScript (plugin authors).** A plugin's `package.json`:
 
@@ -65,7 +67,13 @@ purpose — renaming them would break the running cluster and already-built plug
   (set in `frontend/src/plugins/hooks.jsx`).
 - `nagelfluh.remoteName` — the `package.json` key a plugin uses to declare its MF remote name
   (read by the build harness).
-- `NAGELFLUH_SHARED_VERSIONS` — env var the host injects with its shared-singleton versions.
+- `NAGELFLUH_SHARED_VERSIONS` — env var read as a fallback by the SDK's own Vite preset
+  (`js/vite-preset.js`) when a plugin is built directly with `vite build` outside the Nagelfluh
+  pipeline. Nagelfluh's own build path doesn't use it: `backend/services/job_orchestrator.py` sets
+  a differently-named `PLUGIN_SHARED_VERSIONS` env var on the build job, and
+  `build_frontend_plugin.py` reads that and passes it straight into
+  `ymerflow_plugin_build.build_frontend()` as the `shared_versions=` keyword argument — an in-process
+  Python call, not another env var the JS side reads.
 - `PLUGIN_NPM_SOURCE_DIR` / `/var/lib/nagelfluh/plugin-npm-source` — server-local npm source path.
 
 ## Releasing / pinning
