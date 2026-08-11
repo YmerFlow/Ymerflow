@@ -90,11 +90,12 @@ function inUseDiffReducer(state, action) {
 const EMPTY_ARRAY = [];
 
 // Helper to parse URL pathname into params
-// Expected format: /app/w/:workspace/p/:project/pr/:process/v/:version/part/:part/s/:sounding
+// Expected format: /app/w/:workspace/wv/:workspaceVersion/p/:project/pr/:process/v/:version/part/:part/s/:sounding
 // All segments are optional
 function parseUrlParams(pathname) {
   const params = {
     workspace: null,
+    workspaceVersion: null,
     project: null,
     process: null,
     version: null,
@@ -110,6 +111,9 @@ function parseUrlParams(pathname) {
     const segment = segments[i];
     if (segment === 'w' && i + 1 < segments.length) {
       params.workspace = segments[i + 1];
+      i++;
+    } else if (segment === 'wv' && i + 1 < segments.length) {
+      params.workspaceVersion = parseInt(segments[i + 1], 10);
       i++;
     } else if (segment === 'p' && i + 1 < segments.length) {
       params.project = segments[i + 1];
@@ -133,11 +137,14 @@ function parseUrlParams(pathname) {
 }
 
 // Helper to build URL path from params
-export function buildUrlPath(workspace, project, process, version, part, sounding) {
+export function buildUrlPath(workspace, workspaceVersion, project, process, version, part, sounding) {
   let path = '/app';
 
   if (workspace) {
     path += `/w/${workspace}`;
+    if (workspaceVersion !== null && workspaceVersion !== undefined) {
+      path += `/wv/${workspaceVersion}`;
+    }
     if (project) {
       path += `/p/${project}`;
       if (process) {
@@ -169,6 +176,7 @@ export function ProcessProvider({ children }) {
 
   // Extract values from URL - memoize objects to prevent unnecessary re-renders
   const selectedEnvironment = urlParams.workspace;
+  const selectedEnvironmentVersion = urlParams.workspaceVersion;
   const currentProject = urlParams.project;
   const activeProcess = useMemo(() =>
     urlParams.process ? { processId: urlParams.process, version: urlParams.version } : null,
@@ -226,30 +234,30 @@ export function ProcessProvider({ children }) {
   }, [currentProject, projects, addMessage]);
 
   // Setter functions that update the URL
-  const setSelectedEnvironment = useCallback((workspace) => {
-    const path = buildUrlPath(workspace, currentProject, activeProcess?.processId, activeProcess?.version, currentPart === "all" ? null : currentPart, currentSounding);
+  const setSelectedEnvironment = useCallback((workspace, workspaceVersion = null) => {
+    const path = buildUrlPath(workspace, workspaceVersion, currentProject, activeProcess?.processId, activeProcess?.version, currentPart === "all" ? null : currentPart, currentSounding);
     navigate(path);
   }, [navigate, currentProject, activeProcess, currentPart, currentSounding]);
 
   const setCurrentProject = useCallback((project) => {
-    const path = buildUrlPath(selectedEnvironment, project, null, null, null, null);
+    const path = buildUrlPath(selectedEnvironment, selectedEnvironmentVersion, project, null, null, null, null);
     navigate(path);
-  }, [navigate, selectedEnvironment]);
+  }, [navigate, selectedEnvironment, selectedEnvironmentVersion]);
 
   const setActiveProcess = useCallback((process) => {
-    const path = buildUrlPath(selectedEnvironment, currentProject, process?.processId, process?.version, null, null);
+    const path = buildUrlPath(selectedEnvironment, selectedEnvironmentVersion, currentProject, process?.processId, process?.version, null, null);
     navigate(path);
-  }, [navigate, selectedEnvironment, currentProject]);
+  }, [navigate, selectedEnvironment, selectedEnvironmentVersion, currentProject]);
 
   const setCurrentPart = useCallback((part) => {
-    const path = buildUrlPath(selectedEnvironment, currentProject, activeProcess?.processId, activeProcess?.version, part === "all" ? null : part, null);
+    const path = buildUrlPath(selectedEnvironment, selectedEnvironmentVersion, currentProject, activeProcess?.processId, activeProcess?.version, part === "all" ? null : part, null);
     navigate(path);
-  }, [navigate, selectedEnvironment, currentProject, activeProcess]);
+  }, [navigate, selectedEnvironment, selectedEnvironmentVersion, currentProject, activeProcess]);
 
   const setCurrentSounding = useCallback((sounding) => {
-    const path = buildUrlPath(selectedEnvironment, currentProject, activeProcess?.processId, activeProcess?.version, currentPart === "all" ? null : currentPart, sounding);
+    const path = buildUrlPath(selectedEnvironment, selectedEnvironmentVersion, currentProject, activeProcess?.processId, activeProcess?.version, currentPart === "all" ? null : currentPart, sounding);
     navigate(path);
-  }, [navigate, selectedEnvironment, currentProject, activeProcess, currentPart]);
+  }, [navigate, selectedEnvironment, selectedEnvironmentVersion, currentProject, activeProcess, currentPart]);
 
   // Centralized cache invalidation helpers - THE ONLY WAY to invalidate queries in the app
   const invalidateHelpers = useMemo(() => ({
@@ -508,6 +516,7 @@ export function ProcessProvider({ children }) {
       currentPart,
       setCurrentPart,
       selectedEnvironment,
+      selectedEnvironmentVersion,
       setSelectedEnvironment,
       environments,
       environmentsLoading,
@@ -547,6 +556,7 @@ export function ProcessProvider({ children }) {
       currentPart,
       setCurrentPart,
       selectedEnvironment,
+      selectedEnvironmentVersion,
       setSelectedEnvironment,
       environments,
       environmentsLoading,

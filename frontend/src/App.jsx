@@ -171,16 +171,19 @@ function AppWithContext({ widgets }) {
   // Load workspace on mount based on URL or fall back to 'default'
   useEffect(() => {
     const loadInitialWorkspace = async () => {
-      // Extract workspace ID from URL path (e.g. /app/w/:workspace/...)
+      // Extract workspace ID and version from URL path (e.g. /app/w/:workspace/wv/:workspaceVersion/...)
       const match = location.pathname.match(/\/w\/([^/]+)/);
       const workspaceId = match ? match[1] : 'default';
+      const versionMatch = location.pathname.match(/\/wv\/([^/]+)/);
+      const workspaceVersion = versionMatch ? parseInt(versionMatch[1], 10) : null;
 
       try {
         const { getWorkspace } = await import('./datamodel/api');
         const workspace = await getWorkspace(workspaceId);
-        const latestVersion = workspace?.versions?.[workspace.versions.length - 1];
-        if (latestVersion) {
-          setLayoutToUse(latestVersion.layout);
+        const versions = workspace?.versions ?? [];
+        const selectedVersion = versions.find(v => v.version === workspaceVersion) ?? versions[versions.length - 1];
+        if (selectedVersion) {
+          setLayoutToUse(selectedVersion.layout);
         }
       } catch (error) {
         console.error('Failed to load workspace, using hardcoded layout:', error);

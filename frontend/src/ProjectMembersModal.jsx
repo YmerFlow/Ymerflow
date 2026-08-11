@@ -207,7 +207,7 @@ function PendingInvitesTab({ projectId }) {
 }
 
 function PublicationsTab({ projectId }) {
-  const { selectedEnvironment, activeProcess, currentPart, currentSounding } = useContext(ProcessContext);
+  const { selectedEnvironment, selectedEnvironmentVersion, activeProcess, currentPart, currentSounding } = useContext(ProcessContext);
   const { data: publications = [], isLoading } = usePublications(projectId);
   const createPublication = useCreatePublication(projectId);
   const deletePublication = useDeletePublication(projectId);
@@ -218,6 +218,7 @@ function PublicationsTab({ projectId }) {
   const copyLink = (publicationId) => {
     const path = buildUrlPath(
       selectedEnvironment,
+      selectedEnvironmentVersion,
       publicationId,
       activeProcess?.processId,
       activeProcess?.version,

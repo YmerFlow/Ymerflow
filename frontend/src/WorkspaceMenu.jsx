@@ -11,34 +11,23 @@ import WorkspaceSharingModal from './WorkspaceSharingModal';
 // button writes new versions back to.
 function WorkspaceRow({ workspace }) {
   const { updateLayout } = useContext(LayoutContext);
-  const { selectedEnvironment, setSelectedEnvironment } = useContext(ProcessContext);
+  const { selectedEnvironment, selectedEnvironmentVersion, setSelectedEnvironment } = useContext(ProcessContext);
 
   const versions = workspace.versions || [];
   const latestVersion = versions.length ? versions[versions.length - 1].version : null;
   const isActive = workspace.id === selectedEnvironment;
 
-  const [selectedVersion, setSelectedVersion] = useState(latestVersion);
-  const prevLatestRef = useRef(latestVersion);
-  useEffect(() => {
-    const selectionMissing = selectedVersion == null || !versions.some(v => v.version === selectedVersion);
-    const latestIncreased = latestVersion != null && latestVersion !== prevLatestRef.current;
-    prevLatestRef.current = latestVersion;
-    // Snap the version dropdown to the newest version when either our current pick vanished, or a
-    // new version was just saved for the workspace we're actively viewing — so a Save is reflected
-    // immediately. Inactive rows keep whatever older version the user was browsing.
-    if (selectionMissing || (isActive && latestIncreased)) {
-      setSelectedVersion(latestVersion);
-    }
-  }, [latestVersion, selectedVersion, versions, isActive]);
+  // Inactive rows always show the latest version — there's no "pending pick" state independent
+  // of the URL; picking a version activates the row immediately (see loadVersion below).
+  const displayedVersion = isActive ? (selectedEnvironmentVersion ?? latestVersion) : latestVersion;
 
   // Load a specific version's layout and make this the current workspace. Used by both the title
   // click and the version dropdown, so changing the version applies it immediately.
   const loadVersion = (versionNum) => {
     const entry = versions.find(v => v.version === versionNum) || versions[versions.length - 1];
     if (!entry) return;
-    setSelectedVersion(entry.version);
     updateLayout(entry.layout);
-    setSelectedEnvironment(workspace.id);
+    setSelectedEnvironment(workspace.id, entry.version);
   };
 
   return (
@@ -47,14 +36,14 @@ function WorkspaceRow({ workspace }) {
         type="button"
         className={`btn btn-sm flex-grow-1 text-start px-0 ${isActive ? 'text-primary fw-bold' : 'text-body'}`}
         style={{ border: 'none', background: 'none' }}
-        onClick={() => loadVersion(selectedVersion)}
+        onClick={() => loadVersion(displayedVersion)}
       >
         {workspace.title}
       </button>
       <select
         className="form-select form-select-sm"
         style={{ width: 'auto' }}
-        value={selectedVersion ?? ''}
+        value={displayedVersion ?? ''}
         onClick={e => e.stopPropagation()}
         onChange={e => loadVersion(parseInt(e.target.value, 10))}
       >
@@ -82,7 +71,7 @@ export default function WorkspaceMenu() {
   // target workspace and disable itself when nothing is loaded — the "remembers where it came
   // from" affordance. Registered once; it reads live state from context/hooks internally.
   const [SaveCurrentWorkspace] = useState(() => function SaveCurrentWorkspaceComponent() {
-    const { currentProject: proj, selectedEnvironment } = useContext(ProcessContext);
+    const { currentProject: proj, selectedEnvironment, setSelectedEnvironment } = useContext(ProcessContext);
     const { data: workspaces = [] } = useWorkspaces(proj);
     const saveVersion = useSaveWorkspaceVersion(proj);
     const current = workspaces.find(w => w.id === selectedEnvironment);
@@ -90,7 +79,8 @@ export default function WorkspaceMenu() {
     const handleSave = async () => {
       if (!current) return;
       try {
-        await saveVersion.mutateAsync({ workspaceId: current.id, layout: layoutRef.current });
+        const saved = await saveVersion.mutateAsync({ workspaceId: current.id, layout: layoutRef.current });
+        setSelectedEnvironment(current.id, saved.version);
       } catch (error) {
         console.error('Failed to save workspace version:', error);
         alert('Failed to save new version. Please try again.');
