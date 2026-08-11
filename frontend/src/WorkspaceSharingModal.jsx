@@ -1,10 +1,9 @@
 import React, { useState, useRef, useEffect, useContext } from 'react';
-import { Modal, Tab, Tabs, Table, Button, Form, Spinner, Alert } from 'react-bootstrap';
+import { Modal, Tab, Tabs, Table, Button, Form, Spinner } from 'react-bootstrap';
 import {
   useWorkspaces,
   usePublicWorkspaces,
   useUpdateWorkspace,
-  useForkWorkspace,
 } from './datamodel/useQueries';
 import { ProcessContext } from './ProcessContext';
 
@@ -16,7 +15,7 @@ export default function WorkspaceSharingModal({ show, onHide, currentProject }) 
       </Modal.Header>
       <Modal.Body>
         <Tabs defaultActiveKey="add" className="mb-3">
-          <Tab eventKey="add" title="Add public workspaces">
+          <Tab eventKey="add" title="View public workspaces">
             <AddPublicWorkspacesTab currentProject={currentProject} onAdded={onHide} />
           </Tab>
           <Tab eventKey="publish" title="Publish workspaces">
@@ -30,14 +29,12 @@ export default function WorkspaceSharingModal({ show, onHide, currentProject }) 
 
 function AddPublicWorkspacesTab({ currentProject, onAdded }) {
   const { data: publicWorkspaces = [], isLoading } = usePublicWorkspaces();
-  const forkWorkspace = useForkWorkspace(currentProject);
   const { setSelectedEnvironment } = useContext(ProcessContext);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
   const [selected, setSelected] = useState(null);
   const [selectedVersion, setSelectedVersion] = useState(null);
-  const [error, setError] = useState(null);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -60,25 +57,10 @@ function AddPublicWorkspacesTab({ currentProject, onAdded }) {
     setSelectedVersion(latest);
     setSearchTerm(workspace.title);
     setShowDropdown(false);
-    setError(null);
-  };
-
-  const handleAdd = async () => {
-    if (!selected) return;
-    setError(null);
-    try {
-      await forkWorkspace.mutateAsync({ workspaceId: selected.id, version: selectedVersion });
-      setSelected(null);
-      setSelectedVersion(null);
-      setSearchTerm('');
-      if (onAdded) onAdded();
-    } catch (err) {
-      setError(err.response?.data?.detail || err.message);
-    }
   };
 
   // Just navigate to it — no mutation, no new workspace created. The only way today to reach
-  // an unowned public workspace without forking is to already have its URL; this is the
+  // an unowned public workspace without this is to already have its URL; this is the
   // discoverable in-app path to the same thing.
   const handleView = () => {
     if (!selected) return;
@@ -133,16 +115,11 @@ function AddPublicWorkspacesTab({ currentProject, onAdded }) {
               <option key={v.version} value={v.version}>v{v.version}</option>
             ))}
           </Form.Select>
-          <Button variant="outline-secondary" onClick={handleView}>
+          <Button onClick={handleView}>
             View
-          </Button>
-          <Button onClick={handleAdd} disabled={forkWorkspace.isPending}>
-            {forkWorkspace.isPending ? <Spinner animation="border" size="sm" /> : 'Add to Project'}
           </Button>
         </div>
       )}
-
-      {error && <Alert variant="danger">{error}</Alert>}
     </>
   );
 }
