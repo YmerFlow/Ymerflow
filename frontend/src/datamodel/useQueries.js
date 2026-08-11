@@ -49,6 +49,8 @@ import {
   updateWorkspace,
   forkWorkspace,
   deleteWorkspace,
+  listSystems,
+  createSystem,
 } from './api';
 
 // Query keys
@@ -73,6 +75,7 @@ export const queryKeys = {
   workspaces: (projectId) => ['workspaces', projectId],
   publicWorkspaces: ['publicWorkspaces'],
   workspace: (id) => ['workspace', id],
+  systems: (projectId) => ['systems', projectId],
 };
 
 // Hook to fetch all projects. viewingId (a project or publication id currently being
@@ -550,5 +553,23 @@ export function useDeleteWorkspace(projectId) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaces(projectId) });
     },
+  });
+}
+
+// ── Survey system queries ─────────────────────────────────────────────────────
+
+export function useSystems(projectId) {
+  return useQuery({
+    queryKey: queryKeys.systems(projectId),
+    queryFn: () => listSystems(projectId),
+    enabled: !!projectId,
+    staleTime: 5 * 60 * 1000, // 5 minutes — systems change rarely
+  });
+}
+
+// NOTE: Does NOT auto-invalidate. Callers invalidate queryKeys.systems(projectId) explicitly.
+export function useCreateSystem() {
+  return useMutation({
+    mutationFn: ({ projectId, name, uploadId }) => createSystem(projectId, { name, uploadId }),
   });
 }

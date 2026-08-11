@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { unpackBinary } from 'msgpack-numpy-js';
 
 // API URL from environment variable, fallback to localhost for development.
 // In production (nginx proxy mode) this is set to "/api" at build time.
@@ -426,6 +427,23 @@ export async function uploadFile(file, onProgress, projectId) {
   });
 
   return response.data;
+}
+
+// Survey systems (msgpack responses — preserve numpy arrays inside each system's `gex`).
+export async function listSystems(projectId) {
+  const response = await apiClient.get(`/projects/${projectId}/systems`, {
+    responseType: 'arraybuffer',
+  });
+  return unpackBinary(new Uint8Array(response.data));
+}
+
+export async function createSystem(projectId, { name, uploadId }) {
+  const response = await apiClient.post(
+    `/projects/${projectId}/systems`,
+    { name, upload_id: uploadId },
+    { responseType: 'arraybuffer' }
+  );
+  return unpackBinary(new Uint8Array(response.data));
 }
 
 export async function getProjectTags(projectId) {
