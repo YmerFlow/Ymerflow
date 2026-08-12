@@ -3,7 +3,7 @@
 import math
 import numpy as np
 
-STATS_MIME = "application/vnd.nagelfluh.stats+json"
+STATS_MIME = "application/vnd.ymerflow.stats+json"
 
 _SIG_FIGS = 6
 

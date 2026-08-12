@@ -28,7 +28,7 @@ from backend.models.workspace import Workspace, WorkspaceVersion
 DEFAULT_PROJECT_ID = "default-project-00000000-0000-0000-0000-000000000000"
 
 # Get database URL from environment
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./nagelfluh.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ymerflow.db")
 
 # Convert to synchronous URL if needed (remove +aiosqlite)
 if "+aiosqlite" in DATABASE_URL:

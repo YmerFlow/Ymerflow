@@ -34,7 +34,7 @@ clients, which always authenticate with a real project-scoped API key.
 7. curl '{url}'                — download results; /files/ URLs need no authentication
 ```
 
-Use `get_dataset` to inspect a dataset before downloading it in full: its `files` dict (root-level and per-part) may include a `"application/vnd.nagelfluh.stats+json"` entry whose URL resolves to pre-computed statistics (count, min, max, mean, rms, percentiles, skewness, kurtosis), so you can check value ranges without downloading the binary content.
+Use `get_dataset` to inspect a dataset before downloading it in full: its `files` dict (root-level and per-part) may include a `"application/vnd.ymerflow.stats+json"` entry whose URL resolves to pre-computed statistics (count, min, max, mean, rms, percentiles, skewness, kurtosis), so you can check value ranges without downloading the binary content.
 
 ## Which endpoints are NOT exposed
 
@@ -259,7 +259,7 @@ Return metadata for a specific dataset including its `mime_type`, `parts` struct
 
 The `url` field in the response is the actual file URL — downloadable directly with curl (`curl "{url}" -o /tmp/result.msgpack`). **Use this `url` as `input_data` when passing this dataset to `create_process`**, not the `/projects/{project_id}/dataset/{id}` URL from `list_processes` outputs.
 
-The `files` dict (both at the root and under `parts.<name>.files`) may contain a key `"application/vnd.nagelfluh.stats+json"`. Fetching that URL returns pre-computed statistics — `count`, `min`, `max`, `mean`, `rms`, `geometric_mean`, `std`, percentiles `p5`/`p25`/`p50`/`p75`/`p95`, `skewness`, `kurtosis` (constant columns/flightlines appear as `{"constant": true, "value": X}` instead). Structure varies by dataset type:
+The `files` dict (both at the root and under `parts.<name>.files`) may contain a key `"application/vnd.ymerflow.stats+json"`. Fetching that URL returns pre-computed statistics — `count`, `min`, `max`, `mean`, `rms`, `geometric_mean`, `std`, percentiles `p5`/`p25`/`p50`/`p75`/`p95`, `skewness`, `kurtosis` (constant columns/flightlines appear as `{"constant": true, "value": X}` instead). Structure varies by dataset type:
 - **XYZ/AEM** (`application/x-aarhusxyz-msgpack`): `flightlines` (per-column stats) and `layer_data` (per-channel, with `.layers` arrays indexed by layer number for varying channels).
 - **MAG** (`application/x-magdata-msgpack`): `columns` (per-column stats).
 - **Grid/webxtile** (`application/x-webxtile`): `variables`, each with `all` and (for 3-D variables) `slices` arrays indexed by z-slice.

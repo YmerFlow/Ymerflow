@@ -89,7 +89,7 @@ def test_log_manager_smoke():
     print("✅ All smoke tests passed!")
     print("\nThe LogManager implementation is syntactically correct.")
     print("\nDatabase migration verification:")
-    print("  Run: sqlite3 backend/nagelfluh.db \".schema process_versions\"")
+    print("  Run: sqlite3 backend/ymerflow.db \".schema process_versions\"")
     print("  Confirm: log_retrieval_state, log_last_timestamp,")
     print("           log_stream_position, log_checkpoint columns exist")
     print("\nNext steps:")

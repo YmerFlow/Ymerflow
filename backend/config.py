@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     # Database
-    database_url: str = "sqlite:///./nagelfluh.db"
+    database_url: str = "sqlite:///./ymerflow.db"
 
     # Per-Project Bucket Storage.
     # NOTE: these four are seed-only — the bootstrap migrations (a6b7c8d9…, 182d880e84c7) copy them
@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_username: Optional[str] = None
     smtp_password: Optional[str] = None
-    smtp_from_email: str = "noreply@nagelfluh.example.com"
+    smtp_from_email: str = "noreply@ymerflow.example.com"
 
     # Container Registry Configuration
     registry_url: str = "registry:5000"  # in-cluster pull URL; overridden by k8s ConfigMap in prod
@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     plugin_npm_source_mode: str = "auto"
     # Server-local directory the admin populates ahead of time with plugin npm packages
     # (`.tgz` tarballs from `npm pack`, or unpacked source dirs), consulted in "auto"/"local" mode.
-    plugin_npm_source_dir: str = "/var/lib/nagelfluh/plugin-npm-source"
+    plugin_npm_source_dir: str = "/var/lib/ymerflow/plugin-npm-source"
     # npm registry used to fetch the plugin source (in "registry"/"auto" mode) AND the build
     # toolchain / non-shared deps. Empty => the build routine's default (registry.npmjs.org); set
     # to a private mirror for locked-down deployments.

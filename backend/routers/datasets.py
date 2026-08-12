@@ -80,7 +80,7 @@ async def get_dataset(
 
     The `files` dict in the response (nested under `"files"` at the root and under
     `"parts".<name>."files"` for each part) may contain a key
-    `"application/vnd.nagelfluh.stats+json"`. Fetching that URL returns a JSON
+    `"application/vnd.ymerflow.stats+json"`. Fetching that URL returns a JSON
     document with pre-computed statistics. Each stat object has:
     `count`, `min`, `max`, `mean`, `rms`, `geometric_mean`, `std`,
     percentiles `p5`/`p25`/`p50`/`p75`/`p95`, `skewness`, `kurtosis`.
