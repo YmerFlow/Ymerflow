@@ -4,7 +4,7 @@ import { Collapse } from 'react-bootstrap';
 import { getDataset } from '../datamodel/api';
 
 export default function Export() {
-  const { activeProcess, processes } = useContext(ProcessContext);
+  const { activeProcess, processes, currentProject } = useContext(ProcessContext);
   const [expandedNodes, setExpandedNodes] = useState({});
   const [datasets, setDatasets] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -36,7 +36,7 @@ export default function Export() {
           // Extract dataset ID from URL
           const datasetId = url.split('/').pop();
           try {
-            const dataset = await getDataset(datasetId);
+            const dataset = await getDataset(datasetId, currentProject);
             return dataset;
           } catch (error) {
             console.error(`Failed to fetch dataset ${datasetId}:`, error);
@@ -55,7 +55,7 @@ export default function Export() {
     };
 
     fetchDatasets();
-  }, [activeProcess, processes]);
+  }, [activeProcess, processes, currentProject]);
 
   if (!activeProcess) {
     return (

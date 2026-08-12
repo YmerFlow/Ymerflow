@@ -12,7 +12,12 @@ import {
   getEnvironmentProcessTypes,
   getProjects,
   createProject,
+  exportProject,
+  getProjectExport,
+  importProject,
+  getProjectImport,
   getAvailableClusters,
+  getAvailableStorageBackends,
   getProjectMembers,
   getProjectInvites,
   createProjectInvite,
@@ -21,6 +26,11 @@ import {
   leaveProject,
   getInviteInfo,
   acceptInvite,
+  getPublications,
+  createPublication,
+  deletePublication,
+  getPublicPublications,
+  updatePublication,
   getProjectTags,
   createProjectTag,
   updateProjectTag,
@@ -31,6 +41,16 @@ import {
   enablePlugin,
   disablePlugin,
   upgradePlugin,
+  getWorkspaces,
+  getPublicWorkspaces,
+  getWorkspace,
+  saveWorkspace,
+  saveWorkspaceVersion,
+  updateWorkspace,
+  forkWorkspace,
+  deleteWorkspace,
+  listSystems,
+  createSystem,
 } from './api';
 
 // Query keys
@@ -43,19 +63,30 @@ export const queryKeys = {
   datasets: (search, completedOnly, projectId) => ['datasets', { search, completedOnly, projectId }],
   processOutputDatasets: (processId, version) => ['processOutputDatasets', processId, version],
   availableClusters: (projectId, resourceRequests) => ['availableClusters', projectId, resourceRequests?.cpu, resourceRequests?.memory],
+  availableStorageBackends: ['availableStorageBackends'],
+  projectExport: (projectId, exportId) => ['projectExport', projectId, exportId],
+  projectImport: (importId) => ['projectImport', importId],
   projectMembers: (projectId) => ['projectMembers', projectId],
   projectInvites: (projectId) => ['projectInvites', projectId],
+  publications: (projectId) => ['publications', projectId],
+  publicPublications: ['publicPublications'],
   inviteInfo: (token) => ['inviteInfo', token],
   projectTags: (projectId) => ['projectTags', projectId],
+  workspaces: (projectId) => ['workspaces', projectId],
+  publicWorkspaces: ['publicWorkspaces'],
+  workspace: (id) => ['workspace', id],
+  systems: (projectId) => ['systems', projectId],
 };
 
-// Hook to fetch all projects
-export function useProjects() {
+// Hook to fetch all projects. viewingId (a project or publication id currently being
+// viewed) is pinned to the front of the list when it isn't already present — this lets
+// an anonymous viewer with a publication link see that one entry even when not logged in.
+export function useProjects(viewingId = null) {
   const { isAuthenticated } = useContext(AuthContext);
   return useQuery({
-    queryKey: queryKeys.projects,
-    queryFn: getProjects,
-    enabled: isAuthenticated,
+    queryKey: [...queryKeys.projects, viewingId],
+    queryFn: () => getProjects(viewingId),
+    enabled: isAuthenticated || !!viewingId,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
@@ -65,11 +96,63 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: createProject,
+    mutationFn: ({ name, storageBackendId }) => createProject(name, storageBackendId),
     onSuccess: () => {
       // Invalidate and refetch projects list
       queryClient.invalidateQueries({ queryKey: queryKeys.projects });
     },
+  });
+}
+
+// Hook to start a project export job (fire-and-forget; poll its progress with useProjectExport)
+export function useExportProject() {
+  return useMutation({
+    mutationFn: (projectId) => exportProject(projectId),
+  });
+}
+
+// Polls an export job until it reaches a terminal state (done/failed).
+export function useProjectExport(projectId, exportId, options = {}) {
+  return useQuery({
+    queryKey: queryKeys.projectExport(projectId, exportId),
+    queryFn: () => getProjectExport(projectId, exportId),
+    enabled: !!projectId && !!exportId,
+    refetchInterval: (query) => {
+      const state = query.state.data?.state;
+      return state === 'done' || state === 'failed' ? false : 2000;
+    },
+    ...options,
+  });
+}
+
+// Hook to seed an already-created (empty) project from a previously-uploaded export zip.
+// The zip must have been uploaded into that same project.
+export function useImportProject() {
+  return useMutation({
+    mutationFn: ({ projectId, uploadId }) => importProject(projectId, uploadId),
+  });
+}
+
+// Polls an import job until it reaches a terminal state (done/failed).
+export function useProjectImport(importId, options = {}) {
+  return useQuery({
+    queryKey: queryKeys.projectImport(importId),
+    queryFn: () => getProjectImport(importId),
+    enabled: !!importId,
+    refetchInterval: (query) => {
+      const state = query.state.data?.state;
+      return state === 'done' || state === 'failed' ? false : 2000;
+    },
+    ...options,
+  });
+}
+
+// Storage backends are not live/quota-based (unlike cluster limits), so a normal staleTime applies.
+export function useAvailableStorageBackends() {
+  return useQuery({
+    queryKey: queryKeys.availableStorageBackends,
+    queryFn: getAvailableStorageBackends,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
 
@@ -106,11 +189,11 @@ export function useProcesses(projectId = null) {
 }
 
 // Hook to fetch a single dataset
-export function useDataset(datasetId, options = {}) {
+export function useDataset(datasetId, projectId, options = {}) {
   return useQuery({
     queryKey: queryKeys.dataset(datasetId),
-    queryFn: () => getDataset(datasetId),
-    enabled: !!datasetId,
+    queryFn: () => getDataset(datasetId, projectId),
+    enabled: !!datasetId && !!projectId,
     staleTime: 30 * 1000, // 30 seconds
     ...options,
   });
@@ -121,21 +204,22 @@ export function useSearchDatasets(search = "", completedOnly = true, projectId =
   return useQuery({
     queryKey: queryKeys.datasets(search, completedOnly, projectId),
     queryFn: () => searchDatasets(search, completedOnly, projectId),
+    enabled: !!projectId,
     staleTime: 10 * 1000, // 10 seconds
     ...options,
   });
 }
 
 // Hook to fetch process output datasets
-export function useProcessOutputDatasets(process, version, options = {}) {
+export function useProcessOutputDatasets(process, version, projectId, options = {}) {
   // Include process state in query key so it refetches when state changes
   const versionObj = process?.versions?.find(v => v.version === version);
   const state = versionObj?.state || 'unknown';
 
   return useQuery({
     queryKey: [...queryKeys.processOutputDatasets(process?.id, version), state],
-    queryFn: () => getProcessOutputDatasets(process, version),
-    enabled: !!process && version != null,
+    queryFn: () => getProcessOutputDatasets(process, version, projectId),
+    enabled: !!process && version != null && !!projectId,
     staleTime: 30 * 1000, // 30 seconds
     ...options,
   });
@@ -166,7 +250,7 @@ export function useCreateProcess() {
 // NOTE: Does NOT auto-invalidate queries. Callers must use ProcessContext invalidation helpers.
 export function useCancelProcess() {
   return useMutation({
-    mutationFn: ({ processId, version }) => cancelProcessVersion(processId, version),
+    mutationFn: ({ processId, version, projectId }) => cancelProcessVersion(processId, version, projectId),
   });
 }
 
@@ -223,6 +307,55 @@ export function useLeaveProject(projectId) {
     mutationFn: () => leaveProject(projectId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects });
+    },
+  });
+}
+
+export function usePublications(projectId) {
+  return useQuery({
+    queryKey: queryKeys.publications(projectId),
+    queryFn: () => getPublications(projectId),
+    enabled: !!projectId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreatePublication(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ findable, allowAnonymous }) => createPublication(projectId, { findable, allowAnonymous }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.publications(projectId) });
+    },
+  });
+}
+
+export function useDeletePublication(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (publicationId) => deletePublication(projectId, publicationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.publications(projectId) });
+    },
+  });
+}
+
+export function usePublicPublications() {
+  return useQuery({
+    queryKey: queryKeys.publicPublications,
+    queryFn: getPublicPublications,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useUpdatePublication(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ publicationId, findable, superpublic }) => updatePublication(projectId, publicationId, { findable, superpublic }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.publications(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects });
+      queryClient.invalidateQueries({ queryKey: queryKeys.publicPublications });
     },
   });
 }
@@ -289,14 +422,14 @@ export function useDeleteTag(projectId) {
 // NOTE: Does NOT auto-invalidate. Callers must use ProcessContext invalidation helpers.
 export function useAddVersionTag() {
   return useMutation({
-    mutationFn: ({ processId, version, tagId }) => addVersionTag(processId, version, tagId),
+    mutationFn: ({ processId, version, tagId, projectId }) => addVersionTag(processId, version, tagId, projectId),
   });
 }
 
 // NOTE: Does NOT auto-invalidate. Callers must use ProcessContext invalidation helpers.
 export function useRemoveVersionTag() {
   return useMutation({
-    mutationFn: ({ processId, version, tagId }) => removeVersionTag(processId, version, tagId),
+    mutationFn: ({ processId, version, tagId, projectId }) => removeVersionTag(processId, version, tagId, projectId),
   });
 }
 
@@ -340,3 +473,103 @@ export function useUpgradePlugin() {
 // `build_frontend_plugin` process in the Process Editor (its schema drives the form); it
 // auto-registers when the build completes and then appears in usePlugins(). This widget only
 // enables/disables already-registered plugins.
+
+// ── Workspace queries ─────────────────────────────────────────────────────────
+
+// Each workspace embeds its full version list (including layout), so selecting a
+// workspace/version in the UI never needs a follow-up fetch.
+export function useWorkspaces(projectId) {
+  return useQuery({
+    queryKey: queryKeys.workspaces(projectId),
+    queryFn: () => getWorkspaces(projectId),
+    enabled: !!projectId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function usePublicWorkspaces() {
+  return useQuery({
+    queryKey: queryKeys.publicWorkspaces,
+    queryFn: getPublicWorkspaces,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useWorkspace(workspaceId, options = {}) {
+  return useQuery({
+    queryKey: queryKeys.workspace(workspaceId),
+    queryFn: () => getWorkspace(workspaceId),
+    enabled: !!workspaceId,
+    staleTime: 30 * 1000,
+    ...options,
+  });
+}
+
+export function useSaveWorkspace(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ title, layout }) => saveWorkspace({ projectId, title, layout }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces(projectId) });
+    },
+  });
+}
+
+export function useSaveWorkspaceVersion(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workspaceId, layout }) => saveWorkspaceVersion(workspaceId, layout),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces(projectId) });
+    },
+  });
+}
+
+export function useUpdateWorkspace(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workspaceId, title, is_public, superpublic }) => updateWorkspace(workspaceId, { title, is_public, superpublic }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.publicWorkspaces });
+    },
+  });
+}
+
+export function useForkWorkspace(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workspaceId, version }) => forkWorkspace(workspaceId, { projectId, version }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces(projectId) });
+    },
+  });
+}
+
+export function useDeleteWorkspace(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (workspaceId) => deleteWorkspace(workspaceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces(projectId) });
+    },
+  });
+}
+
+// ── Survey system queries ─────────────────────────────────────────────────────
+
+export function useSystems(projectId) {
+  return useQuery({
+    queryKey: queryKeys.systems(projectId),
+    queryFn: () => listSystems(projectId),
+    enabled: !!projectId,
+    staleTime: 5 * 60 * 1000, // 5 minutes — systems change rarely
+  });
+}
+
+// NOTE: Does NOT auto-invalidate. Callers invalidate queryKeys.systems(projectId) explicitly.
+export function useCreateSystem() {
+  return useMutation({
+    mutationFn: ({ projectId, name, uploadId }) => createSystem(projectId, { name, uploadId }),
+  });
+}

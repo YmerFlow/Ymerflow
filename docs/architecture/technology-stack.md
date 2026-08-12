@@ -1,6 +1,6 @@
 # Technology Stack
 
-This document describes the technologies and libraries used throughout Nagelfluh.
+This document describes the technologies and libraries used throughout YmerFlow.
 
 For a complete list of open source packages with links, see **[Dependencies](dependencies.md)**.
 
@@ -8,7 +8,7 @@ For a complete list of open source packages with links, see **[Dependencies](dep
 
 ### Core Framework
 - **React 18** - UI framework with hooks and context for state management
-- **Create React App** - Build tooling and development server
+- **Vite** - Build tooling and development server
 - **React Router DOM** - Client-side routing, including popout window support
 
 ### UI Components and Layout
@@ -19,11 +19,11 @@ For a complete list of open source packages with links, see **[Dependencies](dep
 ### Data Visualization
 - **Plotly.js** via **react-plotly.js** - Scientific plotting and charting
 - **ReactFlow** - Interactive node-based graph visualization for process flows
-- **Leaflet** (via react-leaflet) - Map visualization (if used for MapView)
+- **Leaflet** (via react-leaflet) - present as a dependency but currently unused; no `MapView` widget or `leaflet` import exists in the codebase
 
 ### Forms and Data Input
 - **@rjsf/core** (React JSON Schema Form) - Dynamic form generation from JSON schemas
-- **@rjsf/bootstrap-4** - Bootstrap theme for forms
+- **@rjsf/validator-ajv8** - AJV8-based schema validator for RJSF
 - Custom form extensions:
   - `DatasetSelector` - Searchable dataset picker
   - `CustomStringField` - Format-based field detection
@@ -35,13 +35,16 @@ For a complete list of open source packages with links, see **[Dependencies](dep
   - `LayoutContext` - Layout tree and widget management
   - `MenuContext` - Menu registration system
 
+### Plugin System
+- **Module Federation** (`@module-federation/vite`, `@module-federation/runtime`) - Loads frontend plugins built and published independently of the host app at runtime
+- `frontend/src/plugins/loadPlugin.js` - Fetches and initializes a remote plugin module
+- `frontend/src/plugins/hooks.jsx` / `useHook.js` - React hook system plugins use to extend host behavior
+- `frontend/src/plugins/registries.js` - Registries plugins populate (widgets, process types, etc.)
+
 ### Build and Development Tools
-- **Webpack** (via CRA) - Module bundling
-- **Babel** (via CRA) - JavaScript transpilation
-- **ESLint** - Code linting
-- **Prettier** - Code formatting
-- **Jest** - Testing framework
-- **React Testing Library** - Component testing utilities
+- **Vite** - Module bundling, dev server, and production builds
+- **Vitest** - Testing framework
+- **react-scripts** (Create React App) - Still listed as a dependency but no longer used by any npm script; vestigial from before the Vite migration
 
 ## Backend
 
@@ -78,6 +81,7 @@ For a complete list of open source packages with links, see **[Dependencies](dep
 - **OpenAPI** - Automatic API documentation generation
 - **Swagger UI** - Interactive API testing interface (built-in)
 - **ReDoc** - Alternative API documentation UI (built-in)
+- **fastapi-mcp** - Exposes FastAPI routes as MCP tools, mounted at `/mcp` - see [MCP Tools Reference](../mcp-tools.md)
 
 ### Security
 - **python-jose** - JWT token handling
@@ -94,7 +98,7 @@ For a complete list of open source packages with links, see **[Dependencies](dep
 - **Kubernetes** - Container orchestration platform
 - **Minikube** - Local Kubernetes cluster for development
 - **kubectl** - Kubernetes command-line tool
-- **Kueue v0.9.1** - Job queuing system with resource quotas
+- **Kueue v0.16.4** - Job queuing system with resource quotas
 
 ### Containerization
 - **Docker** - Container runtime and image building
@@ -156,20 +160,17 @@ For a complete list of open source packages with links, see **[Dependencies](dep
 ### Package Management
 - **pip** - Python package management
 - **npm** - Node.js package management
-- **requirements.txt** - Python dependency specification
+- **setup.py** (`install_requires`) - Python dependency specification (no backend `requirements.txt`)
 - **package.json** - Node.js dependency specification
 
 ### Code Quality
 - **Black** - Python code formatting
 - **Flake8** - Python linting
 - **mypy** - Python type checking
-- **ESLint** - JavaScript linting
-- **Prettier** - JavaScript formatting
 
 ### Testing
 - **pytest** - Python testing framework (planned)
-- **Jest** - JavaScript testing framework
-- **React Testing Library** - React component testing
+- **Vitest** - JavaScript testing framework
 
 ### Development Scripts
 - Custom bash scripts in `dev/`:
@@ -230,7 +231,7 @@ For a complete list of open source packages with links, see **[Dependencies](dep
 - **Minikube** - Local Kubernetes
 - **MinIO** - Local object storage
 - **SQLite** - Local database
-- **Hot reload** - Backend (Uvicorn) and frontend (CRA)
+- **Hot reload** - Backend (Uvicorn) and frontend (Vite)
 
 ### Production
 - **GKE or EKS** - Managed Kubernetes
@@ -258,6 +259,6 @@ For a complete list of open source packages with links, see **[Dependencies](dep
 
 All software components are either:
 - Open source (see individual library licenses)
-- Proprietary (Nagelfluh codebase - GPL v3.0)
+- Proprietary (YmerFlow codebase - GPL v3.0)
 
 Third-party licenses are respected per their respective terms.

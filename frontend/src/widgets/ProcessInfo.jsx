@@ -1,8 +1,10 @@
 import React, { useContext } from 'react';
 import { ProcessContext } from '../ProcessContext';
-import { useEnvironments } from '../datamodel/useQueries';
 
 const URL_PATTERN = /https?:\/\/[^\s"'<>]+/g;
+
+// Fields that aren't meaningful to show in the process info YAML dump.
+const EXCLUDED_FIELDS = new Set(['versions', 'flow_x', 'flow_y']);
 
 function toYaml(value, indent = 0) {
   const pad = '  '.repeat(indent);
@@ -58,7 +60,6 @@ function renderYamlWithLinks(yamlText) {
 
 export default function ProcessInfo() {
   const { activeProcess, processes } = useContext(ProcessContext);
-  const { data: environments = [] } = useEnvironments();
 
   if (!activeProcess) {
     return (
@@ -78,18 +79,14 @@ export default function ProcessInfo() {
   }
 
   const versionObj = process.versions?.find(v => v.version === activeProcess.version);
-  const environment = environments.find(e => e.id === process.environment_id);
-  const config = {
-    id: process.id,
-    name: process.name,
-    version: activeProcess.version,
-    environment: { id: process.environment_id, name: environment?.name },
-    type: process.type,
-    tags: (versionObj?.tags || []).map(t => t.name),
-    parameters: versionObj?.parameters,
-    resource_requests: versionObj?.resource_requests,
-    deadline_seconds: versionObj?.deadline_seconds,
-  };
+  const config = Object.fromEntries(
+    Object.entries(process).filter(([k]) => !EXCLUDED_FIELDS.has(k))
+  );
+  if (versionObj) {
+    Object.assign(config, Object.fromEntries(
+      Object.entries(versionObj).filter(([k]) => !EXCLUDED_FIELDS.has(k))
+    ));
+  }
 
   const yamlText = Object.keys(config).map(k => {
     const v = toYaml(config[k], 1);

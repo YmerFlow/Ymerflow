@@ -1,29 +1,27 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, cast, String
+from sqlalchemy import select, cast, String
 from sqlalchemy.orm import selectinload
-from typing import Optional
 import asyncio
 import fsspec
 
 from backend.database import get_db
-from backend.models import Dataset, ProcessVersion, ProcessState, User, ProjectMember
-from backend.services.auth_service import get_current_user, AuthContext
+from backend.models import Dataset, ProcessVersion, ProcessState
+from backend.services.auth_service import resolve_project_for_read, ProjectReadAccess
 from backend.services.storage_service import get_fsspec_storage_options
 
 router = APIRouter(tags=["Datasets"])
 
 
-@router.get("/datasets", summary="Search for output datasets")
+@router.get("/projects/{project_id}/datasets", summary="Search for output datasets")
 async def search_datasets(
     search: str = "",
     completed_only: bool = True,
-    project_id: Optional[str] = None,
-    auth: AuthContext = Depends(get_current_user),
+    access: ProjectReadAccess = Depends(resolve_project_for_read),
     db: AsyncSession = Depends(get_db)
 ):
-    """Search for datasets produced by completed processing jobs.
+    """Search for datasets produced by completed processing jobs in a project.
 
     Datasets are the outputs of processes. Each dataset has an 'id', a
     'url' (use in process params as an input), 'dataset_name', 'process_name',
@@ -36,36 +34,15 @@ async def search_datasets(
     '<process_name> / v<version> / <dataset_name>'. Pass a process name or
     dataset name fragment to narrow results.
 
-    Filter by project_id to restrict to one project. Set completed_only=false
-    to also include datasets from still-running or failed jobs (rarely useful).
+    Set completed_only=false to also include datasets from still-running or failed jobs
+    (rarely useful).
     """
     stmt = (
         select(Dataset)
         .options(selectinload(Dataset.process_version))
         .join(ProcessVersion, Dataset.process_version_id == ProcessVersion.id)
+        .where(Dataset.project_id == access.project.id)
     )
-
-    if project_id:
-        # Enforce API key scope
-        if auth.api_key_project_id is not None and auth.api_key_project_id != project_id:
-            raise HTTPException(status_code=403, detail="API key is not scoped to this project")
-        member_stmt = select(ProjectMember).where(
-            ProjectMember.project_id == project_id,
-            ProjectMember.user_id == auth.user.id
-        )
-        member_result = await db.execute(member_stmt)
-        if not member_result.scalar_one_or_none():
-            raise HTTPException(status_code=403, detail="Not a member of this project")
-        stmt = stmt.where(Dataset.project_id == project_id)
-    else:
-        # When using an API key, restrict to the key's project
-        if auth.api_key_project_id is not None:
-            stmt = stmt.where(Dataset.project_id == auth.api_key_project_id)
-        else:
-            user_projects = select(ProjectMember.project_id).where(
-                ProjectMember.user_id == auth.user.id
-            ).scalar_subquery()
-            stmt = stmt.where(Dataset.project_id.in_(user_projects))
 
     # Filter by search: case-insensitive substring match against the full display string
     # e.g. "FFT / 1" matches "Super cool FFT / 12 / output"
@@ -86,8 +63,12 @@ async def search_datasets(
     return [d.to_dict() for d in datasets]
 
 
-@router.get("/dataset/{dataset_id}", summary="Get dataset metadata")
-async def get_dataset(dataset_id: str, db: AsyncSession = Depends(get_db)):
+@router.get("/projects/{project_id}/dataset/{dataset_id}", summary="Get dataset metadata")
+async def get_dataset(
+    dataset_id: str,
+    access: ProjectReadAccess = Depends(resolve_project_for_read),
+    db: AsyncSession = Depends(get_db)
+):
     """Return metadata for a specific dataset including its mime_type, parts structure,
     and the process version that produced it.
 
@@ -130,36 +111,49 @@ async def get_dataset(dataset_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(stmt)
     dataset = result.scalar_one_or_none()
 
-    if not dataset:
+    if not dataset or dataset.project_id != access.project.id:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     return dataset.to_dict()
 
 
-@router.get("/dataset/{dataset_id}/data", include_in_schema=False)
-async def get_dataset_data(dataset_id: str, db: AsyncSession = Depends(get_db)):
+@router.get("/projects/{project_id}/dataset/{dataset_id}/data", include_in_schema=False)
+async def get_dataset_data(
+    dataset_id: str,
+    access: ProjectReadAccess = Depends(resolve_project_for_read),
+    db: AsyncSession = Depends(get_db)
+):
     """Download the raw content of a dataset's root part (frontend use only).
 
     For LLM agents: use the 'url' from get_dataset and download with curl instead —
     no authentication required. This endpoint is not exposed to MCP tools.
     """
-    return await get_dataset_part_data(dataset_id, "", db)
+    return await get_dataset_part_data(dataset_id, "", access, db)
 
 
-@router.get("/dataset/{dataset_id}/geography", include_in_schema=False)
-async def get_dataset_geography(dataset_id: str, db: AsyncSession = Depends(get_db)):
+@router.get("/projects/{project_id}/dataset/{dataset_id}/geography", include_in_schema=False)
+async def get_dataset_geography(
+    dataset_id: str,
+    access: ProjectReadAccess = Depends(resolve_project_for_read),
+    db: AsyncSession = Depends(get_db)
+):
     """Get GeoJSON geography for a dataset (root part). Frontend use only."""
-    return await get_dataset_part_geography(dataset_id, "", db)
+    return await get_dataset_part_geography(dataset_id, "", access, db)
 
 
-@router.get("/dataset/{dataset_id}/{part_path:path}/data", include_in_schema=False)
-async def get_dataset_part_data(dataset_id: str, part_path: str, db: AsyncSession = Depends(get_db)):
+@router.get("/projects/{project_id}/dataset/{dataset_id}/{part_path:path}/data", include_in_schema=False)
+async def get_dataset_part_data(
+    dataset_id: str,
+    part_path: str,
+    access: ProjectReadAccess = Depends(resolve_project_for_read),
+    db: AsyncSession = Depends(get_db)
+):
     """Get data for a specific part of a dataset"""
     stmt = select(Dataset).where(Dataset.id == dataset_id)
     result = await db.execute(stmt)
     dataset = result.scalar_one_or_none()
 
-    if not dataset:
+    if not dataset or dataset.project_id != access.project.id:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     # Determine format by checking structure
@@ -214,14 +208,19 @@ async def get_dataset_part_data(dataset_id: str, part_path: str, db: AsyncSessio
     )
 
 
-@router.get("/dataset/{dataset_id}/{part_path:path}/geography", include_in_schema=False)
-async def get_dataset_part_geography(dataset_id: str, part_path: str, db: AsyncSession = Depends(get_db)):
+@router.get("/projects/{project_id}/dataset/{dataset_id}/{part_path:path}/geography", include_in_schema=False)
+async def get_dataset_part_geography(
+    dataset_id: str,
+    part_path: str,
+    access: ProjectReadAccess = Depends(resolve_project_for_read),
+    db: AsyncSession = Depends(get_db)
+):
     """Get GeoJSON geography for a specific part of a dataset. Frontend use only."""
     stmt = select(Dataset).where(Dataset.id == dataset_id)
     result = await db.execute(stmt)
     dataset = result.scalar_one_or_none()
 
-    if not dataset:
+    if not dataset or dataset.project_id != access.project.id:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     # Determine format by checking structure

@@ -44,7 +44,7 @@ export KUBECONFIG="$KUBECONFIG_FILE"
 # its subprocess; resolved directly when this script runs standalone.
 APP_IMAGE_VERSION="${APP_IMAGE_VERSION:-$(env/bin/python backend/bin/yf-resolve-app-image-tag)}"
 
-echo "=== Building Nagelfluh Runner Image for ${ENV_NAME} Environment ==="
+echo "=== Building YmerFlow Runner Image for ${ENV_NAME} Environment ==="
 echo "    Repository: nagelfluh-base-runner:${ENV_TAG}"
 echo ""
 
@@ -148,8 +148,6 @@ spec:
         command: ["python3", "/app/update_bootstrap_environment.py",
                   "/schemas/process_schemas.json", "${ENV_NAME}", "${FULL_IMAGE}"]
         envFrom:
-        - configMapRef:
-            name: ymerflow-backend-config
         - secretRef:
             name: nagelfluh-backend-secret
         volumeMounts:

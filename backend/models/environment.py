@@ -22,13 +22,30 @@ class Environment(Base):
     # The process that created this environment (via Environment.process_id)
     creating_process = relationship("Process", foreign_keys=[process_id], uselist=False)
 
-    def to_dict(self):
-        """Convert to API response format"""
+    def to_dict(self, include_schemas=False, minimal=False):
+        """Convert to API response format.
+
+        process_types is the full JSON Schema for every process type in this
+        environment. That's expensive to ship on every embedding of an environment
+        (e.g. Process.to_dict()'s "environment" field), so by default it's trimmed
+        to just the type names. Pass include_schemas=True (e.g. GET /environments)
+        when the full schemas are actually needed.
+
+        minimal=True drops docker_image, process_id, and process_types entirely,
+        returning only id/name/created_at — for embeddings (e.g. Process.to_dict())
+        where nothing beyond those three fields is ever read.
+        """
+        if minimal:
+            return {
+                "id": self.id,
+                "name": self.name,
+                "created_at": self.created_at.isoformat()
+            }
         return {
             "id": self.id,
             "name": self.name,
             "docker_image": self.docker_image,
             "process_id": self.process_id,
-            "process_types": self.process_types,
+            "process_types": self.process_types if include_schemas else list((self.process_types or {}).keys()),
             "created_at": self.created_at.isoformat()
         }

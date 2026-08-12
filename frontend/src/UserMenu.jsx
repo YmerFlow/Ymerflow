@@ -41,7 +41,7 @@ export default function UserMenu() {
   };
 
 
-  var menuName = "Nagelfluh Geophysics: " + user?.username;
+  var menuName = "YmerFlow Geophysics: " + user?.username;
 
   useRegisterMenuComponent([menuName], null, 0);
 

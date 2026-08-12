@@ -2,7 +2,7 @@
 aem_csv_to_xyz.py
 =================
 Convert comma-separated AEM files to Aarhus Workbench XYZ format for import
-into Nagelfluh / libaarhusxyz.
+into YmerFlow / libaarhusxyz.
 
 Two public functions
 --------------------
@@ -31,7 +31,7 @@ TODOs
   Detect and handle this case before passing to libaarhusxyz / simpleem3.
   Related: simpleem3 has a bug where the halfspace thickness is not handled
   correctly — see TODO.md for details.
-- Nagelfluh model import process: a dedicated Nagelfluh process type for
+- YmerFlow model import process: a dedicated YmerFlow process type for
   importing model XYZ files is needed. The current import_skytem process is
   data-only and requires a GEX file. See TODO.md.
 """

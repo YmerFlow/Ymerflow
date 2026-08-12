@@ -1,6 +1,6 @@
 # Physics & Scientific Methods
 
-This directory documents the scientific methods and modelling approaches implemented in Nagelfluh's processing pipelines. Each document covers a self-contained group of processes, including the mathematical formulations, algorithms, and links to relevant peer-reviewed literature.
+This directory documents the scientific methods and modelling approaches implemented in YmerFlow's processing pipelines. Each document covers a self-contained group of processes, including the mathematical formulations, algorithms, and links to relevant peer-reviewed literature.
 
 ## Pipelines
 

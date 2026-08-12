@@ -1,6 +1,6 @@
 # Common Infrastructure
 
-Documents shared infrastructure components used by all scientific pipelines in Nagelfluh.
+Documents shared infrastructure components used by all scientific pipelines in YmerFlow.
 
 ## Sensitivity Matrix Caching
 

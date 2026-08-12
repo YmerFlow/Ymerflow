@@ -1,7 +1,6 @@
-from sqlalchemy import Column, String, DateTime, LargeBinary
+from sqlalchemy import Column, String, DateTime, LargeBinary, Boolean, ForeignKey
 from datetime import datetime
 import uuid
-import msgpack
 import msgpack_numpy as m
 
 from backend.database import Base
@@ -16,34 +15,7 @@ class System(Base):
     id = Column(String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False)
     gex = Column(LargeBinary, nullable=False)  # Store msgpack bytes
+    project_id = Column(String(255), ForeignKey("projects.id", ondelete="CASCADE"),
+                         nullable=True, index=True)
+    is_public = Column(Boolean, nullable=False, default=False, server_default="0")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    def to_dict(self):
-        """Convert to API response format
-
-        Note: This method is no longer used by the /systems endpoint,
-        which now returns msgpack directly to preserve numpy arrays.
-        Kept for backwards compatibility if needed elsewhere.
-        """
-        # Deserialize msgpack and convert numpy arrays to lists for JSON
-        gex_data = msgpack.unpackb(self.gex, raw=False)
-        return {
-            "id": self.id,
-            "name": self.name,
-            "gex": self._numpy_to_list(gex_data),
-            "created_at": self.created_at.isoformat()
-        }
-
-    @staticmethod
-    def _numpy_to_list(obj):
-        """Recursively convert numpy arrays to lists for JSON serialization"""
-        import numpy as np
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, dict):
-            return {k: System._numpy_to_list(v) for k, v in obj.items()}
-        elif isinstance(obj, (list, tuple)):
-            return [System._numpy_to_list(item) for item in obj]
-        elif isinstance(obj, (np.integer, np.floating)):
-            return obj.item()
-        return obj

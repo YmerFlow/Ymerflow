@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     process_cost: float = 0.10
     initial_user_balance: float = 100.0
 
+    # Markdown shown in the "Hosted version" box on the landing page (config.env
+    # HOSTED_VERSION_TEXT). Served publicly via GET /public-config — no auth, since it's
+    # rendered before sign-in. Unset => the box is left empty.
+    hosted_version_text: Optional[str] = None
+
     # CORS
     cors_origins: List[str] = ["http://localhost:3000"]
 
@@ -107,6 +112,16 @@ class Settings(BaseSettings):
             )
             return secrets.token_urlsafe(32)
         return v
+
+    @field_validator('hosted_version_text', mode='before')
+    @classmethod
+    def unescape_hosted_version_text(cls, v):
+        # config.env is sourced by bash, which does not expand \n inside double
+        # quotes, so a literal backslash-n typed in the file reaches us as-is.
+        # Turn it into a real newline so Markdown renders line breaks correctly.
+        if v is None:
+            return v
+        return v.replace('\\n', '\n')
 
 
 settings = Settings()

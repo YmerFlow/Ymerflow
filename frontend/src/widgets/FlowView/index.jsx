@@ -302,13 +302,13 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
         if (change.dragging === false) {
           const pos = userPositionedNodes.current[change.id];
           if (pos) {
-            updateProcessPosition(change.id, pos.x, pos.y);
+            updateProcessPosition(change.id, pos.x, pos.y, currentProject);
           }
         }
       }
     });
     onNodesChange(changes);
-  }, [onNodesChange]);
+  }, [onNodesChange, currentProject]);
 
   const handleToggleFilterTag = useCallback((tagId) => {
     const next = new Set(selectedFilterTagIds);

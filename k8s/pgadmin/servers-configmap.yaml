@@ -8,7 +8,7 @@ data:
     {
       "Servers": {
         "1": {
-          "Name": "Nagelfluh",
+          "Name": "YmerFlow",
           "Group": "Servers",
           "Host": "postgres.nagelfluh.svc.cluster.local",
           "Port": 5432,

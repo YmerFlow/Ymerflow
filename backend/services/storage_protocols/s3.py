@@ -1,6 +1,6 @@
 """AWS S3 protocol handler — stub.
 
-New code, not a refactor of anything existing (Nagelfluh has no real-AWS storage support today —
+New code, not a refactor of anything existing (YmerFlow has no real-AWS storage support today —
 the existing `minio_service.py` code talks to MinIO's S3-compatible API, handled by
 `MinioProtocolHandler`, not this one). `provision()` will create an IAM role/policy + bucket for
 `static-key` use; `mint()` will call STS `AssumeRole` for the `short-lived` strategy. Both are

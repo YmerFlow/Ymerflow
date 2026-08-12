@@ -1,6 +1,6 @@
 # Open Source Dependencies
 
-All major open source packages used in Nagelfluh, organized by layer.
+All major open source packages used in YmerFlow, organized by layer.
 
 ## Frontend (npm)
 
@@ -10,7 +10,8 @@ All major open source packages used in Nagelfluh, organized by layer.
 | [react](https://react.dev) | UI framework |
 | [react-dom](https://react.dev) | React DOM renderer |
 | [react-router-dom](https://reactrouter.com) | Client-side routing and popout window support |
-| [react-scripts](https://create-react-app.dev) | Build tooling (Create React App) |
+| [vite](https://vitejs.dev) | Build tooling and dev server |
+| [react-scripts](https://create-react-app.dev) | Build tooling (Create React App); still a dependency but no longer used by any npm script — vestigial from before the Vite migration |
 
 ### Data Fetching & State
 | Package | Purpose |
@@ -37,6 +38,12 @@ All major open source packages used in Nagelfluh, organized by layer.
 |---------|---------|
 | [react-dnd](https://react-dnd.github.io/react-dnd) | Drag-and-drop primitives |
 | [react-dnd-html5-backend](https://react-dnd.github.io/react-dnd) | HTML5 drag-and-drop backend |
+
+### Plugin System
+| Package | Purpose |
+|---------|---------|
+| [@module-federation/runtime](https://module-federation.io) | Runtime loading of independently-built/published frontend plugins |
+| [@module-federation/vite](https://module-federation.io) | Vite integration for Module Federation (build-time) |
 
 ### Visualization
 | Package | Purpose |
@@ -66,6 +73,7 @@ All major open source packages used in Nagelfluh, organized by layer.
 | Package | Purpose |
 |---------|---------|
 | [uuid](https://github.com/uuidjs/uuid) | UUID generation |
+| [markdown-to-jsx](https://github.com/quantizor/markdown-to-jsx) | Markdown rendering to React elements |
 
 ---
 
@@ -80,6 +88,7 @@ All major open source packages used in Nagelfluh, organized by layer.
 | [websockets](https://websockets.readthedocs.io) | WebSocket support |
 | [python-multipart](https://github.com/andrew-d/python-multipart) | Multipart form data parsing |
 | [fastapi-mcp](https://github.com/tadata-org/fastapi_mcp) | Expose FastAPI routes as MCP tools |
+| [mcp](https://github.com/modelcontextprotocol/python-sdk) | MCP protocol SDK; pinned `<2.0.0` — no `fastapi-mcp` release supports `mcp` 2.x yet |
 
 ### Database & Migrations
 | Package | Purpose |
@@ -126,6 +135,9 @@ All major open source packages used in Nagelfluh, organized by layer.
 | [click](https://click.palletsprojects.com) | CLI framework (management commands) |
 | [aiosmtplib](https://aiosmtplib.readthedocs.io) | Async SMTP for email notifications |
 | [setuptools](https://setuptools.pypa.io) | Package management; used for process-type entrypoint discovery |
+| [packaging](https://packaging.pypa.io) | Version parsing/comparison utilities |
+| [PyYAML](https://pyyaml.org) | YAML parsing (Kubernetes manifests, config) |
+| [ymerflow-plugin-build](https://github.com/YmerFlow/Ymerflow-plugin-sdk) | Frontend-plugin build harness (git dependency); used by `backend/services/job_orchestrator.py` and the `build_frontend_plugin` process type |
 
 ---
 

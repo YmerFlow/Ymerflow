@@ -7,52 +7,33 @@ from datetime import datetime
 import uuid
 
 from backend.database import get_db
-from backend.models import Process, ProcessVersion, Project, ProjectMember
+from backend.models import Process, ProcessVersion, Project
 from backend.models.process import ProcessTag, process_version_tags_table
-from backend.services.auth_service import get_current_user, AuthContext
+from backend.services.auth_service import get_current_user, AuthContext, require_project_member, resolve_project_for_read, ProjectReadAccess
 
 router = APIRouter(tags=["Tags"])
 
 
-async def _require_project_member(project_id: str, auth: AuthContext, db: AsyncSession) -> Project:
-    if auth.api_key_project_id is not None and auth.api_key_project_id != project_id:
-        raise HTTPException(status_code=403, detail="API key is not scoped to this project")
-    stmt = (
-        select(Project)
-        .join(ProjectMember, ProjectMember.project_id == Project.id)
-        .where(Project.id == project_id, ProjectMember.user_id == auth.user.id)
-    )
-    result = await db.execute(stmt)
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=403, detail="Project not found or not a member")
-    return project
-
-
 @router.get("/projects/{project_id}/tags")
 async def list_project_tags(
-    project_id: str,
-    auth: AuthContext = Depends(get_current_user),
+    access: ProjectReadAccess = Depends(resolve_project_for_read),
     db: AsyncSession = Depends(get_db),
 ):
-    await _require_project_member(project_id, auth, db)
     result = await db.execute(
-        select(ProcessTag).where(ProcessTag.project_id == project_id).order_by(ProcessTag.name)
+        select(ProcessTag).where(ProcessTag.project_id == access.project.id).order_by(ProcessTag.name)
     )
     return [t.to_dict() for t in result.scalars().all()]
 
 
 @router.post("/projects/{project_id}/tags")
 async def create_project_tag(
-    project_id: str,
     body: Dict,
-    auth: AuthContext = Depends(get_current_user),
+    project: Project = Depends(require_project_member),
     db: AsyncSession = Depends(get_db),
 ):
-    await _require_project_member(project_id, auth, db)
     tag = ProcessTag(
         id=str(uuid.uuid4()),
-        project_id=project_id,
+        project_id=project.id,
         name=body["name"],
         color=body.get("color", "#6c757d"),
     )
@@ -64,15 +45,13 @@ async def create_project_tag(
 
 @router.put("/projects/{project_id}/tags/{tag_id}")
 async def update_project_tag(
-    project_id: str,
     tag_id: str,
     body: Dict,
-    auth: AuthContext = Depends(get_current_user),
+    project: Project = Depends(require_project_member),
     db: AsyncSession = Depends(get_db),
 ):
-    await _require_project_member(project_id, auth, db)
     result = await db.execute(
-        select(ProcessTag).where(ProcessTag.id == tag_id, ProcessTag.project_id == project_id)
+        select(ProcessTag).where(ProcessTag.id == tag_id, ProcessTag.project_id == project.id)
     )
     tag = result.scalar_one_or_none()
     if not tag:
@@ -88,14 +67,12 @@ async def update_project_tag(
 
 @router.delete("/projects/{project_id}/tags/{tag_id}")
 async def delete_project_tag(
-    project_id: str,
     tag_id: str,
-    auth: AuthContext = Depends(get_current_user),
+    project: Project = Depends(require_project_member),
     db: AsyncSession = Depends(get_db),
 ):
-    await _require_project_member(project_id, auth, db)
     result = await db.execute(
-        select(ProcessTag).where(ProcessTag.id == tag_id, ProcessTag.project_id == project_id)
+        select(ProcessTag).where(ProcessTag.id == tag_id, ProcessTag.project_id == project.id)
     )
     tag = result.scalar_one_or_none()
     if not tag:
@@ -105,11 +82,12 @@ async def delete_project_tag(
     return {"status": "deleted"}
 
 
-@router.post("/process/{process_id}/versions/{version}/tags/{tag_id}")
+@router.post("/projects/{project_id}/process/{process_id}/versions/{version}/tags/{tag_id}")
 async def add_version_tag(
     process_id: str,
     version: int,
     tag_id: str,
+    project: Project = Depends(require_project_member),
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -121,11 +99,10 @@ async def add_version_tag(
     )
     result = await db.execute(stmt)
     version_obj = result.scalar_one_or_none()
-    if not version_obj:
+    if not version_obj or version_obj.process.project_id != project.id:
         raise HTTPException(status_code=404, detail="Process version not found")
 
-    project_id = version_obj.process.project_id
-    await _require_project_member(project_id, auth, db)
+    project_id = project.id
 
     tag_result = await db.execute(
         select(ProcessTag).where(ProcessTag.id == tag_id, ProcessTag.project_id == project_id)
@@ -169,11 +146,12 @@ async def add_version_tag(
     return {"status": "added"}
 
 
-@router.delete("/process/{process_id}/versions/{version}/tags/{tag_id}")
+@router.delete("/projects/{project_id}/process/{process_id}/versions/{version}/tags/{tag_id}")
 async def remove_version_tag(
     process_id: str,
     version: int,
     tag_id: str,
+    project: Project = Depends(require_project_member),
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -185,11 +163,8 @@ async def remove_version_tag(
     )
     result = await db.execute(stmt)
     version_obj = result.scalar_one_or_none()
-    if not version_obj:
+    if not version_obj or version_obj.process.project_id != project.id:
         raise HTTPException(status_code=404, detail="Process version not found")
-
-    project_id = version_obj.process.project_id
-    await _require_project_member(project_id, auth, db)
 
     tag_result = await db.execute(
         select(ProcessTag).where(ProcessTag.id == tag_id)

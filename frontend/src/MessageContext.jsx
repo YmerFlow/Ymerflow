@@ -2,6 +2,12 @@ import React, { createContext, useCallback, useMemo, useState } from 'react';
 
 export const MessageContext = createContext();
 
+// Expose the context object via window so module-federation plugins can call
+// useContext(window.__nagelfluh_MessageContext) with the shared React singleton.
+if (typeof window !== 'undefined') {
+  window.__nagelfluh_MessageContext = MessageContext;
+}
+
 let messageIdCounter = 0;
 
 export const MessageProvider = ({ children }) => {

@@ -13,7 +13,7 @@ export KUBECONFIG="$KUBECONFIG_FILE"
 BACKUP_DIR="backup_$(date +%Y%m%d_%H%M%S)"
 mkdir "$BACKUP_DIR"
 
-echo "=== Nagelfluh Backup → $BACKUP_DIR ==="
+echo "=== YmerFlow Backup → $BACKUP_DIR ==="
 echo ""
 
 backup_secrets() {

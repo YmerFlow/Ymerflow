@@ -26,7 +26,7 @@ Invert the gridded/continued data for a 3D susceptibility model.
 | Model type (inversion type) | Parameter: `scalar` / `vector` / `amplitude` | All three exposed |
 | Sensitivity storage | `store_sensitivities="disk"` | Handles large surveys without RAM limit |
 | Sensitivity caching | Hash-based filename in `sensitivity_path` | Reuse G across runs with same mesh/survey |
-| Library structure | Standalone [simplemag](https://github.com/SagebrushGeoTools/simplemag) library | Usable/testable outside Nagelfluh |
+| Library structure | Standalone [simplemag](https://github.com/SagebrushGeoTools/simplemag) library | Usable/testable outside YmerFlow |
 | SimPEG exposure | All parameters exposed as class attributes | Follows AEM XYZSystem pattern exactly |
 
 ---
@@ -130,7 +130,7 @@ SimPEG already skips recomputation when the file exists with matching shape. So 
 2. Check if `{storage_base}/sensitivity_cache/{hash}/sensitivity.npy` exists in blob
 3. If yes, download to local temp path before running inversion
 4. After inversion, upload local `.npy` to blob for future runs
-5. This is wired up in the Nagelfluh process layer (not the system library)
+5. This is wired up in the YmerFlow process layer (not the system library)
 
 **Memory sizing:**
 ```
@@ -180,7 +180,7 @@ simplemag/  (https://github.com/SagebrushGeoTools/simplemag)
     └── mag_inversion_example.ipynb   # Synthetic data demo: equiv source → 3D
 ```
 
-The process types (in `mag_processes`) import from this library and wrap it with Nagelfluh
+The process types (in `mag_processes`) import from this library and wrap it with YmerFlow
 process schema/run/storage patterns.
 
 ---
@@ -225,7 +225,7 @@ system implementations without code changes.
   - `run()` → full pipeline
 - [x] `examples/mag_inversion_example.ipynb` — synthetic prism test
 
-### Phase 2 — Nagelfluh Process Types (`docker/base-runner/mag_processes/`)
+### Phase 2 — YmerFlow Process Types (`docker/base-runner/mag_processes/`)
 
 - [ ] `mag_processes/equiv_source_process.py` — `MagEquivSource` process class
   - Schema: input MagData URL, system config, sensitivity blob storage options

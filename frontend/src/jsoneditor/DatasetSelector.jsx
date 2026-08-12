@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { Form } from 'react-bootstrap';
 import { ProcessContext } from '../ProcessContext';
-import { API } from '../datamodel/api';
+import { API, getDataset } from '../datamodel/api';
 import { useSearchDatasets } from '../datamodel/useQueries';
 
 // Resolve the API base to an absolute URL for matching stored dataset URLs.
@@ -33,8 +33,7 @@ export default function DatasetSelector({ value, onChange, id, required }) {
         const match = value.match(/\/datasets\/([^/]+)\//);
         if (match) {
           const datasetId = match[1];
-          fetch(`${API}/dataset/${datasetId}`)
-            .then(r => r.json())
+          getDataset(datasetId, currentProject)
             .then(ds => {
               const display = `${ds.process_name} / v${ds.process_version} / ${ds.dataset_name}`;
               setDisplayValue(display);
@@ -42,11 +41,10 @@ export default function DatasetSelector({ value, onChange, id, required }) {
             })
             .catch(err => console.error('Failed to load dataset:', err));
         }
-      } else if (value.startsWith(apiBase + '/dataset/')) {
+      } else if (value.startsWith(apiBase + '/dataset/') || /\/projects\/[^/]+\/dataset\//.test(value)) {
         // Old format compatibility
         const datasetId = value.split('/').pop();
-        fetch(`${API}/dataset/${datasetId}`)
-          .then(r => r.json())
+        getDataset(datasetId, currentProject)
           .then(ds => {
             const display = `${ds.process_name} / v${ds.process_version} / ${ds.dataset_name}`;
             setDisplayValue(display);
@@ -55,7 +53,7 @@ export default function DatasetSelector({ value, onChange, id, required }) {
           .catch(err => console.error('Failed to load dataset:', err));
       }
     }
-  }, [value]);
+  }, [value, currentProject]);
 
   // Debounce search text to avoid excessive queries
   useEffect(() => {

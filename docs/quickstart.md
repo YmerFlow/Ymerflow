@@ -1,6 +1,6 @@
 # Quickstart
 
-Get from zero to a running Nagelfluh development environment in four steps.
+Get from zero to a running YmerFlow development environment in four steps.
 
 ## Prerequisites
 

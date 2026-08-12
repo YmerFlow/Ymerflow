@@ -1,6 +1,6 @@
 # Container Registry Architecture
 
-Nagelfluh pulls/pushes process-runner images through a **pluggable registry backend** — the same
+YmerFlow pulls/pushes process-runner images through a **pluggable registry backend** — the same
 pattern used for [object storage](storage.md) (`StorageBackend`/`StorageProtocolHandler`) and
 multi-cluster job execution (`Cluster`/`ClusterProvider`). Unlike storage (one backend per
 project), there is exactly **one active registry backend**, used app-wide: every cluster pulls
@@ -172,8 +172,9 @@ Python environment plus control of the host's own Minikube/Docker, it's run host
 one-off `docker run` against the freshly built backend image — with the host's Docker socket,
 `~/.minikube`, `~/.kube`, and `NAGELFLUH_DATA_DIR` bind-mounted and `--network host` (see
 `docs/plans/minikube-provisioning-plugin.md`, Design decision 2) — and its output is folded into
-`nagelfluh-backend-secret`/`ymerflow-backend-config`, which the in-cluster `alembic-migrate` Job
-also receives via `envFrom`.
+the single `nagelfluh-backend-secret` Secret (see
+`docs/plans/generic-backend-config-passthrough.md`), which the in-cluster migration Job also
+receives via `envFrom`.
 
 See `docs/plans/done/registry-backend-hooks.md` for the full design history and rationale, and the
 plugin SDK's `docs/backend-hooks.md` for how a plugin implements `bootstrap()` on its own

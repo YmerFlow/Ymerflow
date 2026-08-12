@@ -17,7 +17,7 @@ This document describes the frontend's data fetching and cache invalidation arch
 
 ## Overview
 
-Nagelfluh uses [TanStack Query v4](https://tanstack.com/query/v4) for:
+YmerFlow uses [TanStack Query v4](https://tanstack.com/query/v4) for:
 - Server state management
 - Automatic background refetching
 - Cache management
@@ -101,7 +101,7 @@ const { data: processes = [], isLoading, error, refetch } = useProcesses(project
 
 ```javascript
 // Fetch a single dataset by ID
-const { data: dataset, isLoading, error } = useDataset(datasetId);
+const { data: dataset, isLoading, error } = useDataset(datasetId, projectId);
 
 // Search datasets with filters
 const { data: datasets = [], isLoading, error } = useSearchDatasets(
@@ -112,8 +112,9 @@ const { data: datasets = [], isLoading, error } = useSearchDatasets(
 
 // Fetch outputs for a specific process version
 const { data: datasets = [], isLoading } = useProcessOutputDatasets(
-  process,  // Process object
-  version   // Version number
+  process,    // Process object
+  version,    // Version number
+  projectId   // Required - query is disabled without it
 );
 ```
 
@@ -136,7 +137,222 @@ const newProcess = await createProcess.mutateAsync({
 });
 // Must manually invalidate after:
 await invalidateProject(projectId);
+
+// Cancel a queued/running process version (does NOT auto-invalidate)
+const cancelProcess = useCancelProcess();
+await cancelProcess.mutateAsync({ processId, version, projectId });
+await invalidateProject(projectId);
 ```
+
+#### Project Export and Import
+
+Export/import are async backend jobs: a mutation kicks the job off, and a paired polling
+query watches it until it reaches a terminal `state` (`"done"` or `"failed"`), then stops
+refetching automatically.
+
+```javascript
+import { useExportProject, useProjectExport, useImportProject, useProjectImport } from '../datamodel/useQueries';
+
+// Start an export job (fire-and-forget)
+const exportProject = useExportProject();
+const { export_id: exportId } = await exportProject.mutateAsync(projectId);
+
+// Poll it until done/failed - refetchInterval stops automatically at a terminal state
+const { data: exportJob } = useProjectExport(projectId, exportId);
+// exportJob.state: "pending" | "running" | "done" | "failed"
+
+// Seed an already-created (empty) project from a previously-uploaded export zip
+// (the zip must have been uploaded into that same project via uploadFile())
+const importProject = useImportProject();
+await importProject.mutateAsync({ projectId, uploadId });
+
+// Poll the import job the same way
+const { data: importJob } = useProjectImport(importId);
+```
+
+**Note**: `useProjectExport`/`useProjectImport` accept an `options` object as their last
+argument (spread into the underlying `useQuery` call) so callers can override `enabled` or
+`refetchInterval` if needed.
+
+#### Storage Backends and Clusters
+
+```javascript
+import { useAvailableStorageBackends, useAvailableClusters } from '../datamodel/useQueries';
+
+// Storage backends available for new projects - not live/quota-based, normal staleTime
+const { data: backends = [] } = useAvailableStorageBackends();
+
+// Clusters available for a project, filtered by live resource limits (e.g. Kueue quota).
+// No staleTime - refetches whenever projectId or resourceRequests changes the query key,
+// since quota can change between requests.
+const { data: clusters = [] } = useAvailableClusters(projectId, { cpu: "2", memory: "4Gi" });
+```
+
+#### Project Membership and Invites
+
+```javascript
+import {
+  useProjectMembers, useProjectInvites, useInviteMember, useCancelInvite,
+  useLeaveProject, useInviteInfo, useAcceptInvite
+} from '../datamodel/useQueries';
+
+// List current members of a project
+const { data: members = [] } = useProjectMembers(projectId);
+
+// List pending invites for a project
+const { data: invites = [] } = useProjectInvites(projectId);
+
+// Invite a member by email (auto-invalidates projectInvites)
+const inviteMember = useInviteMember(projectId);
+await inviteMember.mutateAsync(email);
+
+// Cancel a pending invite (auto-invalidates projectInvites)
+const cancelInvite = useCancelInvite(projectId);
+await cancelInvite.mutateAsync(inviteId);
+
+// Leave a project (auto-invalidates the projects list)
+const leaveProject = useLeaveProject(projectId);
+await leaveProject.mutateAsync();
+
+// Look up an invite by its token (e.g. on the accept-invite landing page); does not retry on error
+const { data: invite, error } = useInviteInfo(token);
+
+// Accept an invite (auto-invalidates the projects list)
+const acceptInvite = useAcceptInvite();
+await acceptInvite.mutateAsync(token);
+```
+
+`useInviteMember`, `useCancelInvite`, and `useLeaveProject` all take `projectId` as a hook
+argument (not a mutation argument) so their `onSuccess` invalidation knows which
+`projectInvites`/`projects` key to invalidate.
+
+#### Publications
+
+Publications are read-only, shareable snapshots of a project (see
+[Publication read-only projects](../plans/done/publication-readonly-projects.md)).
+
+```javascript
+import { usePublications, useCreatePublication, useDeletePublication } from '../datamodel/useQueries';
+
+// List publications for a project
+const { data: publications = [] } = usePublications(projectId);
+
+// Create a publication (auto-invalidates publications)
+const createPublication = useCreatePublication(projectId);
+await createPublication.mutateAsync({ findable: false, allowAnonymous: true });
+
+// Delete a publication (auto-invalidates publications)
+const deletePublication = useDeletePublication(projectId);
+await deletePublication.mutateAsync(publicationId);
+```
+
+#### Version Tags
+
+Tags label specific process versions (e.g. "approved", "final"). Tag CRUD auto-invalidates;
+attaching/removing a tag from a version does not, since it changes process data.
+
+```javascript
+import {
+  useProjectTags, useCreateTag, useUpdateTag, useDeleteTag,
+  useAddVersionTag, useRemoveVersionTag
+} from '../datamodel/useQueries';
+
+// List tags defined for a project
+const { data: tags = [] } = useProjectTags(projectId);
+
+// Create/update/delete a tag definition (all auto-invalidate projectTags)
+const createTag = useCreateTag(projectId);
+await createTag.mutateAsync({ name: "approved", color: "#22c55e" });
+
+const updateTag = useUpdateTag(projectId);
+await updateTag.mutateAsync({ tagId, tag: { name: "approved-v2" } });
+
+const deleteTag = useDeleteTag(projectId);
+await deleteTag.mutateAsync(tagId);
+
+// Attach/remove a tag from a specific process version (does NOT auto-invalidate -
+// callers must use ProcessContext invalidation helpers, since this changes process data)
+const addVersionTag = useAddVersionTag();
+await addVersionTag.mutateAsync({ processId, version, tagId, projectId });
+await invalidateProcess(processId, projectId);
+
+const removeVersionTag = useRemoveVersionTag();
+await removeVersionTag.mutateAsync({ processId, version, tagId, projectId });
+await invalidateProcess(processId, projectId);
+```
+
+#### Plugins
+
+```javascript
+import { usePlugins, useEnablePlugin, useDisablePlugin, useUpgradePlugin } from '../datamodel/useQueries';
+
+// List all registered plugins (requires authentication)
+const { data: plugins = [] } = usePlugins();
+
+// Enable/disable/upgrade a plugin (all auto-invalidate the plugins list)
+const enablePlugin = useEnablePlugin();
+await enablePlugin.mutateAsync(pluginId);
+
+const disablePlugin = useDisablePlugin();
+await disablePlugin.mutateAsync(pluginId);
+
+const upgradePlugin = useUpgradePlugin();
+await upgradePlugin.mutateAsync(pluginId);
+```
+
+**Note**: There is no `useInstallPlugin()`. A frontend plugin is built by creating a
+`build_frontend_plugin` process in the Process Editor (its schema drives the form); it
+auto-registers when the build completes and then appears via `usePlugins()`. These hooks only
+enable/disable/upgrade already-registered plugins.
+
+#### Workspaces
+
+Workspaces are the persistence mechanism for the Flexout layout system — a saved workspace
+embeds its full version list (including the layout tree), so selecting a workspace/version in
+the UI never needs a follow-up fetch. **This has replaced localStorage as the real persistence
+layer**; see [Layout System](./layout.md) for how the layout tree itself is structured.
+
+```javascript
+import {
+  useWorkspaces, usePublicWorkspaces, useWorkspace, useSaveWorkspace,
+  useSaveWorkspaceVersion, useUpdateWorkspace, useForkWorkspace, useDeleteWorkspace
+} from '../datamodel/useQueries';
+
+// List workspaces for a project
+const { data: workspaces = [] } = useWorkspaces(projectId);
+
+// List publicly-shared workspaces (no projectId scoping)
+const { data: publicWorkspaces = [] } = usePublicWorkspaces();
+
+// Fetch a single workspace by ID
+const { data: workspace } = useWorkspace(workspaceId);
+
+// Save a brand-new workspace (auto-invalidates workspaces for the project)
+const saveWorkspace = useSaveWorkspace(projectId);
+const newWorkspace = await saveWorkspace.mutateAsync({ title: "My Layout", layout });
+
+// Save a new version onto an existing workspace (auto-invalidates workspaces for the project)
+const saveWorkspaceVersion = useSaveWorkspaceVersion(projectId);
+await saveWorkspaceVersion.mutateAsync({ workspaceId, layout });
+
+// Update workspace metadata, e.g. title or public visibility
+// (auto-invalidates both workspaces and publicWorkspaces)
+const updateWorkspace = useUpdateWorkspace(projectId);
+await updateWorkspace.mutateAsync({ workspaceId, title: "Renamed", is_public: true });
+
+// Fork a workspace (optionally a specific version) into the current project
+// (auto-invalidates workspaces for the project)
+const forkWorkspace = useForkWorkspace(projectId);
+await forkWorkspace.mutateAsync({ workspaceId, version });
+
+// Delete a workspace (auto-invalidates workspaces for the project)
+const deleteWorkspace = useDeleteWorkspace(projectId);
+await deleteWorkspace.mutateAsync(workspaceId);
+```
+
+`useWorkspaces`, `useSaveWorkspace`, `useSaveWorkspaceVersion`, `useUpdateWorkspace`,
+`useForkWorkspace`, and `useDeleteWorkspace` all take `projectId` as a hook argument so their
+invalidation targets the right `workspaces(projectId)` key.
 
 ### Query Keys
 
@@ -152,7 +368,21 @@ queryKeys.processes(projectId)               // ['processes', projectId]
 queryKeys.dataset(id)                        // ['dataset', id]
 queryKeys.datasets(search, completedOnly, projectId)  // ['datasets', { ... }]
 queryKeys.processOutputDatasets(processId, version)   // ['processOutputDatasets', processId, version]
+queryKeys.availableClusters(projectId, resourceRequests)  // ['availableClusters', projectId, cpu, memory]
+queryKeys.availableStorageBackends           // ['availableStorageBackends']
+queryKeys.projectExport(projectId, exportId) // ['projectExport', projectId, exportId]
+queryKeys.projectImport(importId)            // ['projectImport', importId]
+queryKeys.projectMembers(projectId)          // ['projectMembers', projectId]
+queryKeys.projectInvites(projectId)          // ['projectInvites', projectId]
+queryKeys.publications(projectId)            // ['publications', projectId]
+queryKeys.inviteInfo(token)                  // ['inviteInfo', token]
+queryKeys.projectTags(projectId)             // ['projectTags', projectId]
+queryKeys.workspaces(projectId)              // ['workspaces', projectId]
+queryKeys.publicWorkspaces                   // ['publicWorkspaces']
+queryKeys.workspace(id)                      // ['workspace', id]
 ```
+
+**Note**: A few hooks (`usePlugins` and its mutations) use inline `['plugins']` keys rather than an entry on `queryKeys` — there is no `queryKeys.plugins`.
 
 **Note**: You rarely need these directly. Use the invalidation helpers instead.
 
@@ -227,13 +457,21 @@ await invalidateDatasets();
 
 **WebSocket Updates**: When the backend sends a process state update via WebSocket, `ProcessContext` automatically calls `invalidateProject()`. You don't need to handle this manually.
 
-**Location**: `frontend/src/ProcessContext.js:210-213`
+**Location**: `frontend/src/ProcessContext.jsx`
 
 ```javascript
 const handleWebSocketMessage = useCallback(async (update) => {
   await invalidateHelpers.invalidateProject();
 }, [invalidateHelpers]);
+
+useWebSocket(`${WS_API}/ws/processes/updates`, {
+  enabled: !!currentProject,
+  name: 'Process State Updates',
+  onMessage: handleWebSocketMessage
+});
 ```
+
+Note: `invalidateProject()` is called with no explicit `projectId` argument — it defaults to `currentProject` via closure (see the helper's signature above), so the WebSocket handler always invalidates whatever project is currently active in the URL.
 
 ## Usage Patterns
 
@@ -326,7 +564,7 @@ import { ProcessContext } from '../ProcessContext';
 import { useProcessOutputDatasets } from '../datamodel/useQueries';
 
 function ProcessOutputs() {
-  const { processes, activeProcess } = useContext(ProcessContext);
+  const { currentProject, processes, activeProcess } = useContext(ProcessContext);
 
   // Find the active process object
   const process = activeProcess
@@ -336,7 +574,8 @@ function ProcessOutputs() {
   // Fetch outputs for active version
   const { data: datasets = [], isLoading } = useProcessOutputDatasets(
     process,
-    activeProcess?.version
+    activeProcess?.version,
+    currentProject
   );
 
   if (!process) return <div>No process selected</div>;
@@ -424,10 +663,11 @@ Current defaults (in `useQueries.js`):
 const { data: datasets } = useProcessOutputDatasets(
   process,
   version,
-  { enabled: !!process && version != null }
+  projectId,
+  { enabled: !!process && version != null && !!projectId }
 );
 
-// ❌ Bad: Hook errors if process is null
+// ❌ Bad: Missing projectId - query stays disabled (enabled checks !!projectId internally)
 const { data: datasets } = useProcessOutputDatasets(process, version);
 ```
 
@@ -596,7 +836,7 @@ console.log('All queries:', allQueries.map(q => q.queryKey));
 Add temporary logging to invalidation helpers:
 
 ```javascript
-// In ProcessContext.js (temporary debugging)
+// In ProcessContext.jsx (temporary debugging)
 invalidateProject: async (projectId = currentProject) => {
   console.log('[invalidateProject] Starting for project:', projectId);
 

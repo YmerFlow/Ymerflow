@@ -1,5 +1,5 @@
 #!/bin/bash
-# Master setup and run script for Nagelfluh development environment
+# Master setup and run script for YmerFlow development environment
 # This script:
 # - Installs dependencies (including backend plugins)
 # - Bootstrap-provisions the registry/storage/cluster axes (by default: the local Minikube +
@@ -32,7 +32,7 @@ fi
 export REGISTRY_PUBLIC_HOST="${REGISTRY_PUBLIC_HOST:-$(hostname -I | awk '{print $1}')}"
 
 echo "=========================================="
-echo "Nagelfluh Development Environment Setup"
+echo "YmerFlow Development Environment Setup"
 echo "=========================================="
 echo ""
 
@@ -203,6 +203,53 @@ PYTHONPATH=. env/bin/python backend/bin/yf-migrate
 print_status "Database migrations complete"
 
 # ==========================================
+# Step 5b: Sync bootstrap-provisioned config into the database
+# ==========================================
+print_section "Step 5b: Syncing Bootstrap Config to Database"
+
+# The one-shot seeding migrations (50dd9ce3311b for registry, 9623bab8493d for storage) only ever
+# write REGISTRY_CONFIG_JSON/STORAGE_CONFIG_JSON into the DB the FIRST time migrations are ever
+# applied to a fresh DB. But key-minting bootstrap() handlers (e.g. GarProtocolHandler,
+# GcsProtocolHandler) mint a brand-new SA key — and delete the previous one — on every Step 2
+# bootstrap-provision run, not just the first. Without this step, every run after the DB's first
+# migration leaves the DB holding a now-deleted key while a fresh, working one sits unused in this
+# shell's env, so anything reading the active backend row straight from the DB (e.g.
+# nagelfluh-build-and-push, Step 7) fails with a permanent "Invalid JWT Signature" — not a
+# transient propagation delay. Unconditionally overwrite protocol+config on the active row for
+# each bootstrapped axis, every run, so the DB can never go stale relative to what Step 2 actually
+# provisioned.
+echo "Syncing bootstrap-provisioned registry/storage config into the database..."
+PYTHONPATH=. env/bin/python -c '
+import json, os
+
+from sqlalchemy import create_engine, update
+
+from backend.models.registry_backend import RegistryBackend
+from backend.models.storage_backend import StorageBackend
+
+
+def sync(model, protocol_env, config_env):
+    protocol = os.environ.get(protocol_env)
+    config_json = os.environ.get(config_env)
+    if not protocol or not config_json:
+        return
+    config = json.loads(config_json)
+    database_url = os.getenv("DATABASE_URL", "sqlite:///./nagelfluh.db").replace(
+        "postgresql+asyncpg://", "postgresql://")
+    engine = create_engine(database_url)
+    with engine.begin() as conn:
+        result = conn.execute(
+            update(model).where(model.active == True).values(protocol=protocol, config=config)
+        )
+        print(f"  {model.__tablename__}: updated {result.rowcount} active row(s)")
+
+
+sync(RegistryBackend, "REGISTRY_PROTOCOL", "REGISTRY_CONFIG_JSON")
+sync(StorageBackend, "STORAGE_PROTOCOL", "STORAGE_CONFIG_JSON")
+'
+print_status "Bootstrap config synced to database"
+
+# ==========================================
 # Step 6: Registry Verification
 # ==========================================
 print_section "Step 6: Registry Verification"
@@ -233,7 +280,7 @@ print_status "Registry accessible (protocol=${REGISTRY_PROTOCOL})"
 # ==========================================
 print_section "Step 7: Docker Image Build"
 
-echo "Building Nagelfluh runner image..."
+echo "Building YmerFlow runner image..."
 # The docker/build.sh script will use the registry NodePort
 ./docker/build.sh
 print_status "Docker image built and pushed to registry"

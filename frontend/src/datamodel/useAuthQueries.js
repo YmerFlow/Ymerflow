@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { login, signup, forgotPassword, getUserAccount, updateUserPreferences, updateUserEmail, getApiKeys, createApiKey, deleteApiKey, listAdminUsers, setUserAdmin, listAdminClusters, createAdminCluster, updateAdminCluster, testAdminClusterConnection, getAdminClusterByRegistrationToken, listAdminStorageBackends, createAdminStorageBackend, updateAdminStorageBackend, testAdminStorageBackendConnection } from './api';
+import { login, signup, forgotPassword, getUserAccount, getPublicConfig, getTos, acceptTos, updateUserPreferences, updateUserEmail, getApiKeys, createApiKey, deleteApiKey, listAdminUsers, setUserAdmin, listAdminClusters, createAdminCluster, updateAdminCluster, testAdminClusterConnection, getAdminClusterByRegistrationToken, listAdminStorageBackends, createAdminStorageBackend, updateAdminStorageBackend, testAdminStorageBackendConnection, listAdminTosVersions, createAdminTosVersion } from './api';
 
 export function useLogin() {
   return useMutation({
@@ -9,7 +9,7 @@ export function useLogin() {
 
 export function useSignup() {
   return useMutation({
-    mutationFn: ({ username, password, email }) => signup(username, password, email)
+    mutationFn: ({ username, password, email, agreedTosVersion }) => signup(username, password, email, agreedTosVersion)
   });
 }
 
@@ -24,6 +24,27 @@ export function useUserAccount() {
     queryKey: ['userAccount'],
     queryFn: getUserAccount,
     enabled: false  // Manually triggered
+  });
+}
+
+export function usePublicConfig() {
+  return useQuery({
+    queryKey: ['publicConfig'],
+    queryFn: getPublicConfig,
+    staleTime: Infinity,
+  });
+}
+
+export function useTos() {
+  return useQuery({
+    queryKey: ['tos'],
+    queryFn: getTos,
+  });
+}
+
+export function useAcceptTos() {
+  return useMutation({
+    mutationFn: ({ version }) => acceptTos(version),
   });
 }
 
@@ -161,4 +182,19 @@ export function useUpdateAdminStorageBackend() {
 
 export function useTestAdminStorageBackendConnection() {
   return useMutation({ mutationFn: testAdminStorageBackendConnection });
+}
+
+export function useAdminTosVersions() {
+  return useQuery({
+    queryKey: ['adminTosVersions'],
+    queryFn: listAdminTosVersions,
+  });
+}
+
+export function useCreateAdminTosVersion() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createAdminTosVersion,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminTosVersions'] }),
+  });
 }

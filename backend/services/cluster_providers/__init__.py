@@ -28,7 +28,7 @@ class ClusterProvider:
     # for free just by setting this flag — no router changes.
     self_service_registration = False
 
-    # Set True by a provider that can also *host the Nagelfluh application itself* (backend +
+    # Set True by a provider that can also *host the YmerFlow application itself* (backend +
     # frontend pods, their exposure, config/secrets) on its cluster — not just run process/
     # analysis Jobs on it. Gates whether deploy_app()/expose_app() below are ever called for a
     # given cluster_type, mirroring self_service_registration's role as a per-type capability flag
@@ -92,10 +92,10 @@ class ClusterProvider:
         return None
 
     async def resolve_app_hostname(self, provider_config: dict, app_config: dict) -> str | None:
-        """Optional, cheap, idempotent. Called BEFORE the ConfigMap is built, so its result can be
+        """Optional, cheap, idempotent. Called BEFORE the Secret is built, so its result can be
         baked into app_config["SERVER_URL"] first. Needed for a provider (e.g. GKE) whose
         externally-reachable hostname isn't known until a resource (a static IP) is reserved —
-        that reservation normally only happens inside expose_app(), which runs after the ConfigMap
+        that reservation normally only happens inside expose_app(), which runs after the Secret
         containing BACKEND_BASE_URL was already built and applied. Default: return
         app_config.get("SERVER_URL") unchanged — every provider whose hostname doesn't need a
         reservation step (same-as-backend/minikube) never needs to override this. See
@@ -104,11 +104,11 @@ class ClusterProvider:
 
     async def deploy_app(self, k8s_client, provider_config: dict, namespace: str, images: dict,
                          app_config: dict, secrets: dict) -> None:
-        """Apply the Nagelfluh application's own workload-level resources (backend + frontend
-        Deployments/Service, the ymerflow-backend-config/nagelfluh-backend-secret ConfigMap/
-        Secret, the DB migration Job) onto this provider's cluster. Optional — only ever called
-        when `supports_app_deployment` is True; the default raises so a provider that sets the
-        flag but forgets to implement this fails loudly rather than silently no-op'ing.
+        """Apply the YmerFlow application's own workload-level resources (backend + frontend
+        Deployments/Service, the nagelfluh-backend-secret Secret, the DB migration Job) onto this
+        provider's cluster. Optional — only ever called when `supports_app_deployment` is True;
+        the default raises so a provider that sets the flag but forgets to implement this fails
+        loudly rather than silently no-op'ing.
 
         The workload-level work is identical for every provider, so implementations call the
         shared `backend.services.app_deployment.apply_app_workloads()` helper for it (Design
@@ -123,9 +123,11 @@ class ClusterProvider:
                 `Cluster.namespace`, which is the *jobs* namespace.
             images: `{"backend": <resolved image ref>, "frontend": <resolved image ref>}`,
                 already resolved through the registry axis (Design decision 4).
-            app_config: flat ConfigMap data (includes optional `APP_DOMAIN`, Design decision 6).
-            secrets: flat Secret data (must include a resolved `DATABASE_URL`; JWT_SECRET_KEY
-                handling per Design decision 5 happens inside apply_app_workloads()).
+            app_config: flat data merged into the Secret alongside `secrets` (includes optional
+                `APP_DOMAIN`, Design decision 6).
+            secrets: flat data merged into the Secret alongside `app_config` — the combined map
+                must include a resolved `DATABASE_URL`; JWT_SECRET_KEY handling per Design
+                decision 5 happens inside apply_app_workloads().
         """
         raise NotImplementedError
 

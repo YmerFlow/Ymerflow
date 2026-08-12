@@ -31,7 +31,7 @@ echo "Running database migrations..."
 python backend/bin/yf-migrate
 
 # Start the server
-echo "Starting Nagelfluh server..."
+echo "Starting YmerFlow server..."
 uvicorn backend.main:app --reload \
   --reload-dir backend \
   --reload-dir plugins \

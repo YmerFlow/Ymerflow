@@ -10,13 +10,15 @@ import secrets
 import logging
 
 from backend.database import get_db, async_session_maker
-from backend.models import Project, ProjectMember, ProjectInvite, User
-from backend.models.storage_backend import get_default_storage_backend_id
-from backend.services.auth_service import get_current_user, require_project_member, AuthContext
+from backend.models import Project, ProjectMember, ProjectInvite, User, Publication, Upload, Process
+from backend.models.storage_backend import get_allowed_storage_backends
+from backend.models.project_export import ProjectExport, ProjectImport
+from backend.services.auth_service import get_current_user, get_current_user_optional, require_project_member, AuthContext
 from backend.services.storage_credentials import ensure_ready
 from backend.services.email_service import send_invite_email
+from backend.services.project_export_service import run_export
+from backend.services.project_import_service import run_import
 from backend.config import settings
-from backend.hooks import hooks
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects", tags=["Projects"])
@@ -40,27 +42,88 @@ async def _setup_storage_background(project_id: str, force: bool = False):
 
 @router.get("", summary="List accessible projects")
 async def list_projects(
-    auth: AuthContext = Depends(get_current_user),
+    viewing_id: Optional[str] = None,
+    auth: AuthContext | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db)
 ):
-    """Return all projects the authenticated user is a member of.
+    """Return the projects the caller can see, in display order:
+    [pinned currently-viewed publication] → [own projects] → [other superpublic publications].
 
-    Each project has an 'id' (UUID string) and a 'name'. Pass the project id
-    to other endpoints as project_id. When authenticated via API key, only
-    the key's scoped project is returned.
+    Each real project has an 'id' (UUID string) and a 'name'. A publication entry has
+    'id' (the publication id, usable anywhere a project id is accepted, read-only),
+    'name' (the underlying project's name with " (ro)" appended), 'read_only': true,
+    'findable' (public/searchable), and 'superpublic' (listed directly here — implies
+    findable).
+
+    When authenticated via API key, own projects are restricted to the key's scoped
+    project. When unauthenticated, own projects and other findable publications are
+    omitted entirely — only 'viewing_id' (if it resolves to a valid, anonymous-allowed
+    publication) is returned, as a single-entry list.
     """
-    stmt = (
-        select(Project)
-        .join(ProjectMember, ProjectMember.project_id == Project.id)
-        .where(ProjectMember.user_id == auth.user.id)
-        .order_by(Project.created_at)
-    )
-    # When authenticated via API key, restrict to the key's scoped project
-    if auth.api_key_project_id is not None:
-        stmt = stmt.where(Project.id == auth.api_key_project_id)
-    result = await db.execute(stmt)
-    projects = result.scalars().all()
-    return [p.to_dict() for p in projects]
+    own_projects = []
+    combined_ids = set()
+
+    if auth is not None:
+        stmt = (
+            select(Project)
+            .join(ProjectMember, ProjectMember.project_id == Project.id)
+            .where(ProjectMember.user_id == auth.user.id)
+            .order_by(Project.created_at)
+        )
+        # When authenticated via API key, restrict to the key's scoped project
+        if auth.api_key_project_id is not None:
+            stmt = stmt.where(Project.id == auth.api_key_project_id)
+        result = await db.execute(stmt)
+        own_projects = [p.to_dict() for p in result.scalars().all()]
+        combined_ids = {p["id"] for p in own_projects}
+
+        pub_stmt = (
+            select(Publication)
+            .options(selectinload(Publication.project))
+            .where(Publication.superpublic == True)  # noqa: E712
+            .order_by(Publication.created_at)
+        )
+        pub_result = await db.execute(pub_stmt)
+        findable_entries = []
+        for pub in pub_result.scalars().all():
+            if pub.project_id in combined_ids:
+                continue
+            findable_entries.append({
+                "id": pub.id,
+                "name": f"{pub.project.name} (ro)",
+                "created_at": pub.project.created_at.isoformat(),
+                "storage_status": None,
+                "read_only": True,
+                "findable": pub.findable,
+                "superpublic": pub.superpublic,
+            })
+        combined_ids |= {e["id"] for e in findable_entries}
+    else:
+        findable_entries = []
+
+    result_list = own_projects + findable_entries
+
+    if viewing_id and viewing_id not in combined_ids:
+        pub_stmt = (
+            select(Publication)
+            .options(selectinload(Publication.project))
+            .where(Publication.id == viewing_id)
+        )
+        pub_result = await db.execute(pub_stmt)
+        publication = pub_result.scalar_one_or_none()
+        if publication is not None and (publication.allow_anonymous or auth is not None):
+            pinned_entry = {
+                "id": publication.id,
+                "name": f"{publication.project.name} (ro)",
+                "created_at": publication.project.created_at.isoformat(),
+                "storage_status": None,
+                "read_only": True,
+                "findable": publication.findable,
+                "superpublic": publication.superpublic,
+            }
+            result_list = [pinned_entry] + result_list
+
+    return result_list
 
 
 @router.post("", summary="Create a new project")
@@ -71,25 +134,30 @@ async def create_project(
 ):
     """Create a new project and provision its storage bucket.
 
-    Body: { "name": "My Project" }
+    Body: { "name": "My Project", "storage_backend_id": "<id>" }. storage_backend_id is
+    required — call GET /utilities/available-storage-backends first to get the allowed set.
 
     Returns the new project record including its id. Storage setup runs
     asynchronously; the project is immediately usable for submitting jobs.
     """
-    project_id = str(uuid.uuid4())
+    storage_backend_id = project.get("storage_backend_id")
+    if not storage_backend_id:
+        raise HTTPException(status_code=400, detail="storage_backend_id is required")
 
+    allowed = await get_allowed_storage_backends(db, auth.user)
+    backend = next((b for b in allowed if b.id == storage_backend_id), None)
+    if backend is None:
+        raise HTTPException(status_code=400, detail=f"Storage backend {storage_backend_id} is not allowed for this request.")
+
+    project_id = str(uuid.uuid4())
     proj = Project(
         id=project_id,
         name=project.get("name", "Unnamed Project"),
         created_at=datetime.utcnow(),
         storage_status="pending",
+        storage_backend_id=backend.id,
     )
     db.add(proj)
-    await db.flush()
-
-    proj.storage_backend_id = hooks.run_first.select_storage(
-        await get_default_storage_backend_id(db), db, auth.user, proj
-    )
 
     member = ProjectMember(
         project_id=project_id,
@@ -120,6 +188,93 @@ async def setup_storage(
     await db.commit()
     asyncio.create_task(_setup_storage_background(project.id, force=True))
     return {"status": "pending", "project_id": project.id}
+
+
+@router.post("/{project_id}/export", summary="Export a project as a downloadable zip archive")
+async def export_project(
+    project: Project = Depends(require_project_member),
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Start a background job that packs this project (processes, versions, output datasets,
+    uploads, and tags) into a zip archive. Poll GET /projects/{project_id}/export/{export_id}
+    for progress; once state is "done", it returns a download_url.
+    """
+    export_row = ProjectExport(project_id=project.id, created_by_id=auth.user.id)
+    db.add(export_row)
+    await db.commit()
+    await db.refresh(export_row)
+
+    asyncio.create_task(run_export(project.id, export_row.id))
+    return export_row.to_dict()
+
+
+@router.get("/{project_id}/export/{export_id}", summary="Poll a project export job")
+async def get_project_export(
+    export_id: str,
+    project: Project = Depends(require_project_member),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(ProjectExport).where(ProjectExport.id == export_id, ProjectExport.project_id == project.id)
+    result = await db.execute(stmt)
+    export_row = result.scalar_one_or_none()
+    if not export_row:
+        raise HTTPException(status_code=404, detail="Export not found")
+    return export_row.to_dict()
+
+
+@router.post("/{project_id}/import", summary="Seed a project from a previously-uploaded export zip")
+async def import_project(
+    body: Dict,
+    project: Project = Depends(require_project_member),
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Start a background job that unpacks an export zip INTO this project. The project must be
+    freshly created and empty — this backs the "seed from export" option in the Create Project
+    dialog: the client creates the project (POST /projects, which sets its name/storage backend),
+    uploads the zip into that same project (POST /projects/{id}/upload), then calls this. The
+    project's own name and storage backend are used as-is; nothing from the export overrides them.
+
+    Body: { "upload_id": "<id>" }. Poll GET /projects/import/{import_id}; on "done" it returns
+    this project_id. On failure the whole project is deleted (it was empty), rolling the
+    create+import back as one action.
+    """
+    upload_id = body.get("upload_id")
+    if not upload_id:
+        raise HTTPException(status_code=400, detail="upload_id is required")
+
+    if (await db.execute(select(Upload).where(Upload.id == upload_id))).scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    # Guard: only seed an empty project. Cleanup-on-failure deletes the whole target project, so
+    # importing into a populated project could destroy pre-existing data — and merging an import
+    # into existing content isn't a supported operation anyway.
+    existing = await db.execute(select(Process.id).where(Process.project_id == project.id).limit(1))
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=400, detail="Import requires an empty project (this one already has content)")
+
+    import_row = ProjectImport(upload_id=upload_id, created_by_id=auth.user.id, project_id=project.id)
+    db.add(import_row)
+    await db.commit()
+    await db.refresh(import_row)
+
+    asyncio.create_task(run_import(import_row.id))
+    return import_row.to_dict()
+
+
+@router.get("/import/{import_id}", summary="Poll a project import job")
+async def get_project_import(
+    import_id: str,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(ProjectImport).where(ProjectImport.id == import_id, ProjectImport.created_by_id == auth.user.id)
+    result = await db.execute(stmt)
+    import_row = result.scalar_one_or_none()
+    if not import_row:
+        raise HTTPException(status_code=404, detail="Import not found")
+    return import_row.to_dict()
 
 
 @router.get("/{project_id}/members", summary="List project members")

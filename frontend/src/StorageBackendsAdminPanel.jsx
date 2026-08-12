@@ -10,7 +10,6 @@ import {
 
 const EMPTY_FORM = {
   name: '',
-  endpoint: '',
   bucketPrefix: '',
   credentialStrategy: 'static-key',
   sortOrder: 0,
@@ -40,7 +39,6 @@ function StorageBackendFormModal({ show, onHide, backend }) {
     if (backend) {
       setForm({
         name: backend.name,
-        endpoint: backend.endpoint || '',
         bucketPrefix: backend.bucket_prefix,
         credentialStrategy: backend.credential_strategy,
         sortOrder: backend.sort_order,
@@ -78,7 +76,7 @@ function StorageBackendFormModal({ show, onHide, backend }) {
     setTestResult(null);
     try {
       await testMutation.mutateAsync({
-        protocol, endpoint: form.endpoint || null, config,
+        protocol, config,
         backend_id: backend?.id,
       });
       setTestResult({ ok: true });
@@ -93,7 +91,6 @@ function StorageBackendFormModal({ show, onHide, backend }) {
 
     const body = {
       name: form.name,
-      endpoint: form.endpoint || null,
       bucket_prefix: form.bucketPrefix,
       credential_strategy: form.credentialStrategy,
       sort_order: parseInt(form.sortOrder, 10) || 0,
@@ -130,10 +127,6 @@ function StorageBackendFormModal({ show, onHide, backend }) {
           <Form.Group className="mb-3">
             <Form.Label>Name</Form.Label>
             <Form.Control required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-          </Form.Group>
-          <Form.Group className="mb-3">
-            <Form.Label>Endpoint</Form.Label>
-            <Form.Control value={form.endpoint} onChange={e => setForm(f => ({ ...f, endpoint: e.target.value }))} />
           </Form.Group>
           <Form.Group className="mb-3">
             <Form.Label>Bucket Prefix</Form.Label>
@@ -238,7 +231,7 @@ export default function StorageBackendsAdminPanel() {
               <tr key={b.id} className={b.active ? '' : 'text-muted'}>
                 <td>{b.name}</td>
                 <td>{b.protocol}</td>
-                <td>{b.endpoint || <span className="text-muted">—</span>}</td>
+                <td>{b.config?.endpoint || <span className="text-muted">—</span>}</td>
                 <td>{b.bucket_prefix}</td>
                 <td>{b.credential_strategy}</td>
                 <td>{b.sort_order}</td>

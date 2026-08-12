@@ -1,19 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
 import EPSGSelector from '../../jsoneditor/EPSGSelector';
 import { XYZ } from '../../datamodel/libaarhusxyz';
-import { packBinary, unpackBinary } from 'msgpack-numpy-js';
-import { API } from '../../datamodel/api';
+import { packBinary } from 'msgpack-numpy-js';
+import { ProcessContext } from '../../ProcessContext';
+import { useSystems } from '../../datamodel/useQueries';
+import AddSystemDialog from './AddSystemDialog';
 
 function CreateModelDialog({ onClose, onCreate }) {
+  const { currentProject } = useContext(ProcessContext);
   const [modelMode, setModelMode] = useState('structured'); // 'structured' | 'layered'
   const [structuredParams, setStructuredParams] = useState({
     layerThickness: 5,
     totalDepth: 300,
     resistivity: 100
   });
-  const [systems, setSystems] = useState([]);
+  const { data: systems = [] } = useSystems(currentProject);
+  const [showAddSystemDialog, setShowAddSystemDialog] = useState(false);
   const [formData, setFormData] = useState({
     system: null,
     extent: 1000,
@@ -26,25 +30,12 @@ function CreateModelDialog({ onClose, onCreate }) {
     utmBearing: 90
   });
 
-  // Fetch systems on mount
+  // Default-select the first system once systems load (and none is chosen yet).
   useEffect(() => {
-    console.log('Fetching systems...');
-    fetch(`${API}/systems`)
-      .then(res => {
-        console.log('Systems response status:', res.status);
-        return res.arrayBuffer();
-      })
-      .then(buffer => {
-        // Decode msgpack response (preserves numpy arrays)
-        const data = unpackBinary(new Uint8Array(buffer));
-        console.log('Systems data:', data);
-        setSystems(data);
-        if (data.length > 0) {
-          setFormData(prev => ({ ...prev, system: data[0].id }));
-        }
-      })
-      .catch(err => console.error('Failed to fetch systems:', err));
-  }, []);
+    if (systems.length > 0 && !formData.system) {
+      setFormData(prev => ({ ...prev, system: systems[0].id }));
+    }
+  }, [systems, formData.system]);
 
   // Build schema dynamically based on available systems
   const schemaProperties = {
@@ -91,29 +82,11 @@ function CreateModelDialog({ onClose, onCreate }) {
       }
     };
 
-  // Add system selector if systems are available
-  if (systems.length > 0) {
-    console.log('Full systems data:', systems);
-
-    schemaProperties.system = {
-      type: "string",
-      title: "Survey System",
-      oneOf: systems.map(s => ({
-        const: s.id,
-        title: s.name
-      }))
-    };
-
-    console.log('System field oneOf:', schemaProperties.system.oneOf);
-  }
-
   const schema = {
     type: "object",
     properties: schemaProperties,
     required: ["extent", "spacing", "altitudeStart", "altitudeEnd", "utmStartX", "utmStartY", "utmBearing"]
   };
-
-  console.log('Final schema.properties.system:', schema.properties.system);
 
   const [layers, setLayers] = useState([
     { thickness: 1, resistivity: 100 },
@@ -180,8 +153,8 @@ function CreateModelDialog({ onClose, onCreate }) {
       return;
     }
 
-    // Find selected system
-    const selectedSystem = systems.find(s => s.id === basicFormData.system);
+    // Find selected system (the selector lives outside RJSF, so read from component state)
+    const selectedSystem = systems.find(s => s.id === formData.system);
 
     // Generate xdist array
     const nSoundings = Math.floor(basicFormData.extent / basicFormData.spacing) + 1;
@@ -322,6 +295,44 @@ function CreateModelDialog({ onClose, onCreate }) {
             onChange={(code) => setFormData({ ...formData, projection: code })}
             required={true}
           />
+        </div>
+
+        {/* Survey System selector (outside of JSON Schema Form so the + button stays
+            visible even when the project has zero systems). */}
+        <div style={{ marginBottom: '15px' }}>
+          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+            Survey System
+          </label>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <select
+              value={formData.system || ''}
+              onChange={e => setFormData({ ...formData, system: e.target.value || null })}
+              disabled={systems.length === 0}
+              style={{ flex: 1, padding: '8px', border: '1px solid #ced4da', borderRadius: '4px', fontSize: '14px' }}
+            >
+              {systems.length === 0 && <option value="">No systems yet — add one →</option>}
+              {systems.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setShowAddSystemDialog(true)}
+              title="Add a survey system from a .gex file"
+              style={{
+                padding: '8px 12px',
+                backgroundColor: '#28a745',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '18px',
+                lineHeight: '1'
+              }}
+            >
+              +
+            </button>
+          </div>
         </div>
 
         <Form
@@ -534,6 +545,13 @@ function CreateModelDialog({ onClose, onCreate }) {
           </div>
         </Form>
       </div>
+
+      {showAddSystemDialog && (
+        <AddSystemDialog
+          onClose={() => setShowAddSystemDialog(false)}
+          onCreate={(newSystemId) => setFormData(prev => ({ ...prev, system: newSystemId }))}
+        />
+      )}
     </div>
   );
 }

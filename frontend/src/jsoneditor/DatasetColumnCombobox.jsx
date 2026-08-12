@@ -3,7 +3,7 @@ import { ProcessContext } from '../ProcessContext';
 import { loadDataset } from '../datamodel/dataset';
 
 export default function DatasetColumnCombobox({ value, onChange, mode }) {
-  const { processes, fetchedData } = useContext(ProcessContext);
+  const { processes, fetchedData, currentProject } = useContext(ProcessContext);
   const [inputValue, setInputValue] = useState(value || '');
   const [options, setOptions] = useState([]);
   const [open, setOpen] = useState(false);
@@ -94,7 +94,7 @@ export default function DatasetColumnCombobox({ value, onChange, mode }) {
       if (!dsUrl) return;
 
       const dsId = dsUrl.split('/').pop();
-      loadDataset(dsId)
+      loadDataset(dsId, currentProject)
         .then(dsObj => dsObj.fetchData('all').then(() => dsObj))
         .then(dsObj => {
           const cols = dsObj.columns?.() || [];

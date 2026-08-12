@@ -13,7 +13,7 @@ metadata:
 # Namespaced Role: everything backend.services.app_deployment.apply_app_workloads() +
 # NodePortAppDeploymentMixin.expose_app() do is namespaced to the app namespace — manage the
 # backend/frontend Deployments, their Service + the frontend NodePort Service, the
-# ymerflow-backend-config/secret + app pull Secret, and the one-shot DB migration Job (create,
+# nagelfluh-backend-secret + app pull Secret, and the one-shot DB migration Job (create,
 # then read its pod logs). No cluster-scoped permissions are needed.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -25,7 +25,7 @@ rules:
   resources: ["deployments"]
   verbs: ["create", "get", "list", "watch", "update", "patch"]
 - apiGroups: [""]
-  resources: ["services", "configmaps", "secrets"]
+  resources: ["services", "secrets"]
   verbs: ["create", "get", "list", "watch", "update", "patch"]
 - apiGroups: ["batch"]
   resources: ["jobs"]

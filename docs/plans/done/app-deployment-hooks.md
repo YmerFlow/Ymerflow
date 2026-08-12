@@ -2,7 +2,7 @@
 
 ## Goal
 
-Generalize *deploying the Nagelfluh application itself* (backend + frontend pods, their exposure,
+Generalize *deploying the YmerFlow application itself* (backend + frontend pods, their exposure,
 and their config/secrets) onto whatever cluster a deployment's default `Cluster` row points at —
 today this only works for Minikube, via `prod/runall-minikube.sh`'s raw shell/`kubectl`
 orchestration, entirely outside the pluggable-backend system. This plan adds the hook a

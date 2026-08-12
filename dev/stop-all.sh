@@ -1,9 +1,9 @@
 #!/bin/bash
-# Stop all Nagelfluh development services
+# Stop all YmerFlow development services
 
 SCREEN_SESSION="nagelfluh-dev"
 
-echo "Stopping Nagelfluh development services..."
+echo "Stopping YmerFlow development services..."
 
 # Kill screen session if it exists
 if screen -list | grep -q "\.$SCREEN_SESSION\s"; then

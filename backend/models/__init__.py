@@ -2,13 +2,15 @@ from backend.models.user import User
 from backend.models.storage_backend import StorageBackend
 from backend.models.registry_backend import RegistryBackend
 from backend.models.cluster import Cluster
-from backend.models.project import Project, ProjectMember, ProjectInvite
+from backend.models.project import Project, ProjectMember, ProjectInvite, Publication
 from backend.models.api_key import ApiKey
 from backend.models.environment import Environment
 from backend.models.process import Process, ProcessVersion, ProcessLog, ProcessState, ProcessTag
 from backend.models.dataset import Dataset
-from backend.models.workspace import Workspace
+from backend.models.workspace import Workspace, WorkspaceVersion
+from backend.models.tos import TosVersion, UserTosAcceptance
 from backend.models.upload import Upload
+from backend.models.project_export import ProjectExport, ProjectImport
 from backend.models.system import System
 from backend.models.plugin import Plugin, PluginVersion, UserPlugin
 
@@ -25,6 +27,7 @@ __all__ = [
     "Project",
     "ProjectMember",
     "ProjectInvite",
+    "Publication",
     "ApiKey",
     "Environment",
     "Process",
@@ -34,7 +37,12 @@ __all__ = [
     "ProcessTag",
     "Dataset",
     "Workspace",
+    "WorkspaceVersion",
+    "TosVersion",
+    "UserTosAcceptance",
     "Upload",
+    "ProjectExport",
+    "ProjectImport",
     "System",
     "Plugin",
     "PluginVersion",

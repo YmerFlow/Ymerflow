@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, DateTime, Integer, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, Integer, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
@@ -21,9 +21,11 @@ class Project(Base):
     storage_backend = relationship("StorageBackend")
     processes = relationship("Process", back_populates="project", cascade="all, delete-orphan")
     datasets = relationship("Dataset", back_populates="project", cascade="all, delete-orphan")
+    workspaces = relationship("Workspace", back_populates="project", cascade="all, delete-orphan")
     members = relationship("ProjectMember", back_populates="project", cascade="all, delete-orphan")
     invites = relationship("ProjectInvite", back_populates="project", cascade="all, delete-orphan")
     api_keys = relationship("ApiKey", back_populates="project", cascade="all, delete-orphan")
+    publications = relationship("Publication", back_populates="project", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {
@@ -82,3 +84,30 @@ class ProjectInvite(Base):
         if include_token:
             result["token"] = self.token
         return result
+
+
+class Publication(Base):
+    __tablename__ = "publications"
+
+    id = Column(String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String(255), ForeignKey("projects.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    findable = Column(Boolean, nullable=False, default=False)
+    superpublic = Column(Boolean, nullable=False, default=False, server_default="0")
+    allow_anonymous = Column(Boolean, nullable=False, default=True)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    project = relationship("Project", back_populates="publications")
+    created_by_user = relationship("User", foreign_keys=[created_by])
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "project_id": self.project_id,
+            "findable": self.findable,
+            "superpublic": self.superpublic,
+            "allow_anonymous": self.allow_anonymous,
+            "created_by": self.created_by_user.username if self.created_by_user else None,
+            "created_at": self.created_at.isoformat(),
+        }

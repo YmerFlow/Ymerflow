@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { unpackBinary } from 'msgpack-numpy-js';
 
 // API URL from environment variable, fallback to localhost for development.
 // In production (nginx proxy mode) this is set to "/api" at build time.
@@ -44,10 +45,26 @@ export async function login(username, password) {
   return response.data;
 }
 
-export async function signup(username, password, email = null) {
+export async function signup(username, password, email = null, agreedTosVersion = null) {
   const body = { username, password };
   if (email) body.email = email;
+  if (agreedTosVersion !== null && agreedTosVersion !== undefined) body.agreed_tos_version = agreedTosVersion;
   const response = await apiClient.post('/auth/signup', body);
+  return response.data;
+}
+
+export async function acceptTos(version) {
+  const response = await apiClient.post('/auth/tos/accept', { version });
+  return response.data;
+}
+
+export async function listAdminTosVersions() {
+  const response = await apiClient.get('/admin/tos-versions');
+  return response.data;
+}
+
+export async function createAdminTosVersion(body) {
+  const response = await apiClient.post('/admin/tos-versions', body);
   return response.data;
 }
 
@@ -86,6 +103,42 @@ export async function leaveProject(projectId) {
   return response.data;
 }
 
+export async function getPublications(projectId) {
+  const response = await apiClient.get(`/projects/${projectId}/publications`);
+  return response.data;
+}
+
+export async function createPublication(projectId, { findable = false, allowAnonymous = true } = {}) {
+  const response = await apiClient.post(`/projects/${projectId}/publications`, {
+    findable,
+    allow_anonymous: allowAnonymous,
+  });
+  return response.data;
+}
+
+export async function deletePublication(projectId, publicationId) {
+  const response = await apiClient.delete(`/projects/${projectId}/publications/${publicationId}`);
+  return response.data;
+}
+
+export async function getPublicationInfo(publicationId) {
+  const response = await apiClient.get(`/publications/${publicationId}`);
+  return response.data;
+}
+
+export async function getPublicPublications() {
+  const response = await apiClient.get('/publications/public');
+  return response.data;
+}
+
+export async function updatePublication(projectId, publicationId, { findable, superpublic } = {}) {
+  const body = {};
+  if (findable !== undefined) body.findable = findable;
+  if (superpublic !== undefined) body.superpublic = superpublic;
+  const response = await apiClient.patch(`/projects/${projectId}/publications/${publicationId}`, body);
+  return response.data;
+}
+
 export async function getApiKeys() {
   const response = await apiClient.get('/auth/api-keys');
   return response.data;
@@ -110,6 +163,16 @@ export async function forgotPassword(email) {
 
 export async function getUserAccount() {
   const response = await apiClient.get('/auth/account');
+  return response.data;
+}
+
+export async function getPublicConfig() {
+  const response = await apiClient.get('/public-config');
+  return response.data;
+}
+
+export async function getTos() {
+  const response = await apiClient.get('/auth/tos');
   return response.data;
 }
 
@@ -187,15 +250,16 @@ export async function testAdminStorageBackendConnection(body) {
   return response.data;
 }
 
-export async function getProjects() {
-  const response = await apiClient.get('/projects');
+export async function getProjects(viewingId = null) {
+  const response = await apiClient.get('/projects', {
+    params: viewingId ? { viewing_id: viewingId } : {},
+  });
   return response.data;
 }
 
 export async function getAvailableClusters(projectId, resourceRequests) {
-  const response = await apiClient.get('/utilities/available-clusters', {
+  const response = await apiClient.get(`/projects/${projectId}/utilities/available-clusters`, {
     params: {
-      ...(projectId ? { project_id: projectId } : {}),
       ...(resourceRequests?.cpu ? { cpu: resourceRequests.cpu } : {}),
       ...(resourceRequests?.memory ? { memory: resourceRequests.memory } : {}),
     },
@@ -203,8 +267,35 @@ export async function getAvailableClusters(projectId, resourceRequests) {
   return response.data;
 }
 
-export async function createProject(name) {
-  const response = await apiClient.post('/projects', { name });
+export async function getAvailableStorageBackends() {
+  const response = await apiClient.get('/utilities/available-storage-backends');
+  return response.data;
+}
+
+export async function createProject(name, storageBackendId) {
+  const response = await apiClient.post('/projects', { name, storage_backend_id: storageBackendId });
+  return response.data;
+}
+
+export async function exportProject(projectId) {
+  const response = await apiClient.post(`/projects/${projectId}/export`);
+  return response.data;
+}
+
+export async function getProjectExport(projectId, exportId) {
+  const response = await apiClient.get(`/projects/${projectId}/export/${exportId}`);
+  return response.data;
+}
+
+// Seed an already-created (empty) project from a previously-uploaded export zip. The zip must
+// have been uploaded into this same project (POST /projects/{projectId}/upload).
+export async function importProject(projectId, uploadId) {
+  const response = await apiClient.post(`/projects/${projectId}/import`, { upload_id: uploadId });
+  return response.data;
+}
+
+export async function getProjectImport(importId) {
+  const response = await apiClient.get(`/projects/import/${importId}`);
   return response.data;
 }
 
@@ -224,47 +315,48 @@ export async function getEnvironmentProcessTypes(environmentId) {
 }
 
 export async function getProcesses(projectId) {
-  const response = await apiClient.get('/processes', {
-    params: projectId ? { project_id: projectId } : {},
-  });
+  const response = await apiClient.get(`/projects/${projectId}/processes`);
   return response.data;
 }
 
 export async function createProcess(proc, projectId) {
-  const response = await apiClient.post('/process', proc, {
-    params: projectId ? { project_id: projectId } : {},
+  const response = await apiClient.post(`/projects/${projectId}/process`, proc);
+  return response.data;
+}
+
+export async function getProcessLogs(processId, version, projectId) {
+  const response = await apiClient.get(`/projects/${projectId}/process/${processId}/logs`, {
+    params: version !== null && version !== undefined ? { version } : {},
   });
   return response.data;
 }
 
-export async function cancelProcessVersion(processId, version) {
-  const response = await apiClient.post(`/process/${processId}/versions/${version}/cancel`);
+export async function cancelProcessVersion(processId, version, projectId) {
+  const response = await apiClient.post(`/projects/${projectId}/process/${processId}/versions/${version}/cancel`);
   return response.data;
 }
 
-export async function updateProcessPosition(processId, x, y) {
-  await apiClient.patch(`/process/${processId}/position`, { x, y });
+export async function updateProcessPosition(processId, x, y, projectId) {
+  await apiClient.patch(`/projects/${projectId}/process/${processId}/position`, { x, y });
 }
 
-export async function getDataset(datasetId) {
-  const response = await apiClient.get(`/dataset/${datasetId}`);
+export async function getDataset(datasetId, projectId) {
+  const response = await apiClient.get(`/projects/${projectId}/dataset/${datasetId}`);
   return response.data;
 }
 
 export async function searchDatasets(search = "", completedOnly = true, projectId = null) {
-  const params = {
-    search,
-    completed_only: completedOnly,
-  };
-  if (projectId) {
-    params.project_id = projectId;
-  }
-  const response = await apiClient.get('/datasets', { params });
+  const response = await apiClient.get(`/projects/${projectId}/datasets`, {
+    params: {
+      search,
+      completed_only: completedOnly,
+    },
+  });
   return response.data;
 }
 
 // Load all datasets for a process version from its outputs
-export async function getProcessOutputDatasets(process, version) {
+export async function getProcessOutputDatasets(process, version, projectId) {
   if (!process || !version) return [];
 
   const versionObj = getProcessVersion(process, version);
@@ -282,12 +374,12 @@ export async function getProcessOutputDatasets(process, version) {
         datasetId = match[1];
       }
     } else {
-      // Old format: /dataset/{id}
+      // Old format: /projects/{project_id}/dataset/{id}
       datasetId = url.split('/').pop();
     }
 
     if (datasetId) {
-      const dataset = await getDataset(datasetId);
+      const dataset = await getDataset(datasetId, projectId);
       return dataset;
     }
     return null;
@@ -310,36 +402,35 @@ export function getLatestVersion(process) {
 }
 
 // Get data for a dataset or part
-export async function getDatasetData(datasetId, partPath = "all") {
+export async function getDatasetData(datasetId, partPath = "all", projectId) {
   let url;
   if (partPath === "all") {
-    url = `/dataset/${datasetId}/data`;
+    url = `/projects/${projectId}/dataset/${datasetId}/data`;
   } else {
-    url = `/dataset/${datasetId}/${partPath}/data`;
+    url = `/projects/${projectId}/dataset/${datasetId}/${partPath}/data`;
   }
   const response = await apiClient.get(url);
   return response.data;
 }
 
 // Get geography for a dataset or part
-export async function getDatasetGeography(datasetId, partPath = "all") {
+export async function getDatasetGeography(datasetId, partPath = "all", projectId) {
   let url;
   if (partPath === "all") {
-    url = `/dataset/${datasetId}/geography`;
+    url = `/projects/${projectId}/dataset/${datasetId}/geography`;
   } else {
-    url = `/dataset/${datasetId}/${partPath}/geography`;
+    url = `/projects/${projectId}/dataset/${datasetId}/${partPath}/geography`;
   }
   const response = await apiClient.get(url);
   return response.data;
 }
 
 // Upload a file
-export async function uploadFile(file, onProgress, projectId = null) {
+export async function uploadFile(file, onProgress, projectId) {
   const formData = new FormData();
   formData.append('file', file);
 
-  const response = await apiClient.post('/upload', formData, {
-    params: projectId ? { project_id: projectId } : {},
+  const response = await apiClient.post(`/projects/${projectId}/upload`, formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
@@ -352,6 +443,23 @@ export async function uploadFile(file, onProgress, projectId = null) {
   });
 
   return response.data;
+}
+
+// Survey systems (msgpack responses — preserve numpy arrays inside each system's `gex`).
+export async function listSystems(projectId) {
+  const response = await apiClient.get(`/projects/${projectId}/systems`, {
+    responseType: 'arraybuffer',
+  });
+  return unpackBinary(new Uint8Array(response.data));
+}
+
+export async function createSystem(projectId, { name, uploadId }) {
+  const response = await apiClient.post(
+    `/projects/${projectId}/systems`,
+    { name, upload_id: uploadId },
+    { responseType: 'arraybuffer' }
+  );
+  return unpackBinary(new Uint8Array(response.data));
 }
 
 export async function getProjectTags(projectId) {
@@ -374,13 +482,13 @@ export async function deleteProjectTag(projectId, tagId) {
   return response.data;
 }
 
-export async function addVersionTag(processId, version, tagId) {
-  const response = await apiClient.post(`/process/${processId}/versions/${version}/tags/${tagId}`);
+export async function addVersionTag(processId, version, tagId, projectId) {
+  const response = await apiClient.post(`/projects/${projectId}/process/${processId}/versions/${version}/tags/${tagId}`);
   return response.data;
 }
 
-export async function removeVersionTag(processId, version, tagId) {
-  const response = await apiClient.delete(`/process/${processId}/versions/${version}/tags/${tagId}`);
+export async function removeVersionTag(processId, version, tagId, projectId) {
+  const response = await apiClient.delete(`/projects/${projectId}/process/${processId}/versions/${version}/tags/${tagId}`);
   return response.data;
 }
 
@@ -417,14 +525,19 @@ export async function upgradePlugin(pluginId) {
 // GET /plugins automatically once the build is done.
 
 // Fetch a single process (used to poll a build to completion).
-export async function getProcess(processId) {
-  const response = await apiClient.get(`/process/${processId}`);
+export async function getProcess(processId, projectId) {
+  const response = await apiClient.get(`/projects/${projectId}/process/${processId}`);
   return response.data;
 }
 
 // Workspace functions
-export async function getWorkspaces() {
-  const response = await apiClient.get('/workspaces');
+export async function getWorkspaces(projectId) {
+  const response = await apiClient.get('/workspaces', { params: { project_id: projectId } });
+  return response.data;
+}
+
+export async function getPublicWorkspaces() {
+  const response = await apiClient.get('/workspaces/public');
   return response.data;
 }
 
@@ -433,8 +546,31 @@ export async function getWorkspace(workspaceId) {
   return response.data;
 }
 
-export async function saveWorkspace(workspace) {
-  const response = await apiClient.post('/workspace', workspace);
+export async function saveWorkspace({ projectId, title, layout }) {
+  const response = await apiClient.post('/workspace', { title, layout }, { params: { project_id: projectId } });
+  return response.data;
+}
+
+export async function saveWorkspaceVersion(workspaceId, layout) {
+  const response = await apiClient.post(`/workspace/${workspaceId}/versions`, { layout });
+  return response.data;
+}
+
+export async function updateWorkspace(workspaceId, { title, is_public, superpublic } = {}) {
+  const body = {};
+  if (title !== undefined) body.title = title;
+  if (is_public !== undefined) body.is_public = is_public;
+  if (superpublic !== undefined) body.superpublic = superpublic;
+  const response = await apiClient.patch(`/workspace/${workspaceId}`, body);
+  return response.data;
+}
+
+export async function forkWorkspace(workspaceId, { projectId, version } = {}) {
+  const response = await apiClient.post(
+    `/workspace/${workspaceId}/fork`,
+    version !== undefined ? { version } : {},
+    { params: { project_id: projectId } }
+  );
   return response.data;
 }
 
