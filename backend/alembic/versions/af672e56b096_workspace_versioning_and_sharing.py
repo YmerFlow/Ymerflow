@@ -50,7 +50,7 @@ def upgrade() -> None:
     # public, and copy its current `layout` column into a version-1 WorkspaceVersion row.
     now = datetime.utcnow().isoformat()
     op.execute(sa.text(
-        "UPDATE workspaces SET project_id = :project_id, is_public = 1"
+        "UPDATE workspaces SET project_id = :project_id, is_public = TRUE"
     ).bindparams(project_id=DEFAULT_PROJECT_ID))
 
     op.execute(sa.text(

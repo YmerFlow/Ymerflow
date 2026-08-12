@@ -1,12 +1,10 @@
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import { ProcessContext } from './ProcessContext';
-import { useCreateProject } from './datamodel/useQueries';
 import { hooks } from './plugins/hooks';
 import ProjectModal from './ProjectModal';
 
 function AutoCreateProjectDialog() {
   const { projects, projectsLoading, setCurrentProject } = useContext(ProcessContext);
-  const createProjectMutation = useCreateProject();
   const [show, setShow] = useState(false);
   const checkedRef = useRef(false);
   const projectsRef = useRef(projects);
@@ -27,21 +25,16 @@ function AutoCreateProjectDialog() {
     })();
   }, [projectsLoading, projects]);
 
-  const handleCreateProject = async (name, storageBackendId) => {
-    try {
-      const newProject = await createProjectMutation.mutateAsync({ name, storageBackendId });
-      setCurrentProject(newProject.id);
-      setShow(false);
-    } catch (error) {
-      console.error('Failed to create project:', error);
-    }
+  const handleCreated = (projectId) => {
+    setCurrentProject(projectId);
+    setShow(false);
   };
 
   return (
     <ProjectModal
       show={show}
       onHide={() => setShow(false)}
-      onSubmit={handleCreateProject}
+      onCreated={handleCreated}
     />
   );
 }

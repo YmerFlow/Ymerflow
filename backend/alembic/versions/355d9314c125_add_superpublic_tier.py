@@ -25,7 +25,7 @@ def upgrade() -> None:
     # Bootstrap 'default' workspace keeps its pre-existing effectively-universal visibility.
     # is_public=1 is already true for it today (af672e56b096), but setting it again here is
     # cheap insurance and keeps this migration self-consistent even if that's ever not the case.
-    op.execute(sa.text("UPDATE workspaces SET superpublic = 1, is_public = 1 WHERE id = 'default'"))
+    op.execute(sa.text("UPDATE workspaces SET superpublic = TRUE, is_public = TRUE WHERE id = 'default'"))
 
 
 def downgrade() -> None:
