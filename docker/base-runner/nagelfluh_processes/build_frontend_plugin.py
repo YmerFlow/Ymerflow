@@ -1,6 +1,6 @@
 """``build_frontend_plugin`` process type.
 
-Builds a Nagelfluh frontend plugin (an npm source package) into a Module-Federation remote and
+Builds a YmerFlow frontend plugin (an npm source package) into a Module-Federation remote and
 writes it as a directory output dataset (mime ``application/x-mf-remote``) into the project bucket.
 
 It runs in a pod like any other process, but the actual build logic lives in the shared

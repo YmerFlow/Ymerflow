@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Nagelfluh is a geophysics data processing application with a React frontend and FastAPI backend. The application provides a flexible, drag-and-drop layout system for managing data processing workflows, visualizing results with Plotly charts, and configuring process parameters via JSON Schema forms.
+YmerFlow is a geophysics data processing application with a React frontend and FastAPI backend. The application provides a flexible, drag-and-drop layout system for managing data processing workflows, visualizing results with Plotly charts, and configuring process parameters via JSON Schema forms.
 
 ## Documentation Structure
 

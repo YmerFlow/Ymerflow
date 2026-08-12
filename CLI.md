@@ -1,6 +1,6 @@
-# Nagelfluh CLI Tool
+# YmerFlow CLI Tool
 
-A command-line interface for managing Nagelfluh workspaces.
+A command-line interface for managing YmerFlow workspaces.
 
 ## Installation
 

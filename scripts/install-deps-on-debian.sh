@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install the generic system dependencies required to develop and run Nagelfluh on Debian/Ubuntu,
+# Install the generic system dependencies required to develop and run YmerFlow on Debian/Ubuntu,
 # regardless of which cluster/registry/storage plugin is used.
 # Run once on a fresh machine before running ./dev/runall.sh
 #
@@ -12,7 +12,7 @@
 #
 # It does NOT install docker.io, minikube, or minio-client: those are specific to the
 # ymerflow-minikube plugin's local Minikube-on-Docker + MinIO + docker-v2 stack, not generic
-# Nagelfluh deps (a cloud deployment on GKE/GAR/GCS needs none of them). If you're using that
+# YmerFlow deps (a cloud deployment on GKE/GAR/GCS needs none of them). If you're using that
 # plugin, ALSO run its own dependency installer afterward:
 #   plugins/ymerflow-minikube/scripts/install-deps.sh
 # (see docs/plans/generic-deployment-orchestration.md, Phase 9 / Design decision 8).

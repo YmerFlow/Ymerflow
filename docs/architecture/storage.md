@@ -1,6 +1,6 @@
 # Storage Architecture
 
-Nagelfluh uses a **per-project bucket** architecture with IAM-enforced security for dataset storage.
+YmerFlow uses a **per-project bucket** architecture with IAM-enforced security for dataset storage.
 
 **Related documentation:**
 - [Process Types](processes.md) - How process types use storage_context in their run() method

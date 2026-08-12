@@ -1,6 +1,6 @@
 # Technology Stack
 
-This document describes the technologies and libraries used throughout Nagelfluh.
+This document describes the technologies and libraries used throughout YmerFlow.
 
 For a complete list of open source packages with links, see **[Dependencies](dependencies.md)**.
 
@@ -259,6 +259,6 @@ For a complete list of open source packages with links, see **[Dependencies](dep
 
 All software components are either:
 - Open source (see individual library licenses)
-- Proprietary (Nagelfluh codebase - GPL v3.0)
+- Proprietary (YmerFlow codebase - GPL v3.0)
 
 Third-party licenses are respected per their respective terms.

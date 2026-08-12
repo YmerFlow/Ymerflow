@@ -44,7 +44,7 @@ export KUBECONFIG="$KUBECONFIG_FILE"
 # its subprocess; resolved directly when this script runs standalone.
 APP_IMAGE_VERSION="${APP_IMAGE_VERSION:-$(env/bin/python backend/bin/nagelfluh-resolve-app-image-tag)}"
 
-echo "=== Building Nagelfluh Runner Image for ${ENV_NAME} Environment ==="
+echo "=== Building YmerFlow Runner Image for ${ENV_NAME} Environment ==="
 echo "    Repository: nagelfluh-base-runner:${ENV_TAG}"
 echo ""
 

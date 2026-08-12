@@ -1,4 +1,4 @@
-# Ymerflow Plugin SDK (external repo)
+# YmerFlow Plugin SDK (external repo)
 
 The plugin SDK is **not** part of this repository. It lives in its own git repo and is consumed by
 this project (and by third-party plugin authors) as a published dependency.
@@ -59,7 +59,7 @@ hook reference.
 
 ## Host-contract names (intentionally NOT renamed)
 
-The Nagelfluh→Ymerflow rename covered the SDK's **package** surface only. The runtime bridge and
+The YmerFlow→YmerFlow rename covered the SDK's **package** surface only. The runtime bridge and
 build markers shared between host, plugins, and the build pipeline keep their original spelling, on
 purpose — renaming them would break the running cluster and already-built plugins:
 
@@ -79,5 +79,5 @@ purpose — renaming them would break the running cluster and already-built plug
 ## Releasing / pinning
 
 The git-URL dependencies currently track the default branch. Once the SDK starts cutting tags,
-pin them (`…Ymerflow-plugin-sdk.git@v0.2.0`) in the `setup.py`s and the Dockerfile, and publish the
+pin them (`…YmerFlow-plugin-sdk.git@v0.2.0`) in the `setup.py`s and the Dockerfile, and publish the
 npm half with `npm publish` from `js/`.

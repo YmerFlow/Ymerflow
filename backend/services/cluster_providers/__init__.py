@@ -28,7 +28,7 @@ class ClusterProvider:
     # for free just by setting this flag — no router changes.
     self_service_registration = False
 
-    # Set True by a provider that can also *host the Nagelfluh application itself* (backend +
+    # Set True by a provider that can also *host the YmerFlow application itself* (backend +
     # frontend pods, their exposure, config/secrets) on its cluster — not just run process/
     # analysis Jobs on it. Gates whether deploy_app()/expose_app() below are ever called for a
     # given cluster_type, mirroring self_service_registration's role as a per-type capability flag
@@ -104,7 +104,7 @@ class ClusterProvider:
 
     async def deploy_app(self, k8s_client, provider_config: dict, namespace: str, images: dict,
                          app_config: dict, secrets: dict) -> None:
-        """Apply the Nagelfluh application's own workload-level resources (backend + frontend
+        """Apply the YmerFlow application's own workload-level resources (backend + frontend
         Deployments/Service, the nagelfluh-backend-secret Secret, the DB migration Job) onto this
         provider's cluster. Optional — only ever called when `supports_app_deployment` is True;
         the default raises so a provider that sets the flag but forgets to implement this fails

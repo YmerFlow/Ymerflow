@@ -184,7 +184,7 @@ async def get_workspace_schema():
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": "Workspace Layout",
         "description": (
-            "Recursive layout tree for a Nagelfluh workspace. "
+            "Recursive layout tree for a YmerFlow workspace. "
             "The root is typically a VerticalSplit or TabSet container."
         ),
         "$defs": defs,

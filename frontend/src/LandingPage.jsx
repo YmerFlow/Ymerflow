@@ -12,17 +12,17 @@ export default function LandingPage() {
         <div className="d-flex align-items-center flex-wrap mb-5 gap-4">
           <img
             src="/Nagelfluh.jpg"
-            alt="Ymerflow"
+            alt="YmerFlow"
             style={{ maxWidth: '200px', width: '100%', height: 'auto', flexShrink: 0 }}
           />
           <div style={{ flex: '1 1 300px' }}>
-            <h1>Ymerflow - Cloud-native geophysics</h1>
+            <h1>YmerFlow - Cloud-native geophysics</h1>
             <p>
               Browser-based AEM and magnetic survey processing, inversion, and pipeline
               automation — no Windows install, no per-seat licenses, no black-box algorithms.
             </p>
             <p className="mb-0">
-              Ymerflow replaces desktop-bound geophysics tools with a reproducible, versioned
+              YmerFlow replaces desktop-bound geophysics tools with a reproducible, versioned
               workflow platform that runs in any browser. Processing pipelines are defined as
               visual DAGs, executed in Kubernetes containers, and stored in per-project cloud
               storage so results are always reproducible. The inversion core is SimPEG (GPL v3)
@@ -324,7 +324,7 @@ function OpenSourceCard() {
         </h4>
       </div>
       <Card.Body>
-        <p>Nagelfluh is free and open source. Try it out for yourself, no strings attached.</p>
+        <p>YmerFlow is free and open source. Try it out for yourself, no strings attached.</p>
         <ul className="list-unstyled">
           {OPEN_SOURCE_LINKS.map(({ href, icon, text }) => (
             <li key={href} className="mb-3">

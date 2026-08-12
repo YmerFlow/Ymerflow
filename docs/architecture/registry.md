@@ -1,6 +1,6 @@
 # Container Registry Architecture
 
-Nagelfluh pulls/pushes process-runner images through a **pluggable registry backend** — the same
+YmerFlow pulls/pushes process-runner images through a **pluggable registry backend** — the same
 pattern used for [object storage](storage.md) (`StorageBackend`/`StorageProtocolHandler`) and
 multi-cluster job execution (`Cluster`/`ClusterProvider`). Unlike storage (one backend per
 project), there is exactly **one active registry backend**, used app-wide: every cluster pulls

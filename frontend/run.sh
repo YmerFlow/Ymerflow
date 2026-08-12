@@ -11,5 +11,5 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # Start the development server
-echo "Starting Nagelfluh frontend..."
+echo "Starting YmerFlow frontend..."
 npm start

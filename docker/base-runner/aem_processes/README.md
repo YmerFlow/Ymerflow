@@ -1,7 +1,7 @@
-# AEM Processes for Nagelfluh
+# AEM Processes for YmerFlow
 
 This package provides AEM (Airborne Electromagnetic) data processing
-for the Nagelfluh framework based on
+for the YmerFlow framework based on
 https://github.com/emerald-geomodelling/emerald-beryl-pipeline
 
 ## Overview
@@ -14,14 +14,14 @@ The package provides three main process types for geophysics data processing:
 
 ## Architecture
 
-### Ported from Luigi to Nagelfluh
+### Ported from Luigi to YmerFlow
 
 The original emerald-beryl-pipeline used Luigi for workflow orchestration with:
 - Config files (YAML) for parameters
 - File-based dependencies
 - `DONE` marker files for completion tracking
 
-The Nagelfluh port replaces these with:
+The YmerFlow port replaces these with:
 - JSON Schema for parameters (dynamically generated from entry points)
 - Dataset URL references for dependencies
 - Process completion status tracking
@@ -29,7 +29,7 @@ The Nagelfluh port replaces these with:
 
 ### File Structure
 
-Each process writes datasets in the Nagelfluh structure:
+Each process writes datasets in the YmerFlow structure:
 
 ```
 {storage_base}/processes/{process_id}/datasets/{dataset_id}/
@@ -202,9 +202,9 @@ xyz.to_msgpack("path/to/output.msgpack", gex=gex_object)
 ## Differences from Original Pipeline
 
 ### Removed Features
-- Luigi task orchestration → Nagelfluh handles dependencies
+- Luigi task orchestration → YmerFlow handles dependencies
 - Config files (YAML) → JSON Schema parameters
-- Integration task → Nagelfluh orchestrates workflows
+- Integration task → YmerFlow orchestrates workflows
 - Introspect task → Schemas generated on-demand
 
 ### Enhanced Features
@@ -224,7 +224,7 @@ xyz.to_msgpack("path/to/output.msgpack", gex=gex_object)
 
 ### Modifying the Importer
 
-The `LibaarhusXYZImporter` class is a Nagelfluh process that imports SkyTEM data. To modify it:
+The `LibaarhusXYZImporter` class is a YmerFlow process that imports SkyTEM data. To modify it:
 
 1. Update the `schema()` classmethod to change parameters
 2. Update the `run()` classmethod to change import logic

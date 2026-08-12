@@ -1,6 +1,6 @@
 # Development Guide
 
-This guide covers development workflows, testing, and contributing to Nagelfluh.
+This guide covers development workflows, testing, and contributing to YmerFlow.
 
 ## Development Environment
 
@@ -116,7 +116,7 @@ or a publication id (read-only; see `docs/plans/done/publication-readonly-projec
 
 ### Database Migrations
 
-Nagelfluh uses Alembic for database schema management.
+YmerFlow uses Alembic for database schema management.
 
 **Create a new migration:**
 
@@ -831,4 +831,4 @@ backend/bin/nagelfluh-bootstrap-provision` — `plugins/ymerflow-minikube`'s
 
 ## License
 
-Nagelfluh is licensed under the GNU General Public License v3.0. See LICENSE file for details.
+YmerFlow is licensed under the GNU General Public License v3.0. See LICENSE file for details.

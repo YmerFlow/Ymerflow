@@ -1,6 +1,6 @@
 # Open Source Dependencies
 
-All major open source packages used in Nagelfluh, organized by layer.
+All major open source packages used in YmerFlow, organized by layer.
 
 ## Frontend (npm)
 

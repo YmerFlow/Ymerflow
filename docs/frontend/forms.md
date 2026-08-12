@@ -1,6 +1,6 @@
 # JSON Schema Forms
 
-Nagelfluh uses JSON Schema forms for process parameter configuration and other dynamic form generation. The frontend extends the `@rjsf/core` library with custom fields and widgets.
+YmerFlow uses JSON Schema forms for process parameter configuration and other dynamic form generation. The frontend extends the `@rjsf/core` library with custom fields and widgets.
 
 ## Overview
 
@@ -640,7 +640,7 @@ For more details on JSON Schema form features, see:
 - [@rjsf/core documentation](https://rjsf-team.github.io/react-jsonschema-form/)
 - [JSON Schema specification](https://json-schema.org/)
 
-### Nagelfluh-Specific Extensions
+### YmerFlow-Specific Extensions
 
 - `x-format: "dataset"`: Dataset selector widget
 - `x-format: "datasetPath"`: Dataset path field (whole-dataset reference)

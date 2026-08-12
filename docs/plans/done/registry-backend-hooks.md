@@ -10,7 +10,7 @@ own `docker-v2` implementation of it (wrapping the existing self-hosted registry
 (protocol-agnostic `docker/build.sh`, per-Job pull credentials, generic seed migrations).
 
 It also generalizes a related, previously provider-specific concern: making a newly-connectable
-`Cluster` actually ready to run Nagelfluh Jobs (namespace, Kueue install, quotas/queues, RBAC). That
+`Cluster` actually ready to run YmerFlow Jobs (namespace, Kueue install, quotas/queues, RBAC). That
 logic exists today as two independent, duplicated shell implementations (one for minikube, one
 inside the GCP plugin's GKE setup script); this plan replaces both with one provider-agnostic Python
 routine, since none of it is actually specific to any given `cluster_type` once you have a working
@@ -25,7 +25,7 @@ implemented (and the hooks it adds must be stable) before that one can start.
 
 (Confirmed by reading the implemented code, not just the docs.)
 
-Nagelfluh's only registry today is the self-hosted Docker Registry v2 that `dev/setup-registry.sh`
+YmerFlow's only registry today is the self-hosted Docker Registry v2 that `dev/setup-registry.sh`
 deploys inside Minikube (namespace `registry`, NodePort 30500, self-signed TLS, htpasswd basic
 auth). Every consumer of "the registry" bakes in assumptions specific to that setup:
 

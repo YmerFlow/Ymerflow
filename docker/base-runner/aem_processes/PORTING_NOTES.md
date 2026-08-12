@@ -2,11 +2,11 @@
 
 ## Summary
 
-Successfully ported emerald-beryl-pipeline Luigi tasks to Nagelfluh framework.
+Successfully ported emerald-beryl-pipeline Luigi tasks to YmerFlow framework.
 
 ## File Mapping
 
-| Original (Luigi) | Ported (Nagelfluh) | Status |
+| Original (Luigi) | Ported (YmerFlow) | Status |
 |-----------------|-------------------|--------|
 | `file_import.py` | `import_process.py` | ✅ Complete |
 | `processing.py` | `processing_process.py` | ✅ Complete |
@@ -14,7 +14,7 @@ Successfully ported emerald-beryl-pipeline Luigi tasks to Nagelfluh framework.
 | `utils.py` | `utils.py` | ✅ Adapted |
 | `localize.py` | `utils.py` (merged) | ✅ Integrated |
 | `introspect.py` | N/A (schemas generated on-demand) | ✅ Not needed |
-| `integration.py` | N/A (Nagelfluh orchestrates) | ✅ Not needed |
+| `integration.py` | N/A (YmerFlow orchestrates) | ✅ Not needed |
 
 ## Key Changes
 
@@ -38,7 +38,7 @@ class Import(luigi.Task):
         return Target('%s/DONE' % self.import_name)
 ```
 
-**After (Nagelfluh):**
+**After (YmerFlow):**
 ```python
 class Import:
     @classmethod
@@ -63,7 +63,7 @@ with target.open("w") as f:
     f.write(data)
 ```
 
-**After (Nagelfluh):**
+**After (YmerFlow):**
 ```python
 # Using fsspec directly
 with fsspec.open(url, 'wb', **storage_kwargs) as f:
@@ -80,7 +80,7 @@ def requires(self):
     return Import(import_name=config["data"]["args"]["data"].rsplit("/", 1)[0])
 ```
 
-**After (Nagelfluh):**
+**After (YmerFlow):**
 ```python
 # Dependencies via dataset URLs in schema
 "input_data": {
@@ -115,7 +115,7 @@ with localize_urls({'input': input_data_url}, storage_kwargs) as localized:
 └── DONE
 ```
 
-**After (Nagelfluh):**
+**After (YmerFlow):**
 ```
 {storage_base}/processes/{process_id}/datasets/{dataset_id}/
 ├── root.msgpack
@@ -141,7 +141,7 @@ importer:
     projection: 32611
 ```
 
-**After (Nagelfluh):**
+**After (YmerFlow):**
 ```json
 // JSON Schema parameters passed to run()
 {
@@ -275,7 +275,7 @@ Uses `swaggerspect.get_apis("simpeg.static_instrument")` for:
 - [ ] Run import process with sample data
 - [ ] Run processing process with imported data
 - [ ] Run inversion process with processed data
-- [ ] Verify dataset structure matches Nagelfluh format
+- [ ] Verify dataset structure matches YmerFlow format
 - [ ] Verify flight-line splitting works
 - [ ] Verify resource monitoring (if emerald-monitor installed)
 
@@ -304,7 +304,7 @@ For users migrating from Luigi-based pipeline:
 
 1. **Replace config files with parameters**: Convert YAML configs to JSON parameters
 2. **Update import paths**: Change from `import_name/out.msgpack` to dataset URLs
-3. **Remove task dependencies**: Nagelfluh handles dependency graph
+3. **Remove task dependencies**: YmerFlow handles dependency graph
 4. **Update file paths**: Use storage URLs instead of local paths
 5. **Remove DONE markers**: Process completion tracked automatically
 
@@ -312,4 +312,4 @@ For users migrating from Luigi-based pipeline:
 
 For issues or questions:
 - Original pipeline: https://github.com/emerald-geomodelling/emerald-beryl-pipeline
-- Nagelfluh framework: See project documentation
+- YmerFlow framework: See project documentation

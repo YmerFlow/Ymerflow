@@ -1,4 +1,4 @@
-# Nagelfluh MCP API Design Analysis
+# YmerFlow MCP API Design Analysis
 
 **Date:** 2026-06-06  
 **Based on:** Analysis of 131 Claude Code session transcripts across 7 project directories
@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-Across sessions involving the Nagelfluh platform, a recurring pattern emerged: the MCP tools as implemented cause severe over-fetching, returning responses that overflow the LLM context window. The result is that users routinely fall back to copy-pasting browser content, SSH-ing into production servers, and using `curl` directly against the REST API — despite MCP tools existing for the relevant operations.
+Across sessions involving the YmerFlow platform, a recurring pattern emerged: the MCP tools as implemented cause severe over-fetching, returning responses that overflow the LLM context window. The result is that users routinely fall back to copy-pasting browser content, SSH-ing into production servers, and using `curl` directly against the REST API — despite MCP tools existing for the relevant operations.
 
 The core problem is a mismatch between what the tools return and what an agent can use in a single context window. Process status and log fetching tools exist (`list_processes` exposes `versions[].state`; `get_process_logs` accepts a `version` filter), but an agent cannot get a process's status without downloading all processes with all their logs embedded — making the nominally-available features effectively unusable due to response size.
 

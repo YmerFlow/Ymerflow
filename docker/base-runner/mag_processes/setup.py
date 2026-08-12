@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 setup(
     name="mag-processes",
     version="0.1.0",
-    description="Magnetic survey process type implementations for Nagelfluh",
+    description="Magnetic survey process type implementations for YmerFlow",
     packages=find_packages(),
     install_requires=[
         "AirMagTools @ git+https://github.com/SagebrushGeoTools/AirMagTools.git",

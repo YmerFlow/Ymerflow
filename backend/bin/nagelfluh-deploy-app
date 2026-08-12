@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Deploy the Nagelfluh application itself (backend + frontend) onto the default Cluster's
+"""Deploy the YmerFlow application itself (backend + frontend) onto the default Cluster's
 provider, then expose it — the orchestration entry point for Phase 5 of
 docs/plans/app-deployment-hooks.md.
 

@@ -1,10 +1,10 @@
-# EM Solver Evaluation for Nagelfluh Integration
+# EM Solver Evaluation for YmerFlow Integration
 
 *Date: 2026-06-13 — Updated with deep comparative research*
 
-## Context: What Nagelfluh Already Has
+## Context: What YmerFlow Already Has
 
-Nagelfluh has **full SimPEG support** for the following workflows (all production-ready):
+YmerFlow has **full SimPEG support** for the following workflows (all production-ready):
 
 ### AEM (TDEM)
 | Process | What it does |
@@ -26,7 +26,7 @@ Equivalent source gridding + full 3D OcTree susceptibility/MVI inversion, all Si
 
 ## Integration Model
 
-Every Nagelfluh process type — regardless of the solver's implementation language — follows the same wrapper pattern:
+Every YmerFlow process type — regardless of the solver's implementation language — follows the same wrapper pattern:
 
 ```python
 class invert_tem_foo:
@@ -56,7 +56,7 @@ This means **implementation language is not a criterion**. C++, Fortran, Julia, 
 
 ## Gap Analysis
 
-The evaluation question for each remaining solver is: **what new capability does it bring to Nagelfluh that SimPEG does not already provide?**
+The evaluation question for each remaining solver is: **what new capability does it bring to YmerFlow that SimPEG does not already provide?**
 
 | Gap | Category |
 |---|---|
@@ -100,11 +100,11 @@ GeoBIPy uses **reversible-jump Markov Chain Monte Carlo (rj-MCMC)**, the same Ba
 - **Layer-count posterior**: shows whether the data support 2, 3, or 5 layers
 - **Credible intervals** at 68% and 95% level — equivalent to ±1σ and ±2σ but fully nonlinear
 
-This is the **uncertainty quantification differentiator** for Nagelfluh. A user who runs SimPEG's LCI gets a smooth model. A user who runs GeoBIPy on the same data gets the same model *plus a probability map* that tells them which parts of the model are geologically reliable.
+This is the **uncertainty quantification differentiator** for YmerFlow. A user who runs SimPEG's LCI gets a smooth model. A user who runs GeoBIPy on the same data gets the same model *plus a probability map* that tells them which parts of the model are geologically reliable.
 
 GeoBIPy processes soundings independently (no spatial coupling), which is a trade-off vs. SimPEG LCI. Spatial coherence comes from data density; lateral constraints are an active research feature. Computationally it requires MPI and scales via embarrassingly parallel MCMC chains — designed for HPC clusters. Not suitable for realtime turnaround; suited for post-survey detailed analysis of priority areas.
 
-**Used by USGS** for national AEM programs (Alaska permafrost, Great Plains aquifers). The Python API makes it the easiest Bayesian AEM solver to wrap as a Nagelfluh process type.
+**Used by USGS** for national AEM programs (Alaska permafrost, Great Plains aquifers). The Python API makes it the easiest Bayesian AEM solver to wrap as a YmerFlow process type.
 
 **Integration path**: Write a `libaarhusxyz` → GeoBIPy HDF5 adapter; wrap as `invert_tem_bayesian` process with MPI-enabled K8s pod (multi-container job). System parameters entered via `TdemSystem` constructor (similar to GEX-to-SimPEG mapping already done).
 
@@ -125,7 +125,7 @@ GeoBIPy processes soundings independently (no spatial coupling), which is a trad
 
 **What it adds beyond SimPEG:**
 
-Nagelfluh uses SimPEG's TDEM stack, which has no configured process type for **frequency-domain helicopter AEM** systems: RESOLVE (CGG), Dighem (Aerodat), HEM (Geotech). These measure in-phase and quadrature response at multiple frequencies and are widely used for base metal exploration and groundwater. empymod models all RESOLVE-type coil geometries (HCP, coaxial) and frequencies directly and is the de-facto standard forward engine for 1D FDEM AEM.
+YmerFlow uses SimPEG's TDEM stack, which has no configured process type for **frequency-domain helicopter AEM** systems: RESOLVE (CGG), Dighem (Aerodat), HEM (Geotech). These measure in-phase and quadrature response at multiple frequencies and are widely used for base metal exploration and groundwater. empymod models all RESOLVE-type coil geometries (HCP, coaxial) and frequencies directly and is the de-facto standard forward engine for 1D FDEM AEM.
 
 The v2.6.0 addition of **arbitrary waveform support** also makes it directly competitive with SimPEG for TDEM forward modeling — and about 100–1000× faster per sounding, because it uses a semi-analytical DLF approach rather than sparse matrix solvers. This matters as a standalone "forward model" process type for synthetic data generation, sensitivity testing, and as the inner engine of a custom inversion workflow.
 
@@ -149,9 +149,9 @@ empymod is the lowest integration cost of any solver on this list and the highes
 
 **What it adds beyond SimPEG:**
 
-**System coverage**: GA-AEM has validated `.stm` system files for Tempest, VTEM, GeoTEM, and SPECTREM — the commercial systems widely used outside the SkyTEM ecosystem (particularly in Australia, Canada, South Africa). These systems cannot be run directly through Nagelfluh's GEX-based `invert_tem` without a GEX equivalent. GA-AEM's `.stm` format is the natural bridge.
+**System coverage**: GA-AEM has validated `.stm` system files for Tempest, VTEM, GeoTEM, and SPECTREM — the commercial systems widely used outside the SkyTEM ecosystem (particularly in Australia, Canada, South Africa). These systems cannot be run directly through YmerFlow's GEX-based `invert_tem` without a GEX equivalent. GA-AEM's `.stm` format is the natural bridge.
 
-**ASEGGDF2 format**: The international AEM exchange standard used by Geoscience Australia, CSIRO, and most survey contractors. Users with ASEGGDF2 archives cannot currently feed data into Nagelfluh without conversion.
+**ASEGGDF2 format**: The international AEM exchange standard used by Geoscience Australia, CSIRO, and most survey contractors. Users with ASEGGDF2 archives cannot currently feed data into YmerFlow without conversion.
 
 **Stochastic mode** (`garjmcmctdem`): Same rj-MCMC algorithm as GeoBIPy but the GA reference implementation for Tempest. Validated against decades of Australian national AEM surveys.
 
@@ -211,7 +211,7 @@ When a SkyTEM or VTEM survey flies over a dipping conductive plate, the 1D LCI m
 
 This is not an inversion tool but a **forward modeling** tool. The workflow is: run SimPEG LCI to get the background layered model → identify anomalies in the LCI residuals → use LeroiAir to forward-model the anomaly with various plate geometries → match the observed data to determine plate parameters.
 
-**Integration**: Subprocess wrapper + ASCII control file generator from Nagelfluh parameters. The most natural process type would be `forward_3d_plate` that takes a plate parameterization (from the UI) + background LCI model + survey geometry and produces synthetic AEM data for comparison.
+**Integration**: Subprocess wrapper + ASCII control file generator from YmerFlow parameters. The most natural process type would be `forward_3d_plate` that takes a plate parameterization (from the UI) + background LCI model + survey geometry and produces synthetic AEM data for comparison.
 
 ---
 
@@ -242,7 +242,7 @@ SimPEG does have a 1D FDEM simulation, but it has no dedicated processing pipeli
 
 This opens a **different user community** from AEM operators: environmental consultants, agronomists, archaeologists. Ground FDEM surveys are far more numerous than AEM surveys (much lower entry cost), and a cloud-based processing service for them is an underserved market.
 
-**License note**: GPL-3.0. The GPL's network use provision (Affero GPL) does not apply here since it's plain GPL-3.0, but using GPL libraries in a SaaS product should be reviewed with counsel. The process type container runs GPL code in isolation (not linked to the Nagelfluh codebase), which substantially reduces the concern.
+**License note**: GPL-3.0. The GPL's network use provision (Affero GPL) does not apply here since it's plain GPL-3.0, but using GPL libraries in a SaaS product should be reviewed with counsel. The process type container runs GPL code in isolation (not linked to the YmerFlow codebase), which substantially reduces the concern.
 
 ---
 
@@ -266,7 +266,7 @@ SimPEG does have a Natural Source EM (NSEM) module for 3D MT, but it has known b
 
 ModEM is **the de facto standard 3D MT inversion code** in the research and exploration community. Its output format (plain-text model files) is understood by visualisation tools like ModEM-gui, MTPy, and GMT. GPU support (CUDA/HIP) makes it competitive for large 3D models.
 
-The case for ModEM integration: AEM surveys are routinely combined with MT surveys for complementary depth coverage. AEM resolves conductivity structure to ~300–500 m depth; MT extends this to several km. An operator doing both surveys in one field campaign naturally wants one platform. If Nagelfluh handles AEM and refers the MT data elsewhere, that's friction. If it handles both, it captures the whole multi-method workflow.
+The case for ModEM integration: AEM surveys are routinely combined with MT surveys for complementary depth coverage. AEM resolves conductivity structure to ~300–500 m depth; MT extends this to several km. An operator doing both surveys in one field campaign naturally wants one platform. If YmerFlow handles AEM and refers the MT data elsewhere, that's friction. If it handles both, it captures the whole multi-method workflow.
 
 **Integration path**: Subprocess wrapper around the ModEM executable; write Python utilities to translate from project data to EDI input, run `Mod3DMT`, and parse the text output. `pyModEM` helps with the file I/O. Not trivial but well-defined.
 
@@ -285,7 +285,7 @@ The case for ModEM integration: AEM surveys are routinely combined with MT surve
 | **Language** | Python |
 | **License** | Apache-2.0 |
 | **Activity** | Very active — v1.9.1 (March 2026) |
-| **What it adds** | 3D CSEM forward modeling in Python; multigrid FD solver; complements empymod (1D) for 3D validation. SimPEG overlaps significantly here. Main value: the `emsig` ecosystem (empymod + emg3d) is the standard for academic CSEM/MT forward modeling. A joint empymod + emg3d 1D-to-3D comparison workflow is useful but niche within Nagelfluh's target market. |
+| **What it adds** | 3D CSEM forward modeling in Python; multigrid FD solver; complements empymod (1D) for 3D validation. SimPEG overlaps significantly here. Main value: the `emsig` ecosystem (empymod + emg3d) is the standard for academic CSEM/MT forward modeling. A joint empymod + emg3d 1D-to-3D comparison workflow is useful but niche within YmerFlow's target market. |
 | **Integration effort** | Trivial (pure Python) |
 
 ---
@@ -299,7 +299,7 @@ The case for ModEM integration: AEM surveys are routinely combined with MT surve
 | **Language** | Python / C++ |
 | **License** | Apache-2.0 |
 | **Activity** | Very active — v1.6.0 (May 2026), new SCCI framework |
-| **What it adds** | ERT, IP, seismic refraction inversion; joint multi-method inversion framework. SimPEG also does ERT/IP. PyGimli's main differentiator is its Structurally Coupled Co-operative Inversion (SCCI, added v1.6.0) framework for coupling ERT + EM datasets. Relevant if Nagelfluh expands to ground-based multi-method surveys alongside AEM. |
+| **What it adds** | ERT, IP, seismic refraction inversion; joint multi-method inversion framework. SimPEG also does ERT/IP. PyGimli's main differentiator is its Structurally Coupled Co-operative Inversion (SCCI, added v1.6.0) framework for coupling ERT + EM datasets. Relevant if YmerFlow expands to ground-based multi-method surveys alongside AEM. |
 | **Integration effort** | Easy (Python API, conda installable) |
 
 ---
@@ -327,7 +327,7 @@ Lower priority than LeroiAir. ArjunAir is a more computationally expensive 2.5D 
 
 ### Tier 3 — Low or no marginal value over SimPEG
 
-Solvers in this tier are either: (a) covered by SimPEG's existing AEM/EM/magnetics support (all could in principle be wrapped via subprocess, but doing so adds no capability); (b) MATLAB-only (MATLAB is not in the Docker image and is not freely licensable, making these genuinely unusable); (c) inactive or restrictively licensed; or (d) address methods — marine CSEM, academic 3D MT — outside the Nagelfluh user base. Language alone is not a reason for low ranking.
+Solvers in this tier are either: (a) covered by SimPEG's existing AEM/EM/magnetics support (all could in principle be wrapped via subprocess, but doing so adds no capability); (b) MATLAB-only (MATLAB is not in the Docker image and is not freely licensable, making these genuinely unusable); (c) inactive or restrictively licensed; or (d) address methods — marine CSEM, academic 3D MT — outside the YmerFlow user base. Language alone is not a reason for low ranking.
 
 | Name | Mode | Language | Why low marginal value |
 |---|---|---|---|
@@ -408,9 +408,9 @@ All solvers are integrated via the same subprocess wrapper pattern (fsspec downl
 
 ## Data Format Compatibility Notes
 
-| Format | Used by | Nagelfluh adapter status |
+| Format | Used by | YmerFlow adapter status |
 |---|---|---|
-| **Aarhus XYZ + GEX** (msgpack) | Native Nagelfluh | Already implemented |
+| **Aarhus XYZ + GEX** (msgpack) | Native YmerFlow | Already implemented |
 | **ASEGGDF2** (.dfn/.dat) | GA-AEM | Needs new adapter |
 | **HDF5** (GeoBIPy format) | GeoBIPy | Needs new adapter |
 | **EDI** | ModEM, MT community | Needs new adapter |

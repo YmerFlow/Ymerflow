@@ -1,6 +1,6 @@
-# Nagelfluh User Guide
+# YmerFlow User Guide
 
-This guide explains how to use Nagelfluh for geophysics data processing.
+This guide explains how to use YmerFlow for geophysics data processing.
 
 ## Getting Started
 

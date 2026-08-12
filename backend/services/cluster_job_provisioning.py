@@ -1,6 +1,6 @@
 """Generic, provider-agnostic cluster job-readiness provisioning.
 
-Makes a `Cluster` actually ready to run Nagelfluh Jobs: creates the jobs namespace, installs the
+Makes a `Cluster` actually ready to run YmerFlow Jobs: creates the jobs namespace, installs the
 Kueue operator (if not already present) and waits for it to become fully ready, sizes and applies
 a Kueue `ResourceFlavor`/`ClusterQueue`/`LocalQueue` from real node allocatable capacity, and
 applies the backend's `nagelfluh-backend-jobs`/`nagelfluh-backend-kueue-reader` RBAC.
@@ -89,7 +89,7 @@ RBAC_CLUSTERROLE_NAME = "nagelfluh-backend-kueue-reader"
 
 
 async def ensure_cluster_job_ready(k8s_client, namespace: str, quota_config: dict | None = None) -> None:
-    """Make `namespace` on whatever cluster `k8s_client` points at ready to run Nagelfluh Jobs.
+    """Make `namespace` on whatever cluster `k8s_client` points at ready to run YmerFlow Jobs.
 
     Idempotent — safe to call repeatedly against the same cluster (e.g. on every
     register-callback, or every time the seed migration runs against a fresh DB): namespace
@@ -100,7 +100,7 @@ async def ensure_cluster_job_ready(k8s_client, namespace: str, quota_config: dic
     Args:
         k8s_client: a `backend.services.k8s_client.K8sClient` (or subclass, e.g. a plugin's
             `GkeK8sClient`) already carrying whatever `provider_config` this cluster needs.
-        namespace: the Nagelfluh jobs namespace to provision (`Cluster.namespace`).
+        namespace: the YmerFlow jobs namespace to provision (`Cluster.namespace`).
         quota_config: optional explicit override of Kueue quota sizing, shaped
             `{"cpu_cores": float, "memory_gb": float}`. When omitted (the normal case), quota is
             computed from live `list_node()` allocatable capacity, summed across every node,

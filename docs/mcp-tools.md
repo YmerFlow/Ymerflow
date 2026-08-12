@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Nagelfluh exposes a subset of its REST API as MCP (Model Context Protocol) tools via [fastapi-mcp](https://github.com/tadata-ru/fastapi-mcp), mounted at `/mcp` using the Streamable HTTP transport.
+YmerFlow exposes a subset of its REST API as MCP (Model Context Protocol) tools via [fastapi-mcp](https://github.com/tadata-ru/fastapi-mcp), mounted at `/mcp` using the Streamable HTTP transport.
 
 Only routes tagged `Processes`, `Datasets`, `Environments`, `Uploads`, or `Workspaces` are exposed as MCP tools (`backend/main.py`, `FastApiMCP(..., include_tags=[...])`). Auth, Projects, Publications, Admin, Systems, Tags, Plugins, and Internal routes are REST-only and not visible to MCP clients. No `operation_id` is set on any route, so tool names follow FastAPI's default `{function_name}_{path}_{method}` pattern (e.g. `create_process_projects__project_id__process_post`) — MCP tool names are auto-derived from the route path, so they follow automatically whenever a route moves; nothing to hand-update here.
 

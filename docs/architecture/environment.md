@@ -1,6 +1,6 @@
 # Environment and Docker Image Architecture
 
-Environments in Nagelfluh are Docker images that contain process types and their dependencies. Each environment defines what process types are available and how they execute.
+Environments in YmerFlow are Docker images that contain process types and their dependencies. Each environment defines what process types are available and how they execute.
 
 ## Overview
 
@@ -388,7 +388,7 @@ The `storage_context` parameter provides process ID, project ID, storage base UR
    docker push gcr.io/project/my-environment:latest
    ```
 
-5. **Create environment in Nagelfluh:**
+5. **Create environment in YmerFlow:**
    - Use the `create_environment` process type (fully implemented, see
      [`create_environment` process](#create_environment-process) below)
    - Or manually register in the database

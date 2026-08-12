@@ -1,5 +1,5 @@
 #!/bin/bash
-# Master setup and run script for Nagelfluh development environment
+# Master setup and run script for YmerFlow development environment
 # This script:
 # - Installs dependencies (including backend plugins)
 # - Bootstrap-provisions the registry/storage/cluster axes (by default: the local Minikube +
@@ -32,7 +32,7 @@ fi
 export REGISTRY_PUBLIC_HOST="${REGISTRY_PUBLIC_HOST:-$(hostname -I | awk '{print $1}')}"
 
 echo "=========================================="
-echo "Nagelfluh Development Environment Setup"
+echo "YmerFlow Development Environment Setup"
 echo "=========================================="
 echo ""
 
@@ -280,7 +280,7 @@ print_status "Registry accessible (protocol=${REGISTRY_PROTOCOL})"
 # ==========================================
 print_section "Step 7: Docker Image Build"
 
-echo "Building Nagelfluh runner image..."
+echo "Building YmerFlow runner image..."
 # The docker/build.sh script will use the registry NodePort
 ./docker/build.sh
 print_status "Docker image built and pushed to registry"

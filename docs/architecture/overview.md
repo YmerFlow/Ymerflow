@@ -2,7 +2,7 @@
 
 ## Overview
 
-Nagelfluh uses a distributed architecture with React frontend, FastAPI backend, and Kubernetes-based process execution:
+YmerFlow uses a distributed architecture with React frontend, FastAPI backend, and Kubernetes-based process execution:
 
 ```
 Frontend (React) → Backend (FastAPI) → Kubernetes Cluster

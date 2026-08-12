@@ -1,6 +1,6 @@
 # Flexout Layout System
 
-The Flexout layout system provides a flexible, drag-and-drop interface for arranging widgets in the Nagelfluh frontend. It supports splits, tabs, and a resizable grid.
+The Flexout layout system provides a flexible, drag-and-drop interface for arranging widgets in the YmerFlow frontend. It supports splits, tabs, and a resizable grid.
 
 ## Overview
 

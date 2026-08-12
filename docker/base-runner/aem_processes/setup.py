@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 setup(
     name="aem-processes",
     version="0.1.0",
-    description="AEM (Airborne Electromagnetic) process type implementations for Nagelfluh",
+    description="AEM (Airborne Electromagnetic) process type implementations for YmerFlow",
     packages=find_packages(),
     install_requires=[
         "fsspec",

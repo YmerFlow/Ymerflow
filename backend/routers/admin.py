@@ -272,7 +272,7 @@ async def cluster_register_callback(
         await db.commit()
         raise HTTPException(status_code=400, detail=f"Connection test failed: {e}")
 
-    # Connection works - now make the cluster actually ready to run Nagelfluh Jobs (namespace,
+    # Connection works - now make the cluster actually ready to run YmerFlow Jobs (namespace,
     # Kueue, quotas/queues, RBAC - see docs/plans/registry-backend-hooks.md Phase 7). A separate
     # try/except from the connection test above so a failure here surfaces a distinguishable
     # message (an admin can tell "cluster unreachable" from "cluster reachable but couldn't be

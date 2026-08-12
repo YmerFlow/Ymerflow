@@ -24,7 +24,7 @@ SERVER_URL="${SERVER_URL:-http://$(hostname -I | awk '{print $1}'):30080}"
 BACKEND_BASE_URL="${SERVER_URL}/api"
 
 echo "========================================"
-echo "Nagelfluh - Production Setup"
+echo "YmerFlow - Production Setup"
 echo "========================================"
 echo ""
 echo "  Server URL:     ${SERVER_URL}  (set SERVER_URL in config.env to override)"

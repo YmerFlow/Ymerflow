@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make Nagelfluh pluggable at runtime: plugins can register new dataset types, layer types, widget
+Make YmerFlow pluggable at runtime: plugins can register new dataset types, layer types, widget
 types, quantity kinds, full pages, and frontend hook callbacks without modifying or rebuilding the
 main application. Backend plugins can also add API routers, database models, and billing/quota
 logic. The first backend plugin is the `billing/` module, extracted from the core backend.
@@ -11,9 +11,9 @@ logic. The first backend plugin is the `billing/` module, extracted from the cor
 
 ## Two Kinds of Plugins
 
-Nagelfluh has two plugin delivery mechanisms that converge on **one frontend artifact format** — a
-Module Federation remote **built by Nagelfluh from an npm source package** against the host's exact
-shared-dependency versions. Plugins are distributed as npm **source** packages; Nagelfluh **builds**
+YmerFlow has two plugin delivery mechanisms that converge on **one frontend artifact format** — a
+Module Federation remote **built by YmerFlow from an npm source package** against the host's exact
+shared-dependency versions. Plugins are distributed as npm **source** packages; YmerFlow **builds**
 them (running the real `npm`/`vite` resolver), it never trusts a pre-built blob. They differ only
 in *where the build runs*:
 
@@ -40,7 +40,7 @@ and the same SDK, and both serve content-addressed from `/plugin-assets/{content
 ## Architecture Summary
 
 - **Build system**: Migrate from CRA (`react-scripts`) to Vite + `@module-federation/vite`
-- **Plugin format**: Module Federation remotes, **built by Nagelfluh from an npm source package**;
+- **Plugin format**: Module Federation remotes, **built by YmerFlow from an npm source package**;
   shared deps declared as `peerDependencies` and pinned **to the host's versions at build time**
 - **Shared deps**: React, react-dom, gladly-plot declared as MF singletons — one instance shared
   between host and all plugins; the build injects the host's exact versions into the MF `shared`
@@ -1199,7 +1199,7 @@ export function useUpgradePlugin() {
 
 ### File structure for a plugin
 
-A plugin is a plain **source** npm package — no MF/Vite config, no pre-built `dist/`. Nagelfluh's
+A plugin is a plain **source** npm package — no MF/Vite config, no pre-built `dist/`. YmerFlow's
 build harness federates it (§ 4.5), so the author only writes their extension code and a manifest:
 
 ```
