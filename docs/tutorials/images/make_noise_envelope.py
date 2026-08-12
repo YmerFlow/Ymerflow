@@ -67,9 +67,10 @@ def main():
     def envelope(n):
         return np.sqrt((sig_abs / np.sqrt(n)) ** 2 + sig_rel ** 2)
 
-    fig, (ax, ax2) = plt.subplots(
-        2, 1, figsize=(11.6, 9.0), height_ratios=[1.55, 1],
-        gridspec_kw=dict(hspace=0.26))
+    fig, (ax, axr, ax2) = plt.subplots(
+        3, 1, figsize=(11.6, 9.4), height_ratios=[1.5, 0.14, 1.0],
+        gridspec_kw=dict(hspace=0.0))
+    fig.subplots_adjust(hspace=0.0)
 
     raw = envelope(1)
     CULL = 20.0   # % — the cull threshold the crossings are measured against
@@ -99,14 +100,14 @@ def main():
     ax.plot(tms, sig, ls="none", marker="|", ms=9, mew=1.1, color="#111", zorder=8)
     ax.plot(tms, sig_abs, color="#d95926", lw=1.8, ls="--", zorder=5,
             label=r"Ambient floor  $\sigma_{abs}\propto t^{-1/2}$")
-    ax.plot(tms, sig_rel, color="#9085e9", lw=1.8, ls=":", zorder=5,
-            label=f"Relative component  —  {R_REL:.0%} of signal, scales with it")
+    ax.fill_between(tms, sig - sig_rel, sig + sig_rel, color="#9085e9", alpha=.55, lw=0,
+                    zorder=4, label=f"Relative component  ±{R_REL:.0%} — thinner than the line here")
 
-    ax.fill_between(tms, sig - raw, sig + raw, color="#898781", alpha=.28, lw=0,
+    ax.fill_between(tms, sig - raw, sig + raw, color="#898781", alpha=.30, lw=0,
                     zorder=2, label="Raw sounding  ±1σ")
     for n, c in STACKS:
         e = envelope(n)
-        ax.fill_between(tms, sig - e, sig + e, color=c, alpha=.26, lw=0, zorder=3,
+        ax.fill_between(tms, sig - e, sig + e, color=c, alpha=.28, lw=0, zorder=3,
                         label=f"Averaged over {n} soundings  ±1σ")
 
     # 20% crossings, marked on both axes
@@ -115,7 +116,7 @@ def main():
         if tc is None:
             continue
         ax.plot([tc, tc], [ax.get_ylim()[0], sc], color=c, lw=1.1, ls="--", alpha=.85, zorder=6)
-        ax.plot([tms[0], tc], [sc, sc], color=c, lw=1.1, ls="--", alpha=.85, zorder=6)
+        ax.plot([tc * 0.55, tc], [sc, sc], color=c, lw=1.1, ls="--", alpha=.85, zorder=6)
         ax.plot([tc], [sc], marker="o", ms=5, color=c, zorder=9)
         ax.annotate(f"{tc:.2f} ms", (tc, ax.get_ylim()[0]), xytext=(3, 12),
                     textcoords="offset points", fontsize=8.5, color=c, rotation=90)
@@ -123,14 +124,43 @@ def main():
     ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_ylim(sig.min() * 0.12, sig.max() * 4)
     ax.set_ylabel(r"|dB/dt|   V/(A m$^4$)", fontsize=10)
-    ax.set_title("Noise envelope before and after lateral averaging\n"
-                 "SkyTEM 306HP · background sounding · "
-                 rf"floor {NOISE_1MS:.0e} V/m² at 1 ms, relative {R_REL:.0%}  ·  "
-                 rf"dashed crossings mark the {CULL:.0f}% cull threshold",
-                 fontsize=11.5, loc="left")
+    ax.set_title(
+        "Noise envelope before and after lateral averaging\n"
+        rf"SkyTEM 306HP high moment · background sounding · relative component {R_REL:.0%}"
+        "\n"
+        rf"noise_level_1ms = {NOISE_1MS:.0e} V/m² (receiver-area normalised) "
+        rf"÷ moment {moment:,.0f} A·m²  =  {NOISE_1MS/moment:.2e} V/(A·m⁴) at 1 ms",
+        fontsize=11, loc="left")
     ax.grid(True, which="major", lw=.5, alpha=.35)
     ax.grid(True, which="minor", lw=.3, alpha=.18)
-    ax.legend(fontsize=8.5, loc="upper right", framealpha=.94, ncol=1)
+    from matplotlib.lines import Line2D
+    h, l = ax.get_legend_handles_labels()
+    h.append(Line2D([], [], color="#555", lw=1.2, ls="--", marker="o", ms=5))
+    l.append(f"{CULL:.0f}% cull crossing — last usable gate")
+    h.append(Line2D([], [], color="#555", lw=1.0, ls="-."))
+    l.append("ambient overtakes relative")
+    ax.legend(h, l, fontsize=8.5, loc="upper right", framealpha=.94, ncol=1)
+
+    f1 = NOISE_1MS / moment          # the floor at exactly t = 1 ms
+    ax.plot([1.0], [f1], marker="o", ms=5, color="#d95926", zorder=7)
+    ax.annotate(rf"{f1:.2e} V/(A·m$^4$)  at 1 ms",
+                (1.0, f1), xytext=(-14, -26), textcoords="offset points",
+                fontsize=8.5, color="#d95926", fontweight="bold", ha="right")
+
+    # the crossing geometry: 20% cull sits where ambient ~ signal/5, since
+    # sqrt(0.20^2 - 0.03^2) = 0.198 — the relative term contributes ~1% at this threshold
+    ax.annotate("±3% spans 0.026 decades — narrower than the signal line\n"
+                "at this scale. It is visible in the lower panel, where the\n"
+                "y-axis is fractional rather than absolute.",
+                xy=(tms[6], sig[6]), xytext=(30, -78), textcoords="offset points",
+                fontsize=8.5, color="#5b53a8")
+
+    kk = int(len(tms) * 0.62)
+    ax.annotate("20% cull lands where the ambient floor\nsits ~5× below signal — the 3%\n"
+                "term shifts it by ~1% at this threshold",
+                xy=(tms[kk], sig_abs[kk]), xytext=(-150, -66), textcoords="offset points",
+                fontsize=8.5, color="#7a4a2a",
+                arrowprops=dict(arrowstyle="->", color="#7a4a2a", lw=1.0))
 
     # where the ambient term overtakes the relative one — the error budget switches here
     ix = np.where(sig_abs > sig_rel)[0]
@@ -141,16 +171,21 @@ def main():
                     xytext=(8, 18), textcoords="offset points", fontsize=8.5, color="#555")
         ax2.axvline(txo, color="#555", lw=1.0, ls="-.", alpha=.7)
 
-    # gate rug — where the LM and HM gates actually fall
+    # gate rug — its own strip between the panels
     tl = np.asarray(d["system"]["General"]["GateTimeLM"], dtype=float)[:, 0]
     tl = tl[tl > 0] * 1e3
-    y0, y1 = ax.get_ylim()
-    for tt, col, lab, yy in ((tl, "#c98500", "LM gates", 0.075), (tms, "#111", "HM gates", 0.030)):
-        yv = y0 * (y1 / y0) ** yy
-        ax.plot(tt, np.full_like(tt, yv), ls="none", marker="|", ms=8, mew=1.1,
-                color=col, alpha=.9, zorder=6)
-        ax.annotate(lab, (tt[-1], yv), xytext=(7, -3), textcoords="offset points",
-                    fontsize=8.5, color=col, ha="left", fontweight="bold")
+    for tt, col, lab, yv in ((tl, "#c98500", "LM", 0.70), (tms, "#111", "HM", 0.28)):
+        axr.plot(tt, np.full_like(tt, yv), ls="none", marker="|", ms=11, mew=1.2,
+                 color=col, alpha=.95)
+        axr.annotate(lab, (tt[-1], yv), xytext=(8, 0), textcoords="offset points",
+                     fontsize=9, color=col, ha="left", va="center", fontweight="bold")
+    axr.set_xscale("log"); axr.set_ylim(0, 1)
+    axr.set_yticks([]); axr.set_xticks([])
+    for sp in ("top", "right", "bottom", "left"):
+        axr.spines[sp].set_visible(False)
+    axr.annotate("gate centres", (1.0, 0.5), xycoords=("axes fraction", "axes fraction"),
+                 xytext=(-4, 0), textcoords="offset points", fontsize=8,
+                 color="#898781", ha="right", va="center")
 
     # ── bottom: as a fraction, which is what the pipeline stores ────────────────
     for n, c, lab in LEVELS:
@@ -159,7 +194,7 @@ def main():
                  label=lab + ("" if n == 1 else f"  —  {np.sqrt(n):.1f}× on the ambient term"))
         ax2.plot(tms, f, ls="none", marker="|", ms=7, mew=1.0, color=c, alpha=.8)
     ax2.axhline(R_REL * 100, color="#9085e9", lw=1.6, ls=":",
-                label=f"Relative component — {R_REL:.0%}, unaffected by stacking")
+                label=f"Relative component — ±{R_REL:.0%}, unaffected by stacking")
     ax2.axhline(CULL, color="#d95926", lw=1.5, ls="--",
                 label=f"{CULL:.0f}% cull threshold")
 
@@ -175,6 +210,9 @@ def main():
 
     ax2.set_xscale("log"); ax2.set_yscale("log")
     ax2.set_ylim(1, 400)
+    xlo, xhi = tms.min() * 0.55, tms.max() * 1.9
+    for a in (ax, axr, ax2):
+        a.set_xlim(xlo, xhi)
     ax2.set_xlabel("time after turn-off (ms)   ·   ticks mark gate centres", fontsize=10)
     ax2.set_ylabel("assigned uncertainty (% of signal)", fontsize=10)
     ax2.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v:g}%"))
