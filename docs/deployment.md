@@ -92,7 +92,7 @@ configure a **plugin-provided** protocol (e.g. Google Artifact Registry, GCS, GK
 # CLUSTER_CONFIG_JSON={...}
 ```
 
-If set, `backend/bin/nagelfluh-bootstrap-provision` runs before migrations (both `./runall.sh`
+If set, `backend/bin/yf-bootstrap-provision` runs before migrations (both `./runall.sh`
 modes), resolves the named protocol/provider, and calls its `bootstrap(config)` hook — a no-op for
 every core-shipped protocol, but a plugin's chance to do real provisioning (e.g. actually create a
 cloud resource) before its enriched config gets seeded onto the default backend/cluster row. See
@@ -206,7 +206,7 @@ Then run bootstrap-provision directly (this is exactly what `dev/runall.sh`/
 ```bash
 source env/bin/activate   # backend + BACKEND_PLUGINS must already be pip-installed
 set -a; source config.env; set +a
-PYTHONPATH=. python backend/bin/nagelfluh-bootstrap-provision
+PYTHONPATH=. python backend/bin/yf-bootstrap-provision
 ```
 
 This:
@@ -228,7 +228,7 @@ Installing Kueue, applying its queue/quota configuration, and applying the backe
 don't happen here — they're done by the backend itself, automatically, the first time a `Cluster`
 row becomes active (for the local default cluster, that's during the database migration step
 below). See [System Overview § Kueue Configuration](architecture/overview.md#kueue-configuration).
-Run `env/bin/python backend/bin/nagelfluh-migrate` (step 4 below) after this to finish
+Run `env/bin/python backend/bin/yf-migrate` (step 4 below) after this to finish
 provisioning Kueue for the local cluster.
 
 **Verify installation:**
@@ -257,7 +257,7 @@ kubectl get pods -n registry
 ```bash
 # Clean up and start over
 ./dev/cleanup-all.sh
-PYTHONPATH=. env/bin/python backend/bin/nagelfluh-bootstrap-provision
+PYTHONPATH=. env/bin/python backend/bin/yf-bootstrap-provision
 ```
 
 ### 2. MinIO Storage
@@ -375,7 +375,7 @@ wget https://dl.min.io/client/mc/release/linux-amd64/mc -O env/bin/minio-client
 chmod +x env/bin/minio-client
 
 # Run database migrations (creates tables and default environment)
-env/bin/python backend/bin/nagelfluh-migrate
+env/bin/python backend/bin/yf-migrate
 
 # Start backend server
 ./backend/run.sh
@@ -432,9 +432,9 @@ VM-local data is lost (Postgres/MinIO/registry data itself survives via the `NAG
 host bind-mount). Run full setup again — simplest is just `./dev/runall.sh`, or individually:
 
 ```bash
-PYTHONPATH=. env/bin/python backend/bin/nagelfluh-bootstrap-provision
+PYTHONPATH=. env/bin/python backend/bin/yf-bootstrap-provision
 ./docker/build.sh
-env/bin/python backend/bin/nagelfluh-migrate
+env/bin/python backend/bin/yf-migrate
 ```
 
 ## Production Deployment
@@ -714,7 +714,7 @@ DATABASE_URL=postgresql://nagelfluh:<password>@<db-host>:5432/nagelfluh
 3. **Run migrations:**
 
 ```bash
-env/bin/python backend/bin/nagelfluh-migrate
+env/bin/python backend/bin/yf-migrate
 ```
 
 ### Backend Deployment
@@ -738,8 +738,8 @@ CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
 Build and push:
 
 ```bash
-docker build -t gcr.io/$GCP_PROJECT/nagelfluh-backend:latest backend/
-docker push gcr.io/$GCP_PROJECT/nagelfluh-backend:latest
+docker build -t gcr.io/$GCP_PROJECT/ymerflow-backend:latest backend/
+docker push gcr.io/$GCP_PROJECT/ymerflow-backend:latest
 ```
 
 #### Kubernetes Deployment
@@ -749,20 +749,20 @@ docker push gcr.io/$GCP_PROJECT/nagelfluh-backend:latest
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: nagelfluh-backend
+  name: ymerflow-backend
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: nagelfluh-backend
+      app: ymerflow-backend
   template:
     metadata:
       labels:
-        app: nagelfluh-backend
+        app: ymerflow-backend
     spec:
       containers:
       - name: backend
-        image: gcr.io/$GCP_PROJECT/nagelfluh-backend:latest
+        image: gcr.io/$GCP_PROJECT/ymerflow-backend:latest
         ports:
         - containerPort: 8000
         env:
@@ -901,7 +901,7 @@ minikube start --cpus=4 --memory=8192
 ```bash
 # Fixed using server-side apply
 ./dev/cleanup-all.sh
-PYTHONPATH=. env/bin/python backend/bin/nagelfluh-bootstrap-provision
+PYTHONPATH=. env/bin/python backend/bin/yf-bootstrap-provision
 ```
 
 ### MinIO Issues
@@ -920,7 +920,7 @@ If it's missing, re-run bootstrap-provision — `MinikubeClusterProvider.bootstr
 preserved via the `NAGELFLUH_DATA_DIR` host bind-mount):
 
 ```bash
-PYTHONPATH=. env/bin/python backend/bin/nagelfluh-bootstrap-provision
+PYTHONPATH=. env/bin/python backend/bin/yf-bootstrap-provision
 ```
 
 **MinIO pods not running:**
@@ -1033,7 +1033,7 @@ alembic -c backend/alembic.ini history
 
 ```bash
 rm backend/nagelfluh.db
-env/bin/python backend/bin/nagelfluh-migrate
+env/bin/python backend/bin/yf-migrate
 ```
 
 **Rollback migration:**
@@ -1053,7 +1053,7 @@ alembic -c backend/alembic.ini downgrade -1
 tail -f backend/logs/uvicorn.log
 
 # If in Kubernetes
-kubectl logs -f deployment/nagelfluh-backend
+kubectl logs -f deployment/ymerflow-backend
 ```
 
 **Frontend logs:**
@@ -1120,5 +1120,5 @@ minikube delete
 rm backend/nagelfluh.db
 
 # Recreate tables
-env/bin/python backend/bin/nagelfluh-migrate
+env/bin/python backend/bin/yf-migrate
 ```

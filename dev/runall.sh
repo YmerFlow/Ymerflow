@@ -124,10 +124,10 @@ print_section "Step 2: Bootstrap Provisioning"
 # credentials actually deployed). See docs/plans/minikube-provisioning-plugin.md and
 # docs/plans/registry-backend-hooks.md (Design decision 6).
 echo "Running bootstrap-provision..."
-BOOTSTRAP_JSON=$(PYTHONPATH=. env/bin/python backend/bin/nagelfluh-bootstrap-provision)
+BOOTSTRAP_JSON=$(PYTHONPATH=. env/bin/python backend/bin/yf-bootstrap-provision)
 
 # eval runs directly in this shell (not inside a subshell) so the `export` statements it emits
-# actually persist into this script's environment, and therefore into Step 5's nagelfluh-migrate
+# actually persist into this script's environment, and therefore into Step 5's yf-migrate
 # subprocess. Do NOT wrap this eval in a command substitution — that would run it in a subshell
 # and silently discard the exports.
 eval "$(python3 -c '
@@ -199,7 +199,7 @@ cd "$PROJECT_ROOT"
 print_section "Step 5: Database Migrations"
 
 echo "Running database migrations..."
-PYTHONPATH=. env/bin/python backend/bin/nagelfluh-migrate
+PYTHONPATH=. env/bin/python backend/bin/yf-migrate
 print_status "Database migrations complete"
 
 # ==========================================

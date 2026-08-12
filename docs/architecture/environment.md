@@ -60,9 +60,9 @@ setuptools entrypoints (see [Process Types - Example Process Types](processes.md
 for what each package provides):
 
 ```dockerfile
-# Copy and install nagelfluh_processes package
-COPY docker/base-runner/nagelfluh_processes /app/nagelfluh_processes
-RUN pip install --no-cache-dir -e /app/nagelfluh_processes
+# Copy and install ymerflow_processes package
+COPY docker/base-runner/ymerflow_processes /app/ymerflow_processes
+RUN pip install --no-cache-dir -e /app/ymerflow_processes
 
 # Copy and install aem_processes package
 COPY docker/base-runner/aem_processes /app/aem_processes
@@ -81,7 +81,7 @@ Each package contains:
 
 **Example package structure:**
 ```
-nagelfluh_processes/
+ymerflow_processes/
 ├── __init__.py
 ├── fake_processes.py          # create_environment
 ├── compound_filter.py

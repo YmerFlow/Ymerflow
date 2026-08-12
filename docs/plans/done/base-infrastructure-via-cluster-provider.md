@@ -50,15 +50,15 @@ calling `kubectl`. `kubectl` pointed at the right cluster **is** the fix.
 
 ### Already fully generic — do not touch
 
-- `backend/bin/nagelfluh-bootstrap-provision` — resolves `<AXIS>_PROTOCOL`/`<AXIS>_CONFIG_JSON`
+- `backend/bin/yf-bootstrap-provision` — resolves `<AXIS>_PROTOCOL`/`<AXIS>_CONFIG_JSON`
   for registry/storage/cluster and calls `.bootstrap()` on each. Runs **host-side** (not as an
   in-cluster Job) — this is the precedent this plan follows: do whatever is natively easiest in the
   shell/process that already has the right credentials, rather than inventing a new abstraction
   layer.
-- `backend/bin/nagelfluh-registry-push` / `nagelfluh-build-and-push` — registry-protocol-agnostic
+- `backend/bin/yf-registry-push` / `yf-build-and-push` — registry-protocol-agnostic
   build+push, already used for the process-runner image and the backend/frontend images.
 - `backend/services/cluster_job_provisioning.py`'s `ensure_cluster_job_ready()` — installs Kueue +
-  the `nagelfluh-backend-jobs`/`nagelfluh-backend-kueue-reader` RBAC via `kubernetes_asyncio`
+  the `ymerflow-backend-jobs`/`ymerflow-backend-kueue-reader` RBAC via `kubernetes_asyncio`
   against whatever `k8s_client` the resolved `ClusterProvider.connect()` hands back. It runs
   *inside* the migration Job that `apply_app_workloads()`'s `_run_migration_job()` creates on the
   **resolved** cluster (GKE, in our case) — so this is not part of this plan's bug; it already
@@ -67,15 +67,15 @@ calling `kubectl`. `kubectl` pointed at the right cluster **is** the fix.
   `expose_app()` — the backend/frontend Deployments/Services/ConfigMap/Secret/migration Job,
   already fully provider-driven (`docs/plans/done/app-deployment-hooks.md`). Not touched by this
   plan, except that it gains one new optional hook call (Design decision 2, below) — the *code
-  path* that invokes `deploy_app()`/`expose_app()` (today: from inside the `nagelfluh-deploy-app`
+  path* that invokes `deploy_app()`/`expose_app()` (today: from inside the `yf-deploy-app`
   Job) is unchanged.
 
 ### Redundant dead weight — found while researching this plan
 
 - **`k8s/rbac/backend-jobs-rbac.yaml`**, applied by `prod/runall-production.sh` Step 7, duplicates
   *exactly* what `ensure_cluster_job_ready()` already applies generically (see above) — same
-  Role/RoleBinding/ClusterRole/ClusterRoleBinding names (`nagelfluh-backend-jobs`,
-  `nagelfluh-backend-kueue-reader`). It's a leftover static copy from before that function existed,
+  Role/RoleBinding/ClusterRole/ClusterRoleBinding names (`ymerflow-backend-jobs`,
+  `ymerflow-backend-kueue-reader`). It's a leftover static copy from before that function existed,
   now harmless only because it's applied against the *wrong* cluster half the time and happens to
   be a no-op reapplication the other half. Safe to delete outright — independent of everything else
   in this plan.
@@ -96,13 +96,13 @@ these calls run.
   (Postgres PV/PVC only), `k8s/backend/service.yaml`, `k8s/rbac/backend-jobs-rbac.yaml` (delete per
   above), `k8s/pgadmin/`, `k8s/headlamp/`.
 - Step 6: `kubectl create secret ... nagelfluh-postgres-secret`, `pgadmin-pgpass`,
-  `nagelfluh-backend-secret`, plus a `kubectl apply -f -` heredoc for `nagelfluh-backend-config`.
+  `nagelfluh-backend-secret`, plus a `kubectl apply -f -` heredoc for `ymerflow-backend-config`.
 - Step 6b: `kubectl create secret ... nagelfluh-admin-secret` (skip-if-exists).
 - Step 6c: `kubectl create secret docker-registry nagelfluh-app-pull` + `kubectl apply -f
   k8s/rbac/app-deploy-rbac.yaml`.
 - Step 8: a 30-iteration polling loop (`kubectl get secret headlamp-static-token -n headlamp`)
   copying the Headlamp SA token into the `nagelfluh` namespace.
-- Step 9: `kubectl apply -f -` of the `nagelfluh-deploy-app` batch `Job` manifest, then a
+- Step 9: `kubectl apply -f -` of the `yf-deploy-app` batch `Job` manifest, then a
   hand-rolled poll loop (`kubectl get job ... -o jsonpath=...`) for Complete/Failed, `kubectl logs`,
   `kubectl delete job`. Today this Job gets *created* against whatever `kubectl` is pointed at (not
   necessarily the resolved `CLUSTER_TYPE` cluster) — once `KUBECONFIG` is fixed (Design decision
@@ -112,7 +112,7 @@ these calls run.
   Job on", not anything about the Job's own contents.
 
 **`docker/build.sh`** (`DEPLOYMENT=production` branch, Step 10 of `runall-production.sh`):
-- `kubectl exec -n nagelfluh deploy/backend -- python backend/bin/nagelfluh-build-and-push
+- `kubectl exec -n nagelfluh deploy/backend -- python backend/bin/yf-build-and-push
   --resolve-only` — reaches into the backend pod purely to read `REGISTRY_PROTOCOL`/
   `REGISTRY_CONFIG_JSON`, which are already sitting in this same shell's own environment (exported
   by Step 3's bootstrap-provision). This one call should just be dropped in favor of reading the
@@ -122,12 +122,12 @@ these calls run.
 - The `db-update-${ENV_TAG}` Job: `kubectl create configmap`/`kubectl delete job`/`kubectl apply
   -f -`/`kubectl wait`/`kubectl logs`/`kubectl delete job`, all against the ambient context — fixed
   by the same `KUBECONFIG` export as everything else. Separately, the Job manifest itself
-  hardcodes `image: nagelfluh-backend:prod` with `imagePullPolicy: Never` (only works if that exact
+  hardcodes `image: ymerflow-backend:prod` with `imagePullPolicy: Never` (only works if that exact
   tag already sits in whatever local daemon the target node uses — false for GKE) and a **third**,
   independently hardcoded `DATABASE_URL` literal duplicating what's already resolved elsewhere.
   These are real correctness bugs, fixed **in place** in the existing heredoc/manifest (real
   resolved image ref + real `imagePullSecrets`, `envFrom` against the existing
-  `nagelfluh-backend-config`/`-secret` instead of a literal `DATABASE_URL`) — still applied via
+  `ymerflow-backend-config`/`-secret` instead of a literal `DATABASE_URL`) — still applied via
   `kubectl apply -f -`, no Python job-creation helper needed.
 
 **`backup.sh` / `restore.sh` / `debug-harness/run_debug.sh`** — found while researching this plan:
@@ -159,13 +159,13 @@ context; the resolved `ClusterProvider` must hand it one explicitly.
   whatever cluster is configured for job execution, which is the one thing dev mode's `kubectl`
   context is already guaranteed to be pointed at. Not a bug; out of scope.
 - Teardown for Postgres/pgAdmin/Headlamp — nothing tears these down today; stays that way.
-- Eliminating the in-cluster `nagelfluh-deploy-app` Job, or reimplementing `k8s/postgres/`,
+- Eliminating the in-cluster `yf-deploy-app` Job, or reimplementing `k8s/postgres/`,
   `k8s/pgadmin/`, `k8s/headlamp/`, `k8s/00-namespaces.yaml` as `kubernetes_asyncio` Python calls.
   Considered and explicitly rejected — see "Rejected approach" below.
 
 ## Rejected approach: rewriting the `kubectl` orchestration in Python
 
-An earlier version of this plan proposed eliminating the `nagelfluh-deploy-app` Job and
+An earlier version of this plan proposed eliminating the `yf-deploy-app` Job and
 reimplementing every static manifest under `k8s/postgres/`, `k8s/storage/`, `k8s/pgadmin/`,
 `k8s/headlamp/`, `k8s/00-namespaces.yaml` as a new `backend/services/base_infrastructure.py`
 module built from `kubernetes_asyncio` object constructors, plus a Python rewrite of
@@ -208,8 +208,8 @@ def materialize_kubeconfig(self, provider_config: dict) -> dict:
   dict embedding a short-lived OAuth bearer token minted from the stored SA key via `google-auth`
   — no `gcloud` CLI involved.
 
-New host-side entry point `backend/bin/nagelfluh-materialize-kubeconfig`: resolves the active
-`Cluster` row exactly the way `nagelfluh-bootstrap-provision`/`nagelfluh-deploy-app` already do,
+New host-side entry point `backend/bin/yf-materialize-kubeconfig`: resolves the active
+`Cluster` row exactly the way `yf-bootstrap-provision`/`yf-deploy-app` already do,
 calls `provider.materialize_kubeconfig(cluster.provider_config)`, dumps the result as kubeconfig
 YAML to stdout (or, with `--export`, prints `export KUBECONFIG=<tmpfile>` for eval'ing directly
 into the operator's shell). Every kubectl-based script — `prod/runall-production.sh`,
@@ -218,7 +218,7 @@ into the operator's shell). Every kubectl-based script — `prod/runall-producti
 ```bash
 KUBECONFIG_FILE="$(mktemp)"
 trap 'rm -f "$KUBECONFIG_FILE"' EXIT
-env/bin/nagelfluh-materialize-kubeconfig > "$KUBECONFIG_FILE"
+env/bin/yf-materialize-kubeconfig > "$KUBECONFIG_FILE"
 export KUBECONFIG="$KUBECONFIG_FILE"
 ```
 
@@ -267,7 +267,7 @@ only the hook itself is a host-repo change.
 - Add `materialize_kubeconfig()` to the `ClusterProvider` ABC (Design decision 1); implement on
   `SameAsBackendClusterProvider`/`KubeconfigClusterProvider` (host repo). `minikube`/`gke`
   implementations are each provider's own plugin's concern (companion plans).
-- New `backend/bin/nagelfluh-materialize-kubeconfig` entry point (plain YAML to stdout, or
+- New `backend/bin/yf-materialize-kubeconfig` entry point (plain YAML to stdout, or
   `export KUBECONFIG=...` with `--export`).
 
 ### Phase 2 — `prod/runall-production.sh`
@@ -283,8 +283,8 @@ only the hook itself is a host-repo change.
   `REGISTRY_CONFIG_JSON` straight from the shell's own environment instead (already exported by
   Step 3's bootstrap-provision).
 - Fix the `db-update-${ENV_TAG}` Job manifest in place: real resolved backend image ref + real
-  `imagePullSecrets` (instead of hardcoded `nagelfluh-backend:prod` / `imagePullPolicy: Never`),
-  `envFrom` against `nagelfluh-backend-config`/`-secret` (instead of a hardcoded `DATABASE_URL`
+  `imagePullSecrets` (instead of hardcoded `ymerflow-backend:prod` / `imagePullPolicy: Never`),
+  `envFrom` against `ymerflow-backend-config`/`-secret` (instead of a hardcoded `DATABASE_URL`
   literal). Still applied via the existing `kubectl apply -f -` heredoc.
 
 ### Phase 4 — `resolve_app_hostname()` hook
@@ -313,7 +313,7 @@ only the hook itself is a host-repo change.
   doing the actual work, not the operator's pre-existing setup papering over a gap.
 - `grep -n kubectl prod/runall-production.sh docker/build.sh backup.sh restore.sh
   debug-harness/run_debug.sh` — every match occurs after that script's own
-  `nagelfluh-materialize-kubeconfig`/`export KUBECONFIG=` line; none precede it. Confirm by
+  `yf-materialize-kubeconfig`/`export KUBECONFIG=` line; none precede it. Confirm by
   inspection, not just count.
 - `grep -rln 'gcloud\|minikube' -- $(git ls-files | grep -v '^plugins/')` returns nothing — no
   vendor-specific CLI name appears anywhere outside a plugin directory.

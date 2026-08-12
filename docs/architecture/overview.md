@@ -125,7 +125,7 @@ entry point — no "core is special" path):
 | Container registry | `RegistryBackend` (one, app-wide) | `RegistryProtocolHandler` | [Registry Architecture](registry.md) |
 
 All three also share a `bootstrap(config) -> config` hook, used by `config.env`-driven, opt-in
-live provisioning (`backend/bin/nagelfluh-bootstrap-provision`) — see
+live provisioning (`backend/bin/yf-bootstrap-provision`) — see
 [Registry Architecture § Configuration](registry.md#configuration) for the full mechanism.
 
 Admins can also manage clusters and storage backends directly — CRUD endpoints plus a

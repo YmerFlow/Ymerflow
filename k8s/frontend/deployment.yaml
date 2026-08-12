@@ -1,5 +1,5 @@
 # MANUAL / OPT-OUT PATH ONLY — see the header on k8s/backend/deployment.yaml. For the default
-# same-as-backend/minikube cluster type the frontend Deployment is applied by nagelfluh-deploy-app
+# same-as-backend/minikube cluster type the frontend Deployment is applied by yf-deploy-app
 # (apply_app_workloads); this manifest is retained for cluster types without
 # supports_app_deployment (docs/plans/app-deployment-hooks.md, Design decision 7).
 apiVersion: apps/v1

@@ -2,7 +2,7 @@
 """Print a content-addressed tag for the app images (backend/frontend), replacing the floating
 `"prod"` tag — see docs/plans/versioned-app-image-tags.md.
 
-Usage: nagelfluh-resolve-app-image-tag
+Usage: yf-resolve-app-image-tag
 
 The tag is a short sha256 hash of a canonical string built from the main repo's `git rev-parse
 HEAD` plus every `BACKEND_PLUGINS` entry's resolved fingerprint (Design decision 1):
@@ -29,7 +29,7 @@ import sys
 from packaging.requirements import Requirement
 
 # Ensure the project root is on sys.path so backend modules are importable (unused here today,
-# but kept consistent with every other backend/bin/nagelfluh-* script).
+# but kept consistent with every other backend/bin/yf-* script).
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)

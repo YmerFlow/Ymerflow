@@ -35,7 +35,7 @@ class NodePortAppDeploymentMixin:
 
     async def deploy_app(self, k8s_client, provider_config, namespace, images, app_config, secrets):
         # `image_pull_credentials`/`replicas` are threaded through app_config by the
-        # nagelfluh-deploy-app entry point (it's the one place that resolves the registry axis and
+        # yf-deploy-app entry point (it's the one place that resolves the registry axis and
         # any replica overrides); pulled back out here so apply_app_workloads() gets them as
         # first-class args rather than buried in the Secret data. Everything left in app_config
         # after popping these is real Secret material.

@@ -40,7 +40,7 @@ runner already assumes.
 - `cluster.registry_url` / `cluster.registry_auth` are consumed in exactly one place —
   `job_orchestrator.py:45-48` — injected only as `REGISTRY_URL` / `REGISTRY_AUTH` **env vars**,
   which the *runner* uses to pull/build **further** images (e.g. `build_frontend_plugin`;
-  `docker/base-runner/nagelfluh_processes/fake_processes.py:64-68` reads `REGISTRY_URL`/`REGISTRY_AUTH`
+  `docker/base-runner/ymerflow_processes/fake_processes.py:64-68` reads `REGISTRY_URL`/`REGISTRY_AUTH`
   from the environment).
 - A **global** registry config already exists and is the prod-configured path:
   `backend/config.py:57-58` — `settings.registry_url` (default `registry:5000`, "overridden by k8s
@@ -146,7 +146,7 @@ only two body keys disappear.
 1. **Phase 1** — `job_orchestrator` → `settings.*`. Verify a job still launches on the default
    cluster and (for a `build_frontend_plugin` run) `REGISTRY_URL` is present in the pod env,
    sourced from `settings.registry_url`.
-2. **Phase 2** — model edit + drop-column migration; run `backend/bin/nagelfluh-migrate`; confirm
+2. **Phase 2** — model edit + drop-column migration; run `backend/bin/yf-migrate`; confirm
    the default cluster still resolves and jobs run.
 3. **Phase 3** — admin route edits; verify `GET/POST/PATCH /admin/clusters` via `/docs` no longer
    accept or emit registry fields and don't 500.
@@ -161,7 +161,7 @@ only two body keys disappear.
 - **`settings.registry_auth` config wiring → confirmed reachable, just unset by default.**
   `Settings` is pydantic `BaseSettings`, so it reads the `REGISTRY_AUTH` env var directly
   (`config.py:58`). The backend deployment loads env via `envFrom` from **both** the ConfigMap
-  `nagelfluh-backend-config` **and** the Secret `nagelfluh-backend-secret`
+  `ymerflow-backend-config` **and** the Secret `nagelfluh-backend-secret`
   (`k8s/backend/deployment.yaml:27-31, 46-50`), so any key in either flows into `settings.*`. The
   prod ConfigMap sets `REGISTRY_URL` (`prod/runall-minikube.sh:196`) but not `REGISTRY_AUTH`
   (correct — the dev registry `registry:5000` is unauthenticated). Since `registry_auth` is a secret

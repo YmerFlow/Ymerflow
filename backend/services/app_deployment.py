@@ -10,7 +10,7 @@ same library `K8sClient`/`ensure_cluster_job_ready()` already use), not shell/`k
 
 What this module does NOT own — stays outside app-hosting scope: the jobs namespace, Postgres,
 pgAdmin/Headlamp (applied identically for every cluster type via the existing `k8s/*.yaml`
-manifests, against whatever cluster `nagelfluh-materialize-kubeconfig` resolves — see
+manifests, against whatever cluster `yf-materialize-kubeconfig` resolves — see
 docs/plans/base-infrastructure-via-cluster-provider.md), MinIO/the Docker registry (NOT static
 manifests since the minikube-plugin migration — deployed per-protocol by each axis's own
 `bootstrap()`, see docs/plans/done/generic-deployment-orchestration.md), and the backend's
@@ -18,7 +18,7 @@ job-running RBAC (`ensure_cluster_job_ready()`'s concern). This module owns only
 Deployments, the backend's in-namespace ClusterIP Service (`backend-service` — also the target of
 the separate, unrelated `nagelfluh-jobs` ExternalName Service job pods use to reach the backend,
 which stays a static k8s/ manifest), the single `nagelfluh-backend-secret` Secret (the
-`nagelfluh-backend-config` ConfigMap was retired — see
+`ymerflow-backend-config` ConfigMap was retired — see
 docs/plans/generic-backend-config-passthrough.md — every app runtime config/secret value now rides
 in one Secret, since `envFrom` already flattens each of its keys to its own container env var; a
 second K8s object bought nothing but a "which list does this key belong on" classification
@@ -256,7 +256,7 @@ async def _run_migration_job(k8s_client, namespace, backend_image, pull_secret_n
                         # content — so IfNotPresent is correct and faster than an unconditional
                         # re-pull, same as job_orchestrator.py's existing IfNotPresent precedent.
                         image_pull_policy="IfNotPresent",
-                        command=["python", "backend/bin/nagelfluh-migrate"],
+                        command=["python", "backend/bin/yf-migrate"],
                         env_from=_env_from(),
                     )],
                 ),

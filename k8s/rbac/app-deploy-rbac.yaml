@@ -1,5 +1,5 @@
 ---
-# ServiceAccount the in-cluster nagelfluh-deploy-app Job runs as (see prod/runall-production.sh and
+# ServiceAccount the in-cluster yf-deploy-app Job runs as (see prod/runall-production.sh and
 # docs/plans/app-deployment-hooks.md Phase 5). Distinct from the nagelfluh namespace's `default`
 # SA (which carries the backend's own job-running identity, k8s/rbac/backend-jobs-rbac.yaml) so
 # the broad app-deployment permissions below aren't granted to every backend pod — only to the

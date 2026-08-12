@@ -29,7 +29,7 @@ def upgrade() -> None:
     `<AXIS>_PROTOCOL`/`<AXIS>_CONFIG_JSON` pattern for the cluster axis, as a follow-up UPDATE
     rather than an INSERT, since the default row already exists by this point in the migration
     chain. Uses CLUSTER_TYPE (matching Cluster.cluster_type's actual field name, and the same
-    var name backend/bin/nagelfluh-bootstrap-provision already uses) rather than
+    var name backend/bin/yf-bootstrap-provision already uses) rather than
     CLUSTER_PROTOCOL.
 
     If CLUSTER_TYPE/CLUSTER_CONFIG_JSON are both set, an operator has made a deliberate,
@@ -62,8 +62,8 @@ def upgrade() -> None:
     Connectivity at migration time: this migration only actually runs in two places today, both
     of which have working K8s connectivity available — prod/runall-production.sh's alembic-migrate
     Job runs in-cluster (so cluster_type='same-as-backend's config.load_incluster_config()
-    succeeds), and dev/runall.sh runs nagelfluh-migrate host-side with a local kubeconfig pointed
-    at minikube (so config.load_kube_config() succeeds). If nagelfluh-migrate is ever run
+    succeeds), and dev/runall.sh runs yf-migrate host-side with a local kubeconfig pointed
+    at minikube (so config.load_kube_config() succeeds). If yf-migrate is ever run
     somewhere with neither in-cluster nor a usable local kubeconfig, this call will fail loudly
     (not silently) — see this phase's implementation report for that caveat.
     """

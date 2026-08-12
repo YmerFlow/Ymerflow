@@ -1,7 +1,7 @@
 from setuptools import setup, find_namespace_packages
 
 setup(
-    name='nagelfluh-backend',
+    name='ymerflow-backend',
     version='0.1.0',
     description='YmerFlow host backend (FastAPI app + nagelfluh.* entry points).',
     # backend/ has no __init__.py (implicit namespace package); enumerate it as a namespace
@@ -50,7 +50,7 @@ setup(
     ],
     entry_points={
         # Core registers itself in the same groups plugins use, so downstream discovery treats
-        # core and plugins identically (see backend/alembic/env.py and backend/bin/nagelfluh-*).
+        # core and plugins identically (see backend/alembic/env.py and backend/bin/yf-*).
         'nagelfluh.models': [
             'nagelfluh = backend.models',
         ],

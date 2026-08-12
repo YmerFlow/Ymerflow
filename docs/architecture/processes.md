@@ -223,7 +223,7 @@ The `get_schema.py` script:
 The real process type implementations live in three separately-installed packages under
 `docker/base-runner/`, each registering its entrypoints in its own `setup.py`:
 
-- **`nagelfluh_processes`** (`docker/base-runner/nagelfluh_processes/`) - general-purpose process
+- **`ymerflow_processes`** (`docker/base-runner/ymerflow_processes/`) - general-purpose process
   types: `create_environment` (builds and pushes a custom environment image; see
   [Environment](environment.md#create_environment-process)), `compound_filter`,
   `build_frontend_plugin`

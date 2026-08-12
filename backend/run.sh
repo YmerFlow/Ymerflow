@@ -28,7 +28,7 @@ fi
 
 # Run database migrations
 echo "Running database migrations..."
-python backend/bin/nagelfluh-migrate
+python backend/bin/yf-migrate
 
 # Start the server
 echo "Starting YmerFlow server..."

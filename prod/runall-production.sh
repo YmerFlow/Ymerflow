@@ -46,7 +46,7 @@ export REGISTRY_PUBLIC_HOST="${REGISTRY_PUBLIC_HOST:-$(hostname -I | awk '{print
 # Content-addressed tag for the backend/frontend images, replacing the floating "prod" tag —
 # computed ONCE here so every build/push/deploy step below (and docker/build.sh, invoked from
 # Step 10) agrees on the same tag for this run. See docs/plans/versioned-app-image-tags.md.
-export APP_IMAGE_VERSION="$(env/bin/python "${PROJECT_ROOT}/backend/bin/nagelfluh-resolve-app-image-tag")"
+export APP_IMAGE_VERSION="$(env/bin/python "${PROJECT_ROOT}/backend/bin/yf-resolve-app-image-tag")"
 echo "  App image tag: ${APP_IMAGE_VERSION}"
 
 # ── Step 2: Build backend Docker image (host's own Docker daemon) ─────────────────────────────
@@ -55,7 +55,7 @@ echo "  App image tag: ${APP_IMAGE_VERSION}"
 # 3's bootstrap-provision, not a shell script run up front). Only the backend image is needed this
 # early: Step 3's bootstrap-provision runs as a `docker run` against it, before Minikube/the
 # registry exist, so nothing can be pushed yet — a plain `docker build`, not
-# backend/bin/nagelfluh-build-and-push, since that entry point always pushes too. The frontend
+# backend/bin/yf-build-and-push, since that entry point always pushes too. The frontend
 # image has no such early dependency; it's built (and pushed, along with a cache-fast rebuild of
 # this same backend image) together at Step 5, once the registry actually exists. App images are
 # never shared with a cluster via a local daemon (Design decision 4 in
@@ -66,7 +66,7 @@ echo "  App image tag: ${APP_IMAGE_VERSION}"
 echo ""
 echo "Step 2: Building backend Docker image..."
 
-docker build -t "nagelfluh-backend:${APP_IMAGE_VERSION}" \
+docker build -t "ymerflow-backend:${APP_IMAGE_VERSION}" \
     --build-arg BACKEND_PLUGINS="${BACKEND_PLUGINS:-}" \
     -f "${PROJECT_ROOT}/backend/Dockerfile" \
     "${PROJECT_ROOT}"
@@ -98,7 +98,7 @@ export NAGELFLUH_DATA_DIR
 
 echo ""
 echo "Step 3: Bootstrap-provisioning configured backends..."
-BOOTSTRAP_JSON=$(PYTHONPATH=. env/bin/python backend/bin/nagelfluh-bootstrap-provision)
+BOOTSTRAP_JSON=$(PYTHONPATH=. env/bin/python backend/bin/yf-bootstrap-provision)
 
 # eval runs directly in this shell (not inside a subshell) so the `export` statements it emits
 # persist here, ready for Step 7's BACKEND_SECRET_ARGS assembly below. Do NOT wrap this eval in a
@@ -146,7 +146,7 @@ echo ""
 echo "Resolving kubeconfig for the target cluster..."
 KUBECONFIG_FILE="$(mktemp)"
 trap 'rm -f "$KUBECONFIG_FILE"' EXIT
-env/bin/python "${PROJECT_ROOT}/backend/bin/nagelfluh-materialize-kubeconfig" > "$KUBECONFIG_FILE"
+env/bin/python "${PROJECT_ROOT}/backend/bin/yf-materialize-kubeconfig" > "$KUBECONFIG_FILE"
 export KUBECONFIG="$KUBECONFIG_FILE"
 
 # ── Step 4: Namespaces ──────────────────────────────────────────────────────────────────────
@@ -161,13 +161,13 @@ kubectl apply -f "${PROJECT_ROOT}/k8s/00-namespaces.yaml"
 
 # ── Step 5: Build (backend, frontend) and push both images to the registry ────────────────────
 # Design decision 4 in docs/plans/app-deployment-hooks.md: app images go through the registry
-# axis, NOT imagePullPolicy:Never against a shared local daemon. The in-cluster nagelfluh-deploy-app
+# axis, NOT imagePullPolicy:Never against a shared local daemon. The in-cluster yf-deploy-app
 # Job (Step 9) and the Deployments it applies pull these from the registry with a pull secret,
 # exactly like process-runner pods already do — so the app can be hosted on a cluster that does not
 # share a Docker daemon with this build host. The registry now exists (Step 3's bootstrap-provision
 # deployed it), so this can push.
 #
-# Registry-protocol-agnostic build+push via backend/bin/nagelfluh-build-and-push — the SAME entry
+# Registry-protocol-agnostic build+push via backend/bin/yf-build-and-push — the SAME entry
 # point docker/build.sh uses for the process-runner image (see
 # docs/plans/generic-deployment-orchestration.md, Design decision 2). It re-runs `docker build`
 # for the backend image (layer-cached from Step 2, so effectively free) and runs the frontend
@@ -177,7 +177,7 @@ kubectl apply -f "${PROJECT_ROOT}/k8s/00-namespaces.yaml"
 #
 # Resolved directly from REGISTRY_PROTOCOL/REGISTRY_CONFIG_JSON (already exported by Step 3's
 # bootstrap-provision above) via NAGELFLUH_RESOLVED_REGISTRY_JSON, rather than letting
-# nagelfluh-build-and-push query the database itself, because Postgres isn't reachable host-side
+# yf-build-and-push query the database itself, because Postgres isn't reachable host-side
 # here (it runs in-cluster and hasn't even been migrated/seeded yet at this point).
 
 echo ""
@@ -189,11 +189,11 @@ print(json.dumps({"protocol": os.environ["REGISTRY_PROTOCOL"], "config": json.lo
 ')
 
 BACKEND_IMAGE=$(NAGELFLUH_RESOLVED_REGISTRY_JSON="${RESOLVED_REGISTRY_JSON}" env/bin/python \
-    "${PROJECT_ROOT}/backend/bin/nagelfluh-build-and-push" \
-    "${PROJECT_ROOT}/backend/Dockerfile" "${PROJECT_ROOT}" nagelfluh-backend "${APP_IMAGE_VERSION}" \
+    "${PROJECT_ROOT}/backend/bin/yf-build-and-push" \
+    "${PROJECT_ROOT}/backend/Dockerfile" "${PROJECT_ROOT}" ymerflow-backend "${APP_IMAGE_VERSION}" \
     --build-arg "BACKEND_PLUGINS=${BACKEND_PLUGINS:-}")
 FRONTEND_IMAGE=$(NAGELFLUH_RESOLVED_REGISTRY_JSON="${RESOLVED_REGISTRY_JSON}" env/bin/python \
-    "${PROJECT_ROOT}/backend/bin/nagelfluh-build-and-push" \
+    "${PROJECT_ROOT}/backend/bin/yf-build-and-push" \
     "${PROJECT_ROOT}/frontend/Dockerfile" "${PROJECT_ROOT}/frontend" nagelfluh-frontend "${APP_IMAGE_VERSION}")
 
 # The registry server address (everything before the first '/' of the resolved ref) — still
@@ -213,22 +213,22 @@ REGISTRY_ADDR="${BACKEND_IMAGE%%/*}"
 # same mechanism image_url() itself is built on) rather than assumed from BACKEND_IMAGE's shape.
 # Exported: Step 6 folds this into nagelfluh-backend-secret as a script-computed override (see
 # nagelfluh-render-backend-secret-env).
-export REGISTRY_URL=$(env/bin/python "${PROJECT_ROOT}/backend/bin/nagelfluh-registry-image-prefix" \
+export REGISTRY_URL=$(env/bin/python "${PROJECT_ROOT}/backend/bin/yf-registry-image-prefix" \
     "${REGISTRY_PROTOCOL}" "${REGISTRY_CONFIG_JSON}")
 
 echo "  Pushed ${BACKEND_IMAGE}"
 echo "  Pushed ${FRONTEND_IMAGE}"
 
 # ── Step 6: nagelfluh-backend-secret ────────────────────────────────────────
-# Carries every app runtime config/secret value the in-cluster nagelfluh-deploy-app Job (Step 9)
-# reads via envFrom. nagelfluh-deploy-app hands its contents to
+# Carries every app runtime config/secret value the in-cluster yf-deploy-app Job (Step 9)
+# reads via envFrom. yf-deploy-app hands its contents to
 # backend.services.app_deployment.apply_app_workloads(), which then re-applies (create-or-patch)
 # the canonical Secret — so this Step is a bootstrap seed, and apply_app_workloads is the authority
 # for its final state (adding the resolved JWT_SECRET_KEY, per Design decision 5).
 #
 # Generic passthrough (docs/plans/generic-backend-config-passthrough.md): every KEY=VALUE actually
 # assigned in config.env reaches this Secret, and from there the backend pod, with ZERO changes to
-# this script or nagelfluh-deploy-app — a plugin author adding e.g. TICKETS_GITHUB_TOKEN only ever
+# this script or yf-deploy-app — a plugin author adding e.g. TICKETS_GITHUB_TOKEN only ever
 # touches config.env (and their own plugin's config.py). A short, fixed set of script-computed
 # overrides (nagelfluh-render-backend-secret-env's OVERRIDE_KEYS) still wins over the generic
 # layer — these are the only keys core deployment code is still allowed to know by name.
@@ -258,7 +258,7 @@ export MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
 export MC_HOST_minio="https://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio.minio.svc.cluster.local:9000"
 
 # REGISTRY_USER/REGISTRY_PASSWORD (config.env, defaults nagelfluh/nagelfluh) only feed
-# REGISTRY_AUTH below — nagelfluh-deploy-app's fallback registry credential when REGISTRY_PROTOCOL/
+# REGISTRY_AUTH below — yf-deploy-app's fallback registry credential when REGISTRY_PROTOCOL/
 # REGISTRY_CONFIG_JSON aren't in the Secret at all. With the default config.env (bootstrap-provision
 # always sets both), REGISTRY_AUTH is never actually consumed; it's kept only for an operator who
 # has explicitly disabled the registry bootstrap axis.
@@ -330,20 +330,20 @@ else
 fi
 
 # ── Step 6c: App image-pull Secret ────────────────────────────────────────────
-# The in-cluster nagelfluh-deploy-app Job pulls nagelfluh-backend from the registry (Step 5), so
+# The in-cluster yf-deploy-app Job pulls ymerflow-backend from the registry (Step 5), so
 # its pod needs a pull credential BEFORE it starts (a Secret it creates itself would be too late
 # for its own image). Same-named as app_deployment.IMAGE_PULL_SECRET_NAME so apply_app_workloads
 # just re-applies (patches) it for the backend/frontend Deployments — one pull Secret, created here
 # for the deploy Job and re-owned by apply_app_workloads for the workloads it applies.
 #
-# Resolved via RegistryProtocolHandler.pull_credentials() (backend/bin/nagelfluh-registry-pull-
+# Resolved via RegistryProtocolHandler.pull_credentials() (backend/bin/yf-registry-pull-
 # credentials) — the SAME mechanism job_orchestrator.py uses for process-runner pods and
-# nagelfluh-deploy-app uses for the app's own Deployments later — rather than assuming docker-v2's
+# yf-deploy-app uses for the app's own Deployments later — rather than assuming docker-v2's
 # basic-auth (--docker-username/--docker-password) shape directly.
 
 echo ""
 echo "Step 6c: Creating app image-pull secret + applying app-deploy RBAC..."
-PULL_CREDS_JSON=$(env/bin/python "${PROJECT_ROOT}/backend/bin/nagelfluh-registry-pull-credentials" \
+PULL_CREDS_JSON=$(env/bin/python "${PROJECT_ROOT}/backend/bin/yf-registry-pull-credentials" \
     "${REGISTRY_PROTOCOL}" "${REGISTRY_CONFIG_JSON}")
 PULL_USER=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("username") or "")' "${PULL_CREDS_JSON}")
 PULL_PASSWORD=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("password") or "")' "${PULL_CREDS_JSON}")
@@ -359,7 +359,7 @@ kubectl apply -f "${PROJECT_ROOT}/k8s/rbac/app-deploy-rbac.yaml"
 
 # ── Step 7: Apply base Kubernetes manifests ───────────────────────────────────
 # Everything EXCEPT the app's own backend/frontend Deployments + the frontend NodePort Service,
-# which nagelfluh-deploy-app (Step 12) now owns. Postgres, the backend ExternalName Service in the
+# which yf-deploy-app (Step 12) now owns. Postgres, the backend ExternalName Service in the
 # nagelfluh-jobs namespace, pgAdmin and Headlamp are all still plain manifests. The Postgres
 # PersistentVolume is no longer a host manifest here — it's applied by the active CLUSTER_TYPE's
 # ClusterProvider.bootstrap() (Step 3, before this step runs), mirroring how MinIO's PV moved into
@@ -369,7 +369,7 @@ kubectl apply -f "${PROJECT_ROOT}/k8s/rbac/app-deploy-rbac.yaml"
 # data-postgres-0 PVC binds to that provider-supplied, pre-claimRef'd PV instead of dynamically
 # provisioning against a default StorageClass.
 #
-# backend-jobs RBAC (nagelfluh-backend-jobs/nagelfluh-backend-kueue-reader) is NOT applied here —
+# backend-jobs RBAC (ymerflow-backend-jobs/ymerflow-backend-kueue-reader) is NOT applied here —
 # it's already applied generically by ensure_cluster_job_ready()
 # (backend/services/cluster_job_provisioning.py), which runs inside the migration Job on the
 # resolved cluster. k8s/rbac/backend-jobs-rbac.yaml was a redundant static copy of the exact same
@@ -393,7 +393,7 @@ kubectl wait --for=condition=ready pod -l app=postgres -n nagelfluh --timeout=12
 # ── Step 8: Copy Headlamp SA token to nagelfluh namespace for nginx ───────────
 # The headlamp SA token lives in the headlamp namespace; nginx (in the frontend pod) runs in
 # nagelfluh. We copy the decoded token into a separate secret so nginx can mount and inject it as
-# a request header, enabling automatic Headlamp authentication. Done BEFORE nagelfluh-deploy-app so
+# a request header, enabling automatic Headlamp authentication. Done BEFORE yf-deploy-app so
 # the frontend pod it creates finds the (optional) headlamp-nginx-token secret already present.
 
 echo ""
@@ -422,7 +422,7 @@ if [ -n "${HEADLAMP_TOKEN}" ]; then
     echo "  headlamp-nginx-token secret created/updated in nagelfluh namespace."
 fi
 
-# ── Step 9: Deploy the app via nagelfluh-deploy-app (dogfoods deploy_app/expose_app) ──────────
+# ── Step 9: Deploy the app via yf-deploy-app (dogfoods deploy_app/expose_app) ──────────
 # This replaces three things the old script did imperatively: (1) the hardcoded-image alembic
 # migration Job, (2) the static k8s/backend + k8s/frontend Deployments (imagePullPolicy:Never),
 # and (3) the hardcoded frontend NodePort Service. It runs as an in-cluster Job so
@@ -433,23 +433,23 @@ fi
 # docs/plans/app-deployment-hooks.md Phase 5.
 
 echo ""
-echo "Step 9: Deploying the application (nagelfluh-deploy-app Job)..."
-kubectl delete job nagelfluh-deploy-app -n nagelfluh --ignore-not-found=true 2>/dev/null
+echo "Step 9: Deploying the application (yf-deploy-app Job)..."
+kubectl delete job yf-deploy-app -n nagelfluh --ignore-not-found=true 2>/dev/null
 kubectl apply -f - <<MANIFEST
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: nagelfluh-deploy-app
+  name: yf-deploy-app
   namespace: nagelfluh
 spec:
   template:
     spec:
       serviceAccountName: nagelfluh-app-deployer
-      # nagelfluh-deploy-app reads its whole pod environment generically minus a short, fixed
+      # yf-deploy-app reads its whole pod environment generically minus a short, fixed
       # denylist (docs/plans/generic-backend-config-passthrough.md, Design decision 3) — without
       # this, Kubernetes also injects a <SERVICE>_SERVICE_*/<SERVICE>_PORT_* env-var block per
       # Service in this namespace, which is NOT a fixed list (it grows as Services are added), and
-      # would defeat that denylist. See backend/bin/nagelfluh-deploy-app's own module docstring.
+      # would defeat that denylist. See backend/bin/yf-deploy-app's own module docstring.
       enableServiceLinks: false
       imagePullSecrets:
       - name: nagelfluh-app-pull
@@ -461,9 +461,9 @@ spec:
         # unconditional re-pull. See docs/plans/versioned-app-image-tags.md and
         # job_orchestrator.py's existing IfNotPresent precedent.
         imagePullPolicy: IfNotPresent
-        command: ["python", "backend/bin/nagelfluh-deploy-app"]
+        command: ["python", "backend/bin/yf-deploy-app"]
         env:
-        # nagelfluh-deploy-app resolves the app images' tag itself (it runs before the
+        # yf-deploy-app resolves the app images' tag itself (it runs before the
         # Cluster/RegistryBackend rows exist to read from — see its own module docstring) and
         # defaults APP_IMAGE_TAG to "prod" if this isn't set. Must match the tag BACKEND_IMAGE/
         # FRONTEND_IMAGE were actually pushed under above, or it resolves a ref that was never
@@ -484,29 +484,29 @@ MANIFEST
 # Job's logs before exiting so the migration/apply error is visible.
 deploy_app_deadline=$((SECONDS + 900))
 while true; do
-    complete=$(kubectl get job/nagelfluh-deploy-app -n nagelfluh \
+    complete=$(kubectl get job/yf-deploy-app -n nagelfluh \
         -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null)
-    failed=$(kubectl get job/nagelfluh-deploy-app -n nagelfluh \
+    failed=$(kubectl get job/yf-deploy-app -n nagelfluh \
         -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null)
     [ "$complete" = "True" ] && break
     if [ "$failed" = "True" ]; then
-        echo "  nagelfluh-deploy-app Job failed — logs follow:"
-        kubectl logs job/nagelfluh-deploy-app -n nagelfluh || true
+        echo "  yf-deploy-app Job failed — logs follow:"
+        kubectl logs job/yf-deploy-app -n nagelfluh || true
         exit 1
     fi
     if [ "$SECONDS" -ge "$deploy_app_deadline" ]; then
-        echo "  nagelfluh-deploy-app Job did not complete — logs follow:"
-        kubectl logs job/nagelfluh-deploy-app -n nagelfluh || true
+        echo "  yf-deploy-app Job did not complete — logs follow:"
+        kubectl logs job/yf-deploy-app -n nagelfluh || true
         exit 1
     fi
     sleep 2
 done
-DEPLOY_APP_LOGS=$(kubectl logs job/nagelfluh-deploy-app -n nagelfluh)
+DEPLOY_APP_LOGS=$(kubectl logs job/yf-deploy-app -n nagelfluh)
 echo "${DEPLOY_APP_LOGS}"
-kubectl delete job nagelfluh-deploy-app -n nagelfluh
+kubectl delete job yf-deploy-app -n nagelfluh
 
-# nagelfluh-deploy-app's last stdout line is a JSON object — {"url": ..., ...} — from whichever
-# ClusterProvider.expose_app() ran (backend/bin/nagelfluh-deploy-app's final `print(json.dumps(result))`).
+# yf-deploy-app's last stdout line is a JSON object — {"url": ..., ...} — from whichever
+# ClusterProvider.expose_app() ran (backend/bin/yf-deploy-app's final `print(json.dumps(result))`).
 # Every provider returns a "url" key (see nodeport_app_deployment.py's NodePortAppDeploymentMixin
 # for the core NodePort case), so this picks it up generically rather than trusting this script's
 # own pre-Step-9 SERVER_URL guess above — a provider whose real address isn't knowable until a
@@ -534,7 +534,7 @@ kubectl rollout status deployment/frontend -n nagelfluh --timeout=60s
 
 # ── Step 10: Build runner image and update bootstrap environment ──────────────
 # build.sh builds the process-runner image on the host's own Docker daemon and pushes it through
-# the registry axis (backend/bin/nagelfluh-build-and-push), then — because DEPLOYMENT=production
+# the registry axis (backend/bin/yf-build-and-push), then — because DEPLOYMENT=production
 # means Postgres is in-cluster only — runs update_bootstrap_environment as a kubectl Job reaching
 # PostgreSQL via in-cluster DNS.
 

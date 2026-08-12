@@ -69,13 +69,13 @@ class RegistryProtocolHandler:
         this as a passthrough (`return config`); live-provisioning bootstrap is entirely plugin
         territory (see Design decision 6 in docs/plans/registry-backend-hooks.md). Not called
         anywhere yet in Phase 1 — the hook exists so Phase 4's generic
-        `nagelfluh-bootstrap-provision` entry point has somewhere to call into."""
+        `yf-bootstrap-provision` entry point has somewhere to call into."""
         raise NotImplementedError
 
     def teardown(self, config: dict) -> None:
         """Remove the k8s-level resources this protocol's `bootstrap()` created (namespaces,
         Deployments, Services, etc.). The teardown mirror of `bootstrap()`, resolved and called by
-        `backend/bin/nagelfluh-bootstrap-teardown` (docs/plans/generic-deployment-orchestration.md,
+        `backend/bin/yf-bootstrap-teardown` (docs/plans/generic-deployment-orchestration.md,
         Phase 7). Default is a no-op passthrough, exactly like `bootstrap()`'s default for
         core-provided handlers — a protocol that provisions nothing local (a managed registry)
         tears nothing down. MUST be idempotent (safe to call when nothing is provisioned)."""
@@ -89,7 +89,7 @@ class RegistryProtocolHandler:
 
         This is the one place the actual push mechanics live, and it is self-contained: it owns
         whatever authentication and TLS handling the push needs, so the generic build-and-push
-        entry point (`backend/bin/nagelfluh-build-and-push`) calls only this — never a separate
+        entry point (`backend/bin/yf-build-and-push`) calls only this — never a separate
         `configure_push_auth()` step. `docker-v2` shells out to `docker save` + `crane push
         --insecure` with its own throwaway auth config (see
         docs/plans/generic-deployment-orchestration.md, Design decision 1), precisely so it does

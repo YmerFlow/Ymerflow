@@ -5,7 +5,7 @@ docs/plans/app-deployment-hooks.md.
 
 Runs as an in-cluster Job (see prod/runall-production.sh): the pod's own ServiceAccount token means
 `same-as-backend`'s `K8sClient(kubeconfig=None)` auto-detects `load_incluster_config()` cleanly,
-with no host kubeconfig to mount. Its container image is `nagelfluh-backend`, so it has the full
+with no host kubeconfig to mount. Its container image is `ymerflow-backend`, so it has the full
 backend Python environment (imports `backend.services.app_deployment`/`cluster_providers`).
 
 Env-driven, NOT DB-driven — deliberately. `apply_app_workloads()` (invoked via the provider's
@@ -30,7 +30,7 @@ denylist short and fixed: without it, Kubernetes also injects a `<SERVICE>_SERVI
 every Service a plugin adds.
 
 Emits the `expose_app()` result (JSON, e.g. `{"url": ...}`) to stdout; all diagnostics go to
-stderr, same clean-stdout discipline as nagelfluh-registry-push / nagelfluh-bootstrap-provision.
+stderr, same clean-stdout discipline as nagelfluh-registry-push / yf-bootstrap-provision.
 """
 import asyncio
 import base64
@@ -48,7 +48,7 @@ from backend.services.cluster_providers import get_cluster_provider
 
 # Default repository names + tag the app images are pushed under (see prod/runall-production.sh's
 # nagelfluh-registry-push calls). Overridable via env for a non-standard build.
-BACKEND_REPOSITORY = os.getenv("APP_BACKEND_REPOSITORY", "nagelfluh-backend")
+BACKEND_REPOSITORY = os.getenv("APP_BACKEND_REPOSITORY", "ymerflow-backend")
 FRONTEND_REPOSITORY = os.getenv("APP_FRONTEND_REPOSITORY", "nagelfluh-frontend")
 APP_IMAGE_TAG = os.getenv("APP_IMAGE_TAG", "prod")
 APP_NAMESPACE = os.getenv("APP_NAMESPACE", "nagelfluh")

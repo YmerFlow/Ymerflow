@@ -21,7 +21,7 @@ will register.
   because the process's working directory (repo root) is on `sys.path`:
   - `backend/run.sh:7` `cd`s to the repo root and runs `uvicorn backend.main:app` (comment on
     line 6: *"Change to parent directory so Python can find the 'backend' module"*).
-  - `backend/bin/nagelfluh-migrate` and `nagelfluh-makemigrations` each manually
+  - `backend/bin/yf-migrate` and `yf-makemigrations` each manually
     `sys.path.insert(0, _project_root)` for the same reason.
 - **Dependencies live in `backend/requirements.txt`** (26 packages + one git URL,
   `ymerflow-plugin-build @ git+…`), installed via `pip install -r` in two places:
@@ -35,9 +35,9 @@ will register.
   by entry point:
   1. `backend/alembic/env.py:13` — `import backend.models` **directly**, while plugin models come
      from the `nagelfluh.models` entry point (lines 23-30).
-  2. `backend/bin/nagelfluh-migrate:_build_config` — hardcodes `main_versions =
+  2. `backend/bin/yf-migrate:_build_config` — hardcodes `main_versions =
      script_location/versions` and only *appends* plugin dirs from `nagelfluh.migration_dirs`.
-  3. `backend/bin/nagelfluh-makemigrations:_build_config` — the same hardcoded `main_versions`
+  3. `backend/bin/yf-makemigrations:_build_config` — the same hardcoded `main_versions`
      prepend.
 - **Bare-`except Exception: pass` around entry-point loading** in `backend/alembic/env.py:16-20`
   and `:23-30` silently swallow plugin import/registration errors — a direct violation of CLAUDE.md
@@ -47,7 +47,7 @@ will register.
 
 - **Root `setup.py`** (repo root, `setup.py` only — no `pyproject.toml`, since the backend needs no
   build-system dependencies or imperative build step, unlike `plugins/billing` which builds a
-  frontend). Distribution name `nagelfluh-backend`; the importable package stays `backend`
+  frontend). Distribution name `ymerflow-backend`; the importable package stays `backend`
   (renaming the import root to `nagelfluh` would touch every `from backend.X import …` and is
   explicitly out of scope). Packages enumerated with
   `find_namespace_packages(include=['backend', 'backend.*'])` so the existing `__init__`-less tree
@@ -88,7 +88,7 @@ will register.
 from setuptools import setup, find_namespace_packages
 
 setup(
-    name='nagelfluh-backend',
+    name='ymerflow-backend',
     version='0.1.0',
     description='YmerFlow host backend (FastAPI app + nagelfluh.* entry points).',
     # backend/ has no __init__.py (implicit namespace package); enumerate it as a namespace
@@ -179,7 +179,7 @@ with
 pip install -q -e .
 ```
 This stays *before* the `scripts/install-backend-plugins.sh` call (line ~113) and the migration run
-(`env/bin/python backend/bin/nagelfluh-migrate`, line ~200), so the backend's own entry points are
+(`env/bin/python backend/bin/yf-migrate`, line ~200), so the backend's own entry points are
 registered before either plugins install or migrations run.
 
 ### 1.5 Wire the editable install into the image
@@ -263,7 +263,7 @@ Notes:
   its swallowing wrapper is removed. Whether `register_models` is redundant with the
   `nagelfluh.models` entry point is a pre-existing plugin-facing question, out of scope here.
 
-### 2.2 `backend/bin/nagelfluh-migrate`
+### 2.2 `backend/bin/yf-migrate`
 
 `_build_config` currently hardcodes the main version dir and only conditionally sets
 `version_locations`. Since core now registers its own `nagelfluh.migration_dirs` entry point, build
@@ -295,7 +295,7 @@ silently skipped into a partial schema.
 `version_locations = %(here)s/alembic/versions` is left untouched as the fallback for running bare
 `alembic` without this wrapper.
 
-### 2.3 `backend/bin/nagelfluh-makemigrations`
+### 2.3 `backend/bin/yf-makemigrations`
 
 Same de-special-casing in its `_build_config`: drop the hardcoded `main_versions` prepend and build
 the dir list from the entry points alone (which now include core), so the core versions directory is
@@ -324,9 +324,9 @@ revision` (no branch label), as today.
    switch `dev/runall.sh` and `backend/Dockerfile` to `pip install -e .`. Verify the app boots and
    migrations run with discovery logic *unchanged* (core still imported directly / hardcoded). This
    isolates "is it installable and does everything still work" from any discovery change.
-2. **Phase 2** — flip `env.py`, `nagelfluh-migrate`, and `nagelfluh-makemigrations` to
+2. **Phase 2** — flip `env.py`, `yf-migrate`, and `yf-makemigrations` to
    entry-point-only discovery and remove the bare-`except` blocks. Verify: a fresh DB migrates to
-   head (core + billing branches), `nagelfluh-makemigrations billing "…"` still targets the billing
+   head (core + billing branches), `yf-makemigrations billing "…"` still targets the billing
    branch, and a deliberately broken plugin entry point now raises instead of being swallowed.
 
 Each phase is independently testable and independently revertible.

@@ -1,8 +1,8 @@
-# Report nagelfluh-deploy-app Job failure immediately instead of after a 7-minute timeout
+# Report yf-deploy-app Job failure immediately instead of after a 7-minute timeout
 
 ## Goal
 
-`prod/runall-minikube.sh` Step 9 waits for the `nagelfluh-deploy-app` Job with
+`prod/runall-minikube.sh` Step 9 waits for the `yf-deploy-app` Job with
 `kubectl wait --for=condition=complete ... --timeout=420s`. `kubectl wait` on `condition=complete`
 only wakes up on the `Complete` condition — it does not return early when the Job instead reaches
 the terminal `Failed` condition (`backoffLimit: 0`, so a Job that crashes fails permanently within
@@ -13,7 +13,7 @@ full 420s elapses — a crash looks like a 7-minute hang. Replace the single `ku
 a poll loop that checks for `Complete` or `Failed` and returns as soon as either is true.
 
 Note: the *inner* migration-Job wait (`_wait_for_job_complete` in
-`backend/services/app_deployment.py:290-308`, which `nagelfluh-deploy-app` itself runs and blocks
+`backend/services/app_deployment.py:290-308`, which `yf-deploy-app` itself runs and blocks
 on) already polls for both `Complete` and `Failed` correctly and raises immediately on failure — it
 is not part of this fix. Only the outer `kubectl wait` in `prod/runall-minikube.sh` has the bug.
 
@@ -25,13 +25,13 @@ is not part of this fix. Only the outer `kubectl wait` in `prod/runall-minikube.
 # apply_app_workloads runs the DB migration Job to completion inside this Job, so allow generous
 # time (migrations + Kueue-independent workload apply). On failure, dump the deploy Job's logs
 # before exiting so the migration/apply error is visible.
-if ! kubectl wait --for=condition=complete job/nagelfluh-deploy-app -n nagelfluh --timeout=420s; then
-    echo "  nagelfluh-deploy-app Job did not complete — logs follow:"
-    kubectl logs job/nagelfluh-deploy-app -n nagelfluh || true
+if ! kubectl wait --for=condition=complete job/yf-deploy-app -n nagelfluh --timeout=420s; then
+    echo "  yf-deploy-app Job did not complete — logs follow:"
+    kubectl logs job/yf-deploy-app -n nagelfluh || true
     exit 1
 fi
-kubectl logs job/nagelfluh-deploy-app -n nagelfluh
-kubectl delete job nagelfluh-deploy-app -n nagelfluh
+kubectl logs job/yf-deploy-app -n nagelfluh
+kubectl delete job yf-deploy-app -n nagelfluh
 ```
 
 ## Open design decision
@@ -52,19 +52,19 @@ same on-failure behavior (dump logs, `exit 1`):
 ```bash
 deploy_app_deadline=$((SECONDS + 420))
 while true; do
-    complete=$(kubectl get job/nagelfluh-deploy-app -n nagelfluh \
+    complete=$(kubectl get job/yf-deploy-app -n nagelfluh \
         -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null)
-    failed=$(kubectl get job/nagelfluh-deploy-app -n nagelfluh \
+    failed=$(kubectl get job/yf-deploy-app -n nagelfluh \
         -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null)
     [ "$complete" = "True" ] && break
     if [ "$failed" = "True" ]; then
-        echo "  nagelfluh-deploy-app Job failed — logs follow:"
-        kubectl logs job/nagelfluh-deploy-app -n nagelfluh || true
+        echo "  yf-deploy-app Job failed — logs follow:"
+        kubectl logs job/yf-deploy-app -n nagelfluh || true
         exit 1
     fi
     if [ "$SECONDS" -ge "$deploy_app_deadline" ]; then
-        echo "  nagelfluh-deploy-app Job did not complete — logs follow:"
-        kubectl logs job/nagelfluh-deploy-app -n nagelfluh || true
+        echo "  yf-deploy-app Job did not complete — logs follow:"
+        kubectl logs job/yf-deploy-app -n nagelfluh || true
         exit 1
     fi
     sleep 2
@@ -84,7 +84,7 @@ unchanged — they only run once the loop `break`s on success.
   condition appearing, not after 420s.
 - Run `prod/runall-minikube.sh` end to end against a healthy stack and confirm Step 9 still
   succeeds and proceeds to Step 10 exactly as before (no change to the success path).
-- Confirm `kubectl get job/nagelfluh-deploy-app ...` jsonpath queries return empty string (not an
+- Confirm `kubectl get job/yf-deploy-app ...` jsonpath queries return empty string (not an
   error) when the Job doesn't exist yet, so the loop doesn't spuriously break/exit before the Job
   object is visible (`kubectl apply` immediately precedes the loop, so this should be racing at
   most one poll interval, but worth confirming during verification).

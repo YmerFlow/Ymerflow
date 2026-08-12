@@ -68,7 +68,7 @@ auth). Every consumer of "the registry" bakes in assumptions specific to that se
   migrations (`182d880e84c7_backfill_default_storage_backend_config.py` for MinIO,
   `f6a7b8c9d0e1_seed_default_cluster.py` for the default cluster — the latter is stale against the
   current `Cluster` schema and needs revisiting regardless of this plan).
-- **`backend/bin/nagelfluh-migrate`** establishes the precedent for a shell-invoked script bridging
+- **`backend/bin/yf-migrate`** establishes the precedent for a shell-invoked script bridging
   into plugin-provided Python via `importlib.metadata.entry_points(group=...)` directly (not even the
   full `hooks.py` fan-out machinery) — it discovers every `nagelfluh.migration_dirs` entry point to
   build Alembic's `version_locations`. This is the model for `docker/build.sh` calling into
@@ -76,7 +76,7 @@ auth). Every consumer of "the registry" bakes in assumptions specific to that se
 - **`prod/runall-minikube.sh`'s `alembic-migrate` Job is isolated from cluster config today.** It
   runs in-cluster (`kubectl apply` a `batch/v1 Job`, lines ~274–294) with only a literal
   `DATABASE_URL` env var — no `envFrom` referencing `nagelfluh-backend-secret`/
-  `nagelfluh-backend-config` (created earlier in the same script, lines ~122–201, and consumed by the
+  `ymerflow-backend-config` (created earlier in the same script, lines ~122–201, and consumed by the
   backend Deployment). This is a real, pre-existing gap: today's `182d880e84c7` seed migration would
   silently see the Python-level defaults (`minioadmin`/`minioadmin`) inside that Job rather than an
   operator-customized `MINIO_ROOT_USER`/`PASSWORD`, and it blocks any design that needs the seed
@@ -93,7 +93,7 @@ auth). Every consumer of "the registry" bakes in assumptions specific to that se
   namespace, installs Kueue (CRDs/controller/webhook, with a `minikube ssh -- nc`-based webhook
   reachability probe that only works because it has host shell access), sizes a `ClusterQueue` quota
   from `MINIKUBE_CPUS`/`MINIKUBE_MEMORY` env vars, applies `ResourceFlavor`/`ClusterQueue`/
-  `LocalQueue`, applies the `nagelfluh-backend-jobs` Role/RoleBinding + `nagelfluh-backend-kueue-
+  `LocalQueue`, applies the `ymerflow-backend-jobs` Role/RoleBinding + `ymerflow-backend-kueue-
   reader` ClusterRole/ClusterRoleBinding (applied unconditionally, "so every provisioned cluster
   carries the same least-privilege intent" per its own comment, even though it's only load-bearing
   for the `same-as-backend` cluster type), and creates the static `nagelfluh-registry-pull` Secret
@@ -157,7 +157,7 @@ auth). Every consumer of "the registry" bakes in assumptions specific to that se
    static credential.
 5. **Push-side: `docker/build.sh` becomes registry-protocol-agnostic.** It no longer hardcodes
    `REGISTRY_USER`/`PASSWORD` defaults, `:30500`, or a `docker login` call. Instead it shells out to a
-   new entry point, `backend/bin/nagelfluh-registry-push <repository> <tag>`, which:
+   new entry point, `backend/bin/yf-registry-push <repository> <tag>`, which:
    1. loads the active `RegistryBackend` row (same DB connection `docker/update_bootstrap_environment.py`
       already opens),
    2. resolves the handler via `get_registry_protocol_handler(backend.protocol)`,
@@ -165,7 +165,7 @@ auth). Every consumer of "the registry" bakes in assumptions specific to that se
    4. calls `handler.image_url(repository, tag)`,
    5. prints the resolved full image reference to stdout.
    `build.sh` captures that output, `docker tag`s to it, `docker push`es. This is the same
-   shell-into-plugin-Python bridge shape `nagelfluh-migrate` already establishes (entry-point
+   shell-into-plugin-Python bridge shape `yf-migrate` already establishes (entry-point
    discovery), just applied to a new hook name — core only ever exercises this with `docker-v2`;
    any other protocol's `configure_push_auth`/`image_url` behavior is that plugin's concern.
 6. **Generalize "config.env can seed a default backend that needs live provisioning" to all three
@@ -194,8 +194,8 @@ auth). Every consumer of "the registry" bakes in assumptions specific to that se
      a passthrough (`return config`); this plan does not implement any live-provisioning `bootstrap()`
      — that is entirely plugin territory (see the GCP plugin's own plan for `gar`, and any future
      plan for `gcs`/`gke` bootstrap).
-   - One new host-side entry point, `backend/bin/nagelfluh-bootstrap-provision` (same
-     shell-into-Python-entry-point shape as `nagelfluh-migrate`). For each axis present in the
+   - One new host-side entry point, `backend/bin/yf-bootstrap-provision` (same
+     shell-into-Python-entry-point shape as `yf-migrate`). For each axis present in the
      environment, it resolves the handler via the existing hook-backed registries
      (`get_protocol_handler`, `get_cluster_provider`, the new `get_registry_protocol_handler`), calls
      `.bootstrap(config)`, and emits the enriched `{protocol, config}` results (e.g. as JSON).
@@ -203,7 +203,7 @@ auth). Every consumer of "the registry" bakes in assumptions specific to that se
      - **dev** (`dev/runall.sh`): runs on the host with direct SQLite access — the enriched config is
        written straight into the three default DB rows.
      - **prod-minikube** (`prod/runall-minikube.sh`): the enriched JSON is folded into
-       `nagelfluh-backend-secret`/`nagelfluh-backend-config` alongside `MINIO_ROOT_PASSWORD`/
+       `nagelfluh-backend-secret`/`ymerflow-backend-config` alongside `MINIO_ROOT_PASSWORD`/
        `REGISTRY_AUTH` (today's `--from-literal` block, lines ~122–201), which then needs `envFrom`
        added to the `alembic-migrate` Job — closing the pre-existing gap noted in Background. The
        seed migrations read `<AXIS>_PROTOCOL`/`<AXIS>_CONFIG_JSON` from their env and upsert the
@@ -230,7 +230,7 @@ auth). Every consumer of "the registry" bakes in assumptions specific to that se
      plus polling the webhook Service's Endpoints for a populated address** — both doable purely via
      the K8s API, replacing the `minikube ssh`-only reachability probe (which no other provider can
      perform) with something every provider supports identically.
-   - **RBAC (the `nagelfluh-backend-jobs` Role/RoleBinding + `nagelfluh-backend-kueue-reader`
+   - **RBAC (the `ymerflow-backend-jobs` Role/RoleBinding + `ymerflow-backend-kueue-reader`
      ClusterRole/ClusterRoleBinding) is applied unconditionally, every time**, preserving today's
      "same least-privilege intent regardless of whether this cluster's identity model strictly needs
      it" policy.
@@ -249,7 +249,7 @@ auth). Every consumer of "the registry" bakes in assumptions specific to that se
 
 ## Open items to confirm at implementation time
 
-- Whether `nagelfluh-bootstrap-provision`'s dev-mode DB write should go through Alembic (so it's
+- Whether `yf-bootstrap-provision`'s dev-mode DB write should go through Alembic (so it's
   versioned/re-runnable via the same migration chain) or write directly — leaning towards *emitting*
   the enriched config for the seed migrations to consume identically in both dev and prod-minikube
   mode, so there's exactly one code path that writes to `registry_backends`/`storage_backends`/
@@ -271,7 +271,7 @@ auth). Every consumer of "the registry" bakes in assumptions specific to that se
 - **A config.env-driven default `Cluster` seeded via `bootstrap()` (Design decision 6) never goes
   through `register-callback` at all** — it's written directly by the generic seed migration (Phase
   6). `ensure_cluster_job_ready()` needs a second call site for this path too: once
-  `nagelfluh-bootstrap-provision`'s seed migration has upserted the default `Cluster` row, call it
+  `yf-bootstrap-provision`'s seed migration has upserted the default `Cluster` row, call it
   there (dev: right after the direct DB write; prod-minikube: from the in-cluster seed migration,
   since that's where a working `K8sClient` for the newly-configured cluster can actually be
   constructed). A plugin's `bootstrap()` (e.g. `gke` in `plugins/ymerflow-gcp`) must **not** call
@@ -297,7 +297,7 @@ auth). Every consumer of "the registry" bakes in assumptions specific to that se
   `PUBLIC_HOST` if unset).
 
 ### Phase 2 — Push-side generalization
-- `backend/bin/nagelfluh-registry-push`: new entry point per decision 5.
+- `backend/bin/yf-registry-push`: new entry point per decision 5.
 - `docker/build.sh`: replace hardcoded registry logic with a call into the new entry point.
 
 ### Phase 3 — Pull-side per-Job ephemeral credentials
@@ -310,15 +310,15 @@ auth). Every consumer of "the registry" bakes in assumptions specific to that se
 - Add `bootstrap()` to `RegistryProtocolHandler`, `StorageProtocolHandler`, `ClusterProvider`,
   implemented as a passthrough on every core handler/provider (`docker-v2`, `minio`/`s3`,
   `same-as-backend`/`kubeconfig`/`minikube`).
-- `backend/bin/nagelfluh-bootstrap-provision`: new entry point per decision 6.
+- `backend/bin/yf-bootstrap-provision`: new entry point per decision 6.
 - `config.env.example`: document `REGISTRY_PROTOCOL`/`REGISTRY_CONFIG_JSON`,
   `STORAGE_PROTOCOL`/`STORAGE_CONFIG_JSON`, `CLUSTER_TYPE`/`CLUSTER_CONFIG_JSON`.
 
 ### Phase 5 — Wire bootstrap into dev and prod-minikube flows
-- `dev/runall.sh`: call `nagelfluh-bootstrap-provision` before migrations; write enriched config to
+- `dev/runall.sh`: call `yf-bootstrap-provision` before migrations; write enriched config to
   the dev DB.
 - `prod/runall-minikube.sh`: call it host-side, fold the enriched JSON into
-  `nagelfluh-backend-secret`/`nagelfluh-backend-config`, add the missing `envFrom` to the
+  `nagelfluh-backend-secret`/`ymerflow-backend-config`, add the missing `envFrom` to the
   `alembic-migrate` Job.
 
 ### Phase 6 — Generic seed migrations
