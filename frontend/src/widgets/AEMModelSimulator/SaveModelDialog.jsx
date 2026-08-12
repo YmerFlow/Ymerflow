@@ -82,11 +82,11 @@ function SaveModelDialog({ onClose, flightlines, sourceProcess }) {
       setProgress(80);
 
       // Check if we're updating an existing process
-      const isUpdate = sourceProcess && sourceProcess.type === 'import_nagelfluh_aem';
+      const isUpdate = sourceProcess && sourceProcess.type === 'import_ymerflow_aem';
 
       const proc = {
         name: processName,
-        type: 'import_nagelfluh_aem',
+        type: 'import_ymerflow_aem',
         environment: { id: environment },
         params: {
           msgpack_file: fileUrl

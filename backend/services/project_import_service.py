@@ -33,6 +33,46 @@ logger = logging.getLogger(__name__)
 
 _PATH_TOKEN_RE = re.compile(r'([^.\[\]]+)|\[(\d+)\]')
 
+# --- Great Rename export/import compatibility (docs/plans/great-rename-4-process-type-identifiers.md) ---
+# Old identifiers only ever reach the renamed system through a reimported export ZIP (prod is
+# redeployed from scratch, never migrated in place — see great-rename-5-k8s-cloud-infra.md), so
+# this translation table lives on the import path, not a DB migration. Keep it permanently — old
+# ZIPs can be imported at any future time, this is not a time-boxed shim.
+_LEGACY_PROCESS_TYPE_MAP = {
+    "import_nagelfluh_aem": "import_ymerflow_aem",
+}
+
+
+def _translate_legacy_identifiers(manifest: dict) -> dict:
+    """Return a copy of `manifest` with pre-rename identifiers translated to their current
+    names. Applies to manifests with format_version <= 1; a no-op for format_version 2+
+    manifests, which only ever contain current identifiers.
+    """
+    if manifest.get("format_version", 1) > 1:
+        return manifest
+
+    manifest = copy.deepcopy(manifest)
+
+    for proc in manifest.get("processes", []):
+        proc["type"] = _LEGACY_PROCESS_TYPE_MAP.get(proc["type"], proc["type"])
+
+    for env in manifest.get("environments", []):
+        process_types = env.get("process_types")
+        if process_types:
+            env["process_types"] = {
+                _LEGACY_PROCESS_TYPE_MAP.get(key, key): value
+                for key, value in process_types.items()
+            }
+        docker_image = env.get("docker_image")
+        if docker_image:
+            # Belt-and-suspenders: environments are normally matched by name on import (see
+            # _do_import below), so this only matters for an auto-created environment. Exact
+            # registry/image naming comes from great-rename-5-k8s-cloud-infra.md — a plain
+            # substring swap since that plan is a literal registry-repo/image-name rename.
+            env["docker_image"] = docker_image.replace("nagelfluh", "ymerflow")
+
+    return manifest
+
 
 def _set_path_value(root, path, value):
     """Set a value at a dotted/indexed path built by Process.extract_dependencies
@@ -274,7 +314,7 @@ async def run_import(import_id: str):
             zip_bytes = await asyncio.to_thread(_read_zip_bytes)
 
             with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
-                manifest = json.loads(zf.read("manifest.json"))
+                manifest = _translate_legacy_identifiers(json.loads(zf.read("manifest.json")))
                 await _do_import(db, import_row, manifest, zf)
 
             import_row.state = "done"

@@ -36,7 +36,7 @@ setup(
     entry_points={
         "ymerflow.process_types": [
             "import_skytem=aem_processes.import_process:LibaarhusXYZImporter",
-            "import_nagelfluh_aem=aem_processes.import_msgpack_process:MsgpackImporter",
+            "import_ymerflow_aem=aem_processes.import_msgpack_process:MsgpackImporter",
             "process_tem=aem_processes.processing_process:Processing",
             "invert_tem=aem_processes.inversion_process:Inversion",
             "forward_tem=aem_processes.forward_process:Forward",

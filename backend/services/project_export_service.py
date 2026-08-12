@@ -169,7 +169,7 @@ async def _build_manifest(db, project_id: str):
             })
 
     manifest = {
-        "format_version": 1,
+        "format_version": 2,
         "exported_at": datetime.utcnow().isoformat(),
         "project": {"name": project.name},
         "environments": list(environments_by_id.values()),
