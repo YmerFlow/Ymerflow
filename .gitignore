@@ -29,3 +29,11 @@ env/
 conference_abstracts/
 .mcp.json
 pages/_site/
+
+# Nested clones of sibling repositories, checked out inside this tree for
+# convenience. Same reason conference_abstracts/ is ignored above.
+YmerFlow-Business/
+YmerFlow_MCP/
+
+# Local agent session state and scratch config
+.claude/
