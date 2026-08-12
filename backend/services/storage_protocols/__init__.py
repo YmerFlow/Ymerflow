@@ -7,9 +7,9 @@ resolves to instead of branching on protocol themselves — that axis (strategy 
 independently extensible.
 
 Handlers are discovered through the `storage_protocol_handlers` fan-out hook, the same
-`nagelfluh.hooks` mechanism used for `job_pre_run` / `job_completed` / `user_created`. Core
+`ymerflow.hooks` mechanism used for `job_pre_run` / `job_completed` / `user_created`. Core
 registers its own built-in handlers (minio/gcs/s3) through this exact hook too — see
-`setup.py`'s `nagelfluh.hooks` entry point — so a plugin adding a new protocol (e.g. Azure) uses
+`setup.py`'s `ymerflow.hooks` entry point — so a plugin adding a new protocol (e.g. Azure) uses
 the identical channel core does, with no "core is special" path.
 """
 from backend.hooks import hooks
@@ -98,7 +98,7 @@ class StorageProtocolHandler:
 
 
 def storage_protocol_handlers():
-    """Core's built-in protocol handlers, registered under nagelfluh.hooks in the root setup.py
+    """Core's built-in protocol handlers, registered under ymerflow.hooks in the root setup.py
     exactly like a plugin's would be — hence returned as (name, class) tuples, not stored in a
     private dict. Core has no special precedence over plugins.
 

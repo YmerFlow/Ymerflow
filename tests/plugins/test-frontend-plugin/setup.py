@@ -7,7 +7,7 @@ setup(
     package_data={'test_frontend_plugin': ['frontend_dist/**/*', 'frontend_dist/*']},
     include_package_data=True,
     entry_points={
-        'nagelfluh.hooks': [
+        'ymerflow.hooks': [
             'frontend_bundles = test_frontend_plugin:frontend_bundles',
         ],
     },

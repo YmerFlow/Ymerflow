@@ -53,7 +53,7 @@ def main():
     try:
         # Load process class from entrypoint
         process_class = None
-        for entry_point in get_entry_points('nagelfluh.process_types'):
+        for entry_point in get_entry_points('ymerflow.process_types'):
             if entry_point.name == process_type:
                 process_class = entry_point.load()
                 break

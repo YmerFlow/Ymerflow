@@ -10,7 +10,7 @@ export function registerHook(name, fn) {
 
 // Expose for plugins to call without needing an SDK package
 if (typeof window !== 'undefined') {
-  window.__nagelfluh_registerHook = registerHook
+  window.__ymerflow_registerHook = registerHook
 }
 
 export function getHookFns(name) {
@@ -72,5 +72,5 @@ export const hooks = {
 
 // Expose the hook runner to plugins via the window bridge (used by ymerflow-plugin-sdk).
 if (typeof window !== 'undefined') {
-  window.__nagelfluh_hooks = hooks
+  window.__ymerflow_hooks = hooks
 }

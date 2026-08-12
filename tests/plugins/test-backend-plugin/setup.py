@@ -74,7 +74,7 @@ setup(
     package_data={'test_backend_plugin': ['frontend_dist/**/*', 'frontend_dist/*']},
     include_package_data=True,
     entry_points={
-        'nagelfluh.hooks': [
+        'ymerflow.hooks': [
             'register_routers = test_backend_plugin:register_routers',
             'frontend_bundles = test_backend_plugin:frontend_bundles',
         ],

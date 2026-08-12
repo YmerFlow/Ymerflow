@@ -33,7 +33,7 @@ def main():
     message = sys.argv[2]
 
     # Resolve the version path for the named plugin.
-    eps = list(importlib.metadata.entry_points(group='nagelfluh.migration_dirs'))
+    eps = list(importlib.metadata.entry_points(group='ymerflow.migration_dirs'))
     matches = [ep for ep in eps if ep.name == plugin_name]
     if not matches:
         available = [ep.name for ep in eps]

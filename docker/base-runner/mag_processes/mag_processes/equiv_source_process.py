@@ -57,7 +57,7 @@ class MagEquivSource:
 
     @classmethod
     def system_schema(cls):
-        return swaggerspect.get_apis("nagelfluh.mag_equiv_source_systems")
+        return swaggerspect.get_apis("ymerflow.mag_equiv_source_systems")
 
     @classmethod
     def schema(cls):
@@ -117,7 +117,7 @@ class MagEquivSource:
             # Load the system class from the entry point (supports custom subclasses)
             import importlib.metadata
             eps = {e.name: e for e in importlib.metadata.entry_points().get(
-                "nagelfluh.mag_equiv_source_systems", []
+                "ymerflow.mag_equiv_source_systems", []
             )}
             if system_name not in eps:
                 raise ValueError(f"Unknown equivalent source system: {system_name!r}")

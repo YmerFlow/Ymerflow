@@ -25,7 +25,7 @@ def content_address_dir(dist_dir):
         with open(pkg_path) as f:
             try:
                 pkg = json.load(f)
-                remote_name = pkg.get('nagelfluh', {}).get('remoteName', 'unknown')
+                remote_name = pkg.get('ymerflow', {}).get('remoteName', 'unknown')
             except Exception:
                 pass
 

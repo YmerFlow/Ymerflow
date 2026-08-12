@@ -30,7 +30,7 @@ def main():
 
     print("Collecting process type schemas...")
 
-    for entry_point in get_entry_points('nagelfluh.process_types'):
+    for entry_point in get_entry_points('ymerflow.process_types'):
         try:
             print(f"  Loading {entry_point.name}...")
             process_class = entry_point.load()

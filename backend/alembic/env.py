@@ -12,9 +12,9 @@ from backend.database import Base
 from backend.config import settings
 
 # Import every registered model module (core + plugins) so autogenerate sees all tables. Core
-# registers backend.models under nagelfluh.models in setup.py, so it is discovered here too —
+# registers backend.models under ymerflow.models in setup.py, so it is discovered here too —
 # no separate `import backend.models`.
-for ep in importlib.metadata.entry_points(group='nagelfluh.models'):
+for ep in importlib.metadata.entry_points(group='ymerflow.models'):
     importlib.import_module(ep.value)
 
 # Call the register_models fan-out hook (plugins that build metadata imperatively). Errors

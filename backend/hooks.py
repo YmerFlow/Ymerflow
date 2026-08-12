@@ -5,7 +5,7 @@ import asyncio
 def _load_entry_points(name):
     # Sorted by distribution name so fan-out order (and run_first's "first") is
     # deterministic instead of depending on filesystem/import order.
-    eps = importlib.metadata.entry_points(group='nagelfluh.hooks')
+    eps = importlib.metadata.entry_points(group='ymerflow.hooks')
     eps = sorted((ep for ep in eps if ep.name == name), key=lambda ep: ep.dist.name)
     return [ep.load() for ep in eps]
 

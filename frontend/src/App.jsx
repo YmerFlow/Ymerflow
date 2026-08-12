@@ -39,7 +39,7 @@ import { loadPlugins } from './plugins/loadPlugin';
 import { API, getPublicationInfo } from './datamodel/api';
 
 // Expose API URL for plugins that need to call the backend
-if (typeof window !== 'undefined') window.__nagelfluh_api = API;
+if (typeof window !== 'undefined') window.__ymerflow_api = API;
 
 // ── Register built-in dataset types ──────────────────────────────────────────
 // These run at module load time (side effects) so the registry is populated
@@ -105,7 +105,7 @@ function buildWidgets() {
   const map = Object.fromEntries(
     hooks.run.widgets().map(({ name, component }) => [name, component])
   );
-  window.__nagelfluh_widgets = map;
+  window.__ymerflow_widgets = map;
   return map;
 }
 

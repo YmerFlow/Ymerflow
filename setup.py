@@ -3,7 +3,7 @@ from setuptools import setup, find_namespace_packages
 setup(
     name='ymerflow-backend',
     version='0.1.0',
-    description='YmerFlow host backend (FastAPI app + nagelfluh.* entry points).',
+    description='YmerFlow host backend (FastAPI app + ymerflow.* entry points).',
     # backend/ has no __init__.py (implicit namespace package); enumerate it as a namespace
     # package so the existing tree — including backend/alembic — is packaged without adding
     # __init__.py files that would change import semantics.
@@ -51,13 +51,13 @@ setup(
     entry_points={
         # Core registers itself in the same groups plugins use, so downstream discovery treats
         # core and plugins identically (see backend/alembic/env.py and backend/bin/yf-*).
-        'nagelfluh.models': [
-            'nagelfluh = backend.models',
+        'ymerflow.models': [
+            'ymerflow = backend.models',
         ],
-        'nagelfluh.migration_dirs': [
-            'nagelfluh = backend.migration_path:path',
+        'ymerflow.migration_dirs': [
+            'ymerflow = backend.migration_path:path',
         ],
-        'nagelfluh.hooks': [
+        'ymerflow.hooks': [
             'storage_protocol_handlers = backend.services.storage_protocols:storage_protocol_handlers',
             'cluster_provider_handlers = backend.services.cluster_providers:cluster_provider_handlers',
             'registry_protocol_handlers = backend.services.registry_protocols:registry_protocol_handlers',

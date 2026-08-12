@@ -6,9 +6,9 @@ mirroring `StorageBackend`/`StorageProtocolHandler` (`backend/services/storage_p
 `Cluster`/`ClusterProvider` (`backend/services/cluster_providers/`) exactly.
 
 Handlers are discovered through the `registry_protocol_handlers` fan-out hook, the same
-`nagelfluh.hooks` mechanism used for `storage_protocol_handlers` / `cluster_provider_handlers`.
+`ymerflow.hooks` mechanism used for `storage_protocol_handlers` / `cluster_provider_handlers`.
 Core registers its own built-in handler (docker-v2) through this exact hook too — see
-`setup.py`'s `nagelfluh.hooks` entry point — so a plugin adding a new protocol (e.g. Google
+`setup.py`'s `ymerflow.hooks` entry point — so a plugin adding a new protocol (e.g. Google
 Artifact Registry) uses the identical channel core does, with no "core is special" path.
 """
 from backend.hooks import hooks
@@ -101,7 +101,7 @@ class RegistryProtocolHandler:
 
 
 def registry_protocol_handlers():
-    """Core's built-in protocol handlers, registered under nagelfluh.hooks in the root setup.py
+    """Core's built-in protocol handlers, registered under ymerflow.hooks in the root setup.py
     exactly like a plugin's would be — hence returned as (name, class) tuples, not stored in a
     private dict. Core has no special precedence over plugins.
 

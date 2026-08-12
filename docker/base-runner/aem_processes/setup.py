@@ -34,7 +34,7 @@ setup(
         ]
     },
     entry_points={
-        "nagelfluh.process_types": [
+        "ymerflow.process_types": [
             "import_skytem=aem_processes.import_process:LibaarhusXYZImporter",
             "import_nagelfluh_aem=aem_processes.import_msgpack_process:MsgpackImporter",
             "process_tem=aem_processes.processing_process:Processing",

@@ -2,7 +2,7 @@
   "name": "test-backend-plugin",
   "version": "0.1.0",
   "private": true,
-  "nagelfluh": {
+  "ymerflow": {
     "remoteName": "test_backend_plugin",
     "entry": "src/index.jsx"
   },

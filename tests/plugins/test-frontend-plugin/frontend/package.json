@@ -2,7 +2,7 @@
   "name": "test-frontend-plugin",
   "version": "0.1.0",
   "private": true,
-  "nagelfluh": {
+  "ymerflow": {
     "remoteName": "test_frontend_plugin"
   },
   "scripts": {

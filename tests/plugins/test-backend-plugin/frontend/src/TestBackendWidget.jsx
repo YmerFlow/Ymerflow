@@ -7,7 +7,7 @@ export default function TestBackendWidget() {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
 
-  const apiBase = (typeof window !== 'undefined' && window.__nagelfluh_api) || ''
+  const apiBase = (typeof window !== 'undefined' && window.__ymerflow_api) || ''
 
   const fetchData = useCallback(() => {
     setLoading(true)

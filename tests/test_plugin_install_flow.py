@@ -40,13 +40,13 @@ async def amain():
             "name": "e2e-user-plugin",
             "version": "1.0.0",
             "peerDependencies": {"react": "^18.2.0", "react-dom": "^18.2.0"},
-            "nagelfluh": {"remoteName": "e2e_user_plugin", "entry": "src/index.jsx"},
+            "ymerflow": {"remoteName": "e2e_user_plugin", "entry": "src/index.jsx"},
         }, f)
     with open(os.path.join(src_pkg, "src", "index.jsx"), "w") as f:
         f.write(
             "import W from './W'\n"
-            "if (typeof window !== 'undefined' && window.__nagelfluh_registerHook)\n"
-            "  window.__nagelfluh_registerHook('widgets', () => [{ name: 'E2EWidget', component: W }])\n"
+            "if (typeof window !== 'undefined' && window.__ymerflow_registerHook)\n"
+            "  window.__ymerflow_registerHook('widgets', () => [{ name: 'E2EWidget', component: W }])\n"
         )
     with open(os.path.join(src_pkg, "src", "W.jsx"), "w") as f:
         f.write("import React from 'react'\nexport default function W(){return <div>e2e</div>}\n")

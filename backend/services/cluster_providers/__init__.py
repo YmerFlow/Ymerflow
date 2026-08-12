@@ -6,9 +6,9 @@ delegates to whichever provider `cluster.cluster_type` resolves to instead of br
 cluster_type itself.
 
 Providers are discovered through the `cluster_provider_handlers` fan-out hook, the same
-`nagelfluh.hooks` mechanism used for `storage_protocol_handlers`. Core registers its own built-in
+`ymerflow.hooks` mechanism used for `storage_protocol_handlers`. Core registers its own built-in
 providers (same-as-backend/kubeconfig) through this exact hook too — see `setup.py`'s
-`nagelfluh.hooks` entry point — so a plugin adding a new cluster type (e.g. GKE) uses the
+`ymerflow.hooks` entry point — so a plugin adding a new cluster type (e.g. GKE) uses the
 identical channel core does, with no "core is special" path.
 """
 import asyncio
@@ -144,7 +144,7 @@ class ClusterProvider:
 
 
 def cluster_provider_handlers():
-    """Core's built-in cluster providers, registered under nagelfluh.hooks in the root setup.py
+    """Core's built-in cluster providers, registered under ymerflow.hooks in the root setup.py
     exactly like a plugin's would be — hence returned as (name, class) tuples, not stored in a
     private dict. Core has no special precedence over plugins.
 

@@ -17,11 +17,11 @@ def _build_config():
     ini_path = os.path.join(_project_root, "backend", "alembic.ini")
     cfg = Config(ini_path)
 
-    # Every version directory — core and plugins — comes from nagelfluh.migration_dirs now.
+    # Every version directory — core and plugins — comes from ymerflow.migration_dirs now.
     # Core registers backend/alembic/versions there (setup.py), so it is no longer special-cased.
     version_dirs = [
         str(ep.load())
-        for ep in importlib.metadata.entry_points(group='nagelfluh.migration_dirs')
+        for ep in importlib.metadata.entry_points(group='ymerflow.migration_dirs')
     ]
     if version_dirs:
         cfg.set_main_option("version_locations", os.pathsep.join(version_dirs))

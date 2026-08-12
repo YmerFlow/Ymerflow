@@ -57,24 +57,29 @@ See the [Plugin Author Guide](../../deps/Ymerflow-plugin-sdk/docs/README.md) (in
 `ymerflow-plugin-sdk` repo) for the full authoring walkthrough and the complete frontend/backend
 hook reference.
 
-## Host-contract names (intentionally NOT renamed)
+## Host-contract names
 
-The YmerFlow→YmerFlow rename covered the SDK's **package** surface only. The runtime bridge and
-build markers shared between host, plugins, and the build pipeline keep their original spelling, on
-purpose — renaming them would break the running cluster and already-built plugins:
+The host↔plugin bridge contract (entry-point groups, `window.__ymerflow_*` globals, the
+`package.json` key, and the shared-versions env var) was originally frozen on its legacy
+`nagelfluh`/`NAGELFLUH` spelling so host and independently-authored plugins would share a stable
+contract across the Nagelfluh→YmerFlow package rename. That freeze was lifted by decision
+(2026-08-12): the host, SDK, and all plugin repos are renamed together in the same coordinated
+change, so the compatibility reason for freezing no longer applies. The bridge now uses the
+`ymerflow`/`YMERFLOW` spelling throughout:
 
-- `window.__nagelfluh_registerHook`, `window.__nagelfluh_hooks` — host ↔ plugin window bridge
+- `window.__ymerflow_registerHook`, `window.__ymerflow_hooks` — host ↔ plugin window bridge
   (set in `frontend/src/plugins/hooks.jsx`).
-- `nagelfluh.remoteName` — the `package.json` key a plugin uses to declare its MF remote name
+- `ymerflow.remoteName` — the `package.json` key a plugin uses to declare its MF remote name
   (read by the build harness).
-- `NAGELFLUH_SHARED_VERSIONS` — env var read as a fallback by the SDK's own Vite preset
-  (`js/vite-preset.js`) when a plugin is built directly with `vite build` outside the Nagelfluh
-  pipeline. Nagelfluh's own build path doesn't use it: `backend/services/job_orchestrator.py` sets
+- `YMERFLOW_SHARED_VERSIONS` — env var read as a fallback by the SDK's own Vite preset
+  (`js/vite-preset.js`) when a plugin is built directly with `vite build` outside the YmerFlow
+  pipeline. YmerFlow's own build path doesn't use it: `backend/services/job_orchestrator.py` sets
   a differently-named `PLUGIN_SHARED_VERSIONS` env var on the build job, and
   `build_frontend_plugin.py` reads that and passes it straight into
   `ymerflow_plugin_build.build_frontend()` as the `shared_versions=` keyword argument — an in-process
   Python call, not another env var the JS side reads.
-- `PLUGIN_NPM_SOURCE_DIR` / `/var/lib/nagelfluh/plugin-npm-source` — server-local npm source path.
+- `PLUGIN_NPM_SOURCE_DIR` / `/var/lib/nagelfluh/plugin-npm-source` — server-local npm source path
+  (unrelated to the bridge-contract rename above; tracked separately).
 
 ## Releasing / pinning
 

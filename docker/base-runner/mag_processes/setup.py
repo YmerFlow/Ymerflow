@@ -16,7 +16,7 @@ setup(
         "swaggerspect>=0.1.6",
     ],
     entry_points={
-        "nagelfluh.process_types": [
+        "ymerflow.process_types": [
             "import_mag=mag_processes.import_process:MagCSVImporter",
             "process_mag=mag_processes.processing_process:MagProcessing",
             "equiv_source_mag=mag_processes.equiv_source_process:MagEquivSource",

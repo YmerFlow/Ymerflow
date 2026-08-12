@@ -20,7 +20,7 @@ setup(
         "geopandas",
     ],
     entry_points={
-        "nagelfluh.process_types": [
+        "ymerflow.process_types": [
             "create_environment=ymerflow_processes.fake_processes:create_environment",
             "compound_filter=ymerflow_processes.compound_filter:compound_filter",
             "build_frontend_plugin=ymerflow_processes.build_frontend_plugin:build_frontend_plugin",

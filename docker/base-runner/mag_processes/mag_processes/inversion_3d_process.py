@@ -70,7 +70,7 @@ class MagInversion3D:
 
     @classmethod
     def system_schema(cls):
-        return swaggerspect.get_apis("nagelfluh.mag_inversion_3d_systems")
+        return swaggerspect.get_apis("ymerflow.mag_inversion_3d_systems")
 
     @classmethod
     def schema(cls):
@@ -128,7 +128,7 @@ class MagInversion3D:
         with tempfile.TemporaryDirectory() as sens_local_base:
             import importlib.metadata
             eps = {e.name: e for e in importlib.metadata.entry_points().get(
-                "nagelfluh.mag_inversion_3d_systems", []
+                "ymerflow.mag_inversion_3d_systems", []
             )}
             if system_name not in eps:
                 raise ValueError(f"Unknown 3D inversion system: {system_name!r}")
