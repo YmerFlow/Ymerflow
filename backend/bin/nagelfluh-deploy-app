@@ -17,10 +17,17 @@ the registry protocol/config and the cluster type/config from the same `<AXIS>_P
 migrations use — see `50dd9ce3311b_add_registry_backends_table.py::_default_protocol_and_config`
 and `d1266f2f6e68_generic_seed_default_cluster.py`, the source of truth this mirrors.
 
-Config is read from this Job's environment (populated by `envFrom` the `nagelfluh-backend-config`
-ConfigMap + `nagelfluh-backend-secret` Secret the shell created). Only the explicitly-listed
-`CONFIG_KEYS`/`SECRET_KEYS` are consumed — incidental pod env (PATH, etc.) is ignored — so which
-value is ConfigMap vs. Secret material is decided here, greppably, not inferred.
+Config is read from this Job's environment (populated by `envFrom` the `nagelfluh-backend-secret`
+Secret the shell created — see docs/plans/generic-backend-config-passthrough.md). Every key
+actually assigned in config.env reaches this pod's environment that way, generically — this script
+never enumerates plugin config vars by name. `_generic_app_config()` picks up the whole pod
+environment MINUS a short, fixed denylist of Kubernetes/container-runtime/image-baked vars that
+are not app runtime config (see its docstring) — that denylist is a statement about the platform,
+not about any plugin, so it never needs editing as plugins add config. The pod's own
+`enableServiceLinks: false` (set on this Job's spec in prod/runall-production.sh) keeps that
+denylist short and fixed: without it, Kubernetes also injects a `<SERVICE>_SERVICE_*`/
+`<SERVICE>_PORT_*` block per Service in the namespace, which is NOT a fixed list — it grows with
+every Service a plugin adds.
 
 Emits the `expose_app()` result (JSON, e.g. `{"url": ...}`) to stdout; all diagnostics go to
 stderr, same clean-stdout discipline as nagelfluh-registry-push / nagelfluh-bootstrap-provision.
@@ -38,7 +45,6 @@ if _project_root not in sys.path:
 
 from backend.services.registry_protocols import get_registry_protocol_handler
 from backend.services.cluster_providers import get_cluster_provider
-from backend.services.app_deployment import CONFIG_MAP_NAME, SECRET_NAME
 
 # Default repository names + tag the app images are pushed under (see prod/runall-production.sh's
 # nagelfluh-registry-push calls). Overridable via env for a non-standard build.
@@ -47,30 +53,33 @@ FRONTEND_REPOSITORY = os.getenv("APP_FRONTEND_REPOSITORY", "nagelfluh-frontend")
 APP_IMAGE_TAG = os.getenv("APP_IMAGE_TAG", "prod")
 APP_NAMESPACE = os.getenv("APP_NAMESPACE", "nagelfluh")
 
-# ConfigMap (non-secret) vs. Secret keys consumed from this Job's environment. Mirrors the split
-# in prod/runall-production.sh's nagelfluh-backend-config / nagelfluh-backend-secret. A key absent
-# from the environment is simply omitted from the resulting dict.
-CONFIG_KEYS = [
-    "STORAGE_PROTOCOL", "STORAGE_ENDPOINT", "STORAGE_BUCKET_PREFIX", "STORAGE_TLS_SKIP_VERIFY",
-    "MINIO_ROOT_USER", "BACKEND_BASE_URL", "REGISTRY_URL", "REGISTRY_PUBLIC_HOST",
-    "ACCESS_TOKEN_EXPIRE_DAYS", "PROCESS_COST", "INITIAL_USER_BALANCE",
-    # Exposure inputs consumed by expose_app() (harmless to also persist in the ConfigMap):
-    "SERVER_URL", "APP_DOMAIN", "FRONTEND_NODE_PORT",
-]
-SECRET_KEYS = [
-    "DATABASE_URL", "JWT_SECRET_KEY", "MINIO_ROOT_PASSWORD", "MC_HOST_minio", "REGISTRY_AUTH",
-    "ADMIN_USERNAME", "ADMIN_PASSWORD",
-    # Bootstrap axes — consumed by the seed migrations inside the migration Job apply_app_workloads
-    # runs, so they must reach it via nagelfluh-backend-secret (Design decision 6). STORAGE_PROTOCOL
-    # / REGISTRY_PUBLIC_HOST already ride along in CONFIG_KEYS above (ConfigMap), so only the
-    # *_CONFIG_JSON halves (potential credential material) and CLUSTER_TYPE/CONFIG_JSON go here.
-    "REGISTRY_PROTOCOL", "REGISTRY_CONFIG_JSON",
-    "STORAGE_CONFIG_JSON", "CLUSTER_TYPE", "CLUSTER_CONFIG_JSON",
-]
+# Platform-level env this script's own pod carries that is NOT app runtime config — never a
+# plugin's concern, so this stays fixed as plugins add config.env keys (Design decision 3 of
+# docs/plans/generic-backend-config-passthrough.md). Verified against a live pod running this same
+# image: with enableServiceLinks:false (set on this Job's pod spec) and no envFrom at all, a fresh
+# container's environment is exactly PATH/HOSTNAME/LANG/HOME plus the python:3.11-slim base image's
+# GPG_KEY/PYTHON_VERSION/PYTHON_SHA256, plus KUBERNETES_SERVICE_*/KUBERNETES_PORT* (injected
+# unconditionally by the kubelet, not subject to enableServiceLinks). PWD/SHLVL/TERM/PYTHONPATH/
+# PYTHONUNBUFFERED are not currently present but are harmless to keep denying preemptively.
+_DENYLIST_EXACT = frozenset({
+    "PATH", "HOME", "HOSTNAME", "PWD", "SHLVL", "TERM", "LANG",
+    "PYTHONPATH", "PYTHONUNBUFFERED",
+    "GPG_KEY", "PYTHON_VERSION", "PYTHON_SHA256",
+    # This script's own deploy-time knobs (set as explicit `env:` entries on the Job, not app
+    # runtime config).
+    "APP_BACKEND_REPOSITORY", "APP_FRONTEND_REPOSITORY", "APP_IMAGE_TAG", "APP_NAMESPACE",
+})
+_DENYLIST_PREFIXES = ("KUBERNETES_SERVICE_", "KUBERNETES_PORT")
 
 
-def _pick(keys):
-    return {k: os.environ[k] for k in keys if os.environ.get(k) is not None}
+def _generic_app_config():
+    """Every env var on this pod except the fixed platform-level denylist above — i.e. every
+    config.env key the operator set, generically, with no per-key enumeration. See module
+    docstring."""
+    return {
+        k: v for k, v in os.environ.items()
+        if k not in _DENYLIST_EXACT and not k.startswith(_DENYLIST_PREFIXES)
+    }
 
 
 def _resolve_registry():
@@ -128,14 +137,21 @@ async def main():
     print(f"Deploying app onto cluster_type={cluster_type!r}, namespace={APP_NAMESPACE!r}", file=sys.stderr)
 
     # ── Build config/secret payloads and deploy ─────────────────────────────────────────────────
-    app_config = _pick(CONFIG_KEYS)
-    secrets = _pick(SECRET_KEYS)
+    # One generic dict (this pod's own env minus the platform denylist) is the base; the
+    # resolved_server_url override and _image_pull_credentials/_replicas below are layered on top
+    # of it, not part of it (Design decision 3 of
+    # docs/plans/generic-backend-config-passthrough.md). secrets stays empty — apply_app_workloads
+    # merges app_config/secrets into the same Secret either way (see its docstring), and every key
+    # this script has (including DATABASE_URL/JWT_SECRET_KEY/the bootstrap axes) already arrived
+    # generically via app_config.
+    app_config = _generic_app_config()
+    secrets = {}
 
     # Resolve the real hostname BEFORE anything below bakes SERVER_URL/BACKEND_BASE_URL into the
-    # nagelfluh-backend-config ConfigMap. Most providers (same-as-backend/minikube) just echo back
+    # nagelfluh-backend-secret Secret. Most providers (same-as-backend/minikube) just echo back
     # SERVER_URL unchanged — cheap, idempotent no-op. A provider whose hostname isn't knowable
     # until a resource is reserved (e.g. GKE's static IP) overrides this to reserve it now and
-    # return the real address, so the ConfigMap is correct from the very first deploy instead of
+    # return the real address, so the Secret is correct from the very first deploy instead of
     # needing a second pass once expose_app() has run. See
     # docs/plans/done/base-infrastructure-via-cluster-provider.md Design decision 2 and
     # plugins/ymerflow-gcp/docs/plans/early-hostname-resolution.md.
@@ -145,7 +161,7 @@ async def main():
         app_config["BACKEND_BASE_URL"] = f"{resolved_server_url}/api"
 
     # Threaded through app_config and popped by the provider before apply_app_workloads() (they're
-    # not ConfigMap material — real Python objects, not strings). See NodePortAppDeploymentMixin.
+    # not Secret material — real Python objects, not strings). See NodePortAppDeploymentMixin.
     app_config["_image_pull_credentials"] = image_pull_credentials
     app_config["_replicas"] = None
 

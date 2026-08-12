@@ -7,7 +7,8 @@ export default function ProcessSelector() {
     activeProcess,
     setActiveProcess,
     currentPart,
-    setCurrentPart
+    setCurrentPart,
+    currentProject
   } = useContext(ProcessContext);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -68,12 +69,16 @@ export default function ProcessSelector() {
 
       for (const datasetUrl of Object.values(versionData.outputs)) {
         try {
-          const response = await fetch(datasetUrl);
-          const dataset = await response.json();
+          // The dataset id is the URL's last path segment (works for both the
+          // /projects/{project_id}/dataset/{id} metadata URL and the /files/.../datasets/{id}/...
+          // storage URL format).
+          const datasetId = datasetUrl.includes('/datasets/')
+            ? datasetUrl.match(/\/datasets\/([^/]+)\//)?.[1]
+            : datasetUrl.split('/').pop();
+          if (!datasetId) continue;
 
-          // Load dataset to get parts
           const { loadDataset } = await import('./datamodel/dataset');
-          const datasetObj = await loadDataset(dataset.id);
+          const datasetObj = await loadDataset(datasetId, currentProject);
           const datasetParts = datasetObj.getParts();
           datasetParts.forEach(part => parts.add(part));
         } catch (error) {
@@ -85,7 +90,7 @@ export default function ProcessSelector() {
     };
 
     fetchParts();
-  }, [currentProcess, activeProcess?.version]);
+  }, [currentProcess, activeProcess?.version, currentProject]);
 
   const handleProcessSelect = (process) => {
     const latestVersion = process.versions?.[process.versions.length - 1]?.version;

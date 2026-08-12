@@ -211,28 +211,37 @@ REGISTRY_ADDR="${BACKEND_IMAGE%%/*}"
 # bootstrap() provisioned, so truncating to host-only (as REGISTRY_ADDR does) silently produces an
 # unwritable/nonexistent path for GAR. Resolved via RegistryProtocolHandler.image_prefix() (the
 # same mechanism image_url() itself is built on) rather than assumed from BACKEND_IMAGE's shape.
-REGISTRY_URL=$(env/bin/python "${PROJECT_ROOT}/backend/bin/nagelfluh-registry-image-prefix" \
+# Exported: Step 6 folds this into nagelfluh-backend-secret as a script-computed override (see
+# nagelfluh-render-backend-secret-env).
+export REGISTRY_URL=$(env/bin/python "${PROJECT_ROOT}/backend/bin/nagelfluh-registry-image-prefix" \
     "${REGISTRY_PROTOCOL}" "${REGISTRY_CONFIG_JSON}")
 
 echo "  Pushed ${BACKEND_IMAGE}"
 echo "  Pushed ${FRONTEND_IMAGE}"
 
-# ── Step 6: nagelfluh-backend-config / nagelfluh-backend-secret ────────────────
-# These carry the app's workload-level config/secrets. They are created here as the INPUT the
-# in-cluster nagelfluh-deploy-app Job (Step 12) reads via envFrom; nagelfluh-deploy-app hands their
-# contents to backend.services.app_deployment.apply_app_workloads(), which then re-applies
-# (create-or-patch) the canonical objects — so this Step is a bootstrap seed, and apply_app_workloads
-# is the authority for their final state (adding the resolved JWT_SECRET_KEY, per Design decision 5).
+# ── Step 6: nagelfluh-backend-secret ────────────────────────────────────────
+# Carries every app runtime config/secret value the in-cluster nagelfluh-deploy-app Job (Step 9)
+# reads via envFrom. nagelfluh-deploy-app hands its contents to
+# backend.services.app_deployment.apply_app_workloads(), which then re-applies (create-or-patch)
+# the canonical Secret — so this Step is a bootstrap seed, and apply_app_workloads is the authority
+# for its final state (adding the resolved JWT_SECRET_KEY, per Design decision 5).
 #
-# JWT persistence: NO host-file (NAGELFLUH_DATA_DIR/jwt_secret_key) mechanism anymore. If the
-# operator set JWT_SECRET_KEY in config.env it is passed through here and wins; otherwise it is
-# deliberately LEFT OUT, and apply_app_workloads generates-or-reuses it against the K8s API
-# (check-before-generate: reuse the existing nagelfluh-backend-secret's value across a redeploy /
-# minikube recreate so existing tokens stay valid, generate a fresh one only on a first-ever
-# deploy). This works identically for a cluster that shares no filesystem with this host.
+# Generic passthrough (docs/plans/generic-backend-config-passthrough.md): every KEY=VALUE actually
+# assigned in config.env reaches this Secret, and from there the backend pod, with ZERO changes to
+# this script or nagelfluh-deploy-app — a plugin author adding e.g. TICKETS_GITHUB_TOKEN only ever
+# touches config.env (and their own plugin's config.py). A short, fixed set of script-computed
+# overrides (nagelfluh-render-backend-secret-env's OVERRIDE_KEYS) still wins over the generic
+# layer — these are the only keys core deployment code is still allowed to know by name.
+#
+# JWT persistence: NO host-file (NAGELFLUH_DATA_DIR/jwt_secret_key) mechanism. If the operator set
+# JWT_SECRET_KEY in config.env it passes through generically and wins; otherwise it is absent here,
+# and apply_app_workloads generates-or-reuses it against the K8s API (check-before-generate: reuse
+# the existing nagelfluh-backend-secret's value across a redeploy / minikube recreate so existing
+# tokens stay valid, generate a fresh one only on a first-ever deploy). This works identically for
+# a cluster that shares no filesystem with this host.
 
 echo ""
-echo "Step 6: Creating secrets and ConfigMap..."
+echo "Step 6: Creating nagelfluh-backend-secret..."
 
 kubectl create secret generic nagelfluh-postgres-secret \
     --from-literal=postgres-password=nagelfluhpass \
@@ -245,7 +254,8 @@ kubectl create secret generic pgadmin-pgpass \
     --dry-run=client -o yaml | kubectl apply -f -
 
 MINIO_ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
-MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
+export MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
+export MC_HOST_minio="https://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio.minio.svc.cluster.local:9000"
 
 # REGISTRY_USER/REGISTRY_PASSWORD (config.env, defaults nagelfluh/nagelfluh) only feed
 # REGISTRY_AUTH below — nagelfluh-deploy-app's fallback registry credential when REGISTRY_PROTOCOL/
@@ -254,98 +264,44 @@ MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
 # has explicitly disabled the registry bootstrap axis.
 REGISTRY_USER="${REGISTRY_USER:-nagelfluh}"
 REGISTRY_PASSWORD="${REGISTRY_PASSWORD:-nagelfluh}"
-REGISTRY_AUTH=$(printf '%s:%s' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" | base64 -w0)
+export REGISTRY_AUTH=$(printf '%s:%s' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" | base64 -w0)
 
-# DATABASE_URL is fully resolved here (Postgres password inlined) and placed in the SECRET so
-# apply_app_workloads' migration Job + the backend Deployment receive it purely via envFrom — no
-# per-manifest secretKeyRef/$(VAR) substitution needed anymore (that substitution lived in the
-# old static k8s/backend/deployment.yaml). It uses the asyncpg driver for the backend app; the
-# migration Job's alembic step strips "+asyncpg" itself (see backend/alembic/env.py).
-DATABASE_URL="postgresql+asyncpg://nagelfluh:nagelfluhpass@postgres.nagelfluh.svc.cluster.local:5432/nagelfluh"
-
-BACKEND_SECRET_ARGS=(
-    --from-literal=DATABASE_URL="${DATABASE_URL}"
-    --from-literal=MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD}"
-    --from-literal="MC_HOST_minio=https://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio.minio.svc.cluster.local:9000"
-    --from-literal=REGISTRY_AUTH="${REGISTRY_AUTH}"
-)
-
-# JWT_SECRET_KEY only when explicitly set in config.env (see the JWT note above).
-if [ -n "${JWT_SECRET_KEY:-}" ]; then
-    BACKEND_SECRET_ARGS+=(--from-literal=JWT_SECRET_KEY="${JWT_SECRET_KEY}")
-    echo "  JWT key: using JWT_SECRET_KEY from config.env"
-else
-    echo "  JWT key: none set in config.env — apply_app_workloads will generate-or-reuse it via the K8s API"
-fi
-
-# Fold in the enriched <AXIS>_PROTOCOL/<AXIS>_CONFIG_JSON from Step 3's bootstrap-provision run,
-# for whichever axes were actually configured. These go into the Secret even though today's core
-# protocols carry no secret material of their own — *_CONFIG_JSON may carry credentials for a
-# plugin-provided protocol, so it's treated as secret material uniformly.
-if [ -n "${REGISTRY_PROTOCOL:-}" ] && [ -n "${REGISTRY_CONFIG_JSON:-}" ]; then
-    BACKEND_SECRET_ARGS+=(--from-literal=REGISTRY_PROTOCOL="${REGISTRY_PROTOCOL}")
-    BACKEND_SECRET_ARGS+=(--from-literal=REGISTRY_CONFIG_JSON="${REGISTRY_CONFIG_JSON}")
-fi
-if [ -n "${STORAGE_PROTOCOL:-}" ] && [ -n "${STORAGE_CONFIG_JSON:-}" ]; then
-    BACKEND_SECRET_ARGS+=(--from-literal=STORAGE_PROTOCOL="${STORAGE_PROTOCOL}")
-    BACKEND_SECRET_ARGS+=(--from-literal=STORAGE_CONFIG_JSON="${STORAGE_CONFIG_JSON}")
-fi
-if [ -n "${CLUSTER_TYPE:-}" ] && [ -n "${CLUSTER_CONFIG_JSON:-}" ]; then
-    BACKEND_SECRET_ARGS+=(--from-literal=CLUSTER_TYPE="${CLUSTER_TYPE}")
-    BACKEND_SECRET_ARGS+=(--from-literal=CLUSTER_CONFIG_JSON="${CLUSTER_CONFIG_JSON}")
-fi
-
-# ADMIN_USERNAME/ADMIN_PASSWORD (from config.env) bootstrap the app's site-admin user the FIRST
-# TIME migrations run against an empty DB (see backend/alembic/versions/e2f3a4b5c6d7). They must
-# reach the migration Job via this secret's envFrom, separate from ADMIN_USER/ADMIN_PASSWORD below
-# which only control the pgAdmin/Headlamp login.
-if [ -n "${ADMIN_USERNAME:-}" ]; then
-    BACKEND_SECRET_ARGS+=(--from-literal=ADMIN_USERNAME="${ADMIN_USERNAME}")
-    BACKEND_SECRET_ARGS+=(--from-literal=ADMIN_PASSWORD="${ADMIN_PASSWORD:-}")
-fi
-
-kubectl create secret generic nagelfluh-backend-secret \
-    "${BACKEND_SECRET_ARGS[@]}" \
-    -n nagelfluh \
-    --dry-run=client -o yaml | kubectl apply -f -
-echo "  nagelfluh-backend-secret applied"
+# DATABASE_URL is fully resolved here (Postgres password inlined) so apply_app_workloads' migration
+# Job + the backend Deployment receive it purely via envFrom — no per-manifest secretKeyRef/$(VAR)
+# substitution needed (that substitution lived in the old static k8s/backend/deployment.yaml). It
+# uses the asyncpg driver for the backend app; the migration Job's alembic step strips "+asyncpg"
+# itself (see backend/alembic/env.py).
+export DATABASE_URL="postgresql+asyncpg://nagelfluh:nagelfluhpass@postgres.nagelfluh.svc.cluster.local:5432/nagelfluh"
 
 # BACKEND_BASE_URL must use the public host:port because that is the address clients' browsers
-# follow when fetching dataset URLs. SERVER_URL/APP_DOMAIN/FRONTEND_NODE_PORT are consumed by the
-# provider's expose_app() (nagelfluh-deploy-app threads them through app_config).
+# follow when fetching dataset URLs. REGISTRY_PUBLIC_HOST/REGISTRY_URL/STORAGE_ENDPOINT/
+# STORAGE_BUCKET_PREFIX below are also script-computed rather than raw config.env text — see
+# nagelfluh-render-backend-secret-env's module docstring for why each one must win over a stray
+# config.env value (STORAGE_ENDPOINT in particular: an operator's dev-host STORAGE_ENDPOINT must
+# NEVER leak into production, which always talks to MinIO via its in-cluster Service DNS name).
 #
 # STORAGE_PROTOCOL/MINIO_ROOT_USER are deliberately NOT set here (verified genuinely dead, per
 # docs/plans/generic-deployment-orchestration.md Phase 5): the seed migration chain's later,
 # generic `9623bab8493d_generic_seed_default_storage_backend.py` unconditionally overrides
 # `storage_backends.protocol`/`.config` from STORAGE_PROTOCOL/STORAGE_CONFIG_JSON (both already
-# folded into nagelfluh-backend-secret above, from Step 3's bootstrap-provision) whenever that
-# axis was bootstrapped — which it always is with the default config.env — so any value seeded
-# here from `settings.storage_protocol`/`settings.minio_root_user` gets clobbered before a
-# migration run ever finishes. STORAGE_ENDPOINT is NOT dead weight, unlike the other two: no
-# migration ever overrides the `storage_backends.endpoint` column past the initial seed
+# folded in below, from Step 3's bootstrap-provision) whenever that axis was bootstrapped — which
+# it always is with the default config.env — so any value seeded here from
+# `settings.storage_protocol`/`settings.minio_root_user` gets clobbered before a migration run ever
+# finishes. STORAGE_ENDPOINT is NOT dead weight, unlike the other two: no migration ever overrides
+# the `storage_backends.endpoint` column past the initial seed
 # (`a6b7c8d9e0f1_seed_default_storage_backend.py`, which reads `settings.storage_endpoint`), and
 # `MinioProtocolHandler.fsspec_kwargs()`/`test_connection()` read `backend.endpoint` directly at
 # runtime — it stays here as the one genuinely load-bearing key.
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: nagelfluh-backend-config
-  namespace: nagelfluh
-data:
-  STORAGE_ENDPOINT: "https://minio.minio.svc.cluster.local:9000"
-  STORAGE_BUCKET_PREFIX: "nagelfluh-project-"
-  STORAGE_TLS_SKIP_VERIFY: "${STORAGE_TLS_SKIP_VERIFY:-true}"
-  BACKEND_BASE_URL: "${BACKEND_BASE_URL}"
-  REGISTRY_URL: "${REGISTRY_URL}"
-  REGISTRY_PUBLIC_HOST: "${REGISTRY_PUBLIC_HOST}"
-  ACCESS_TOKEN_EXPIRE_DAYS: "30"
-  PROCESS_COST: "0.10"
-  INITIAL_USER_BALANCE: "100.0"
-  SERVER_URL: "${SERVER_URL}"
-  APP_DOMAIN: "${APP_DOMAIN:-}"
-EOF
-echo "  nagelfluh-backend-config applied"
+export STORAGE_ENDPOINT="https://minio.minio.svc.cluster.local:9000"
+export STORAGE_BUCKET_PREFIX="nagelfluh-project-"
+export BACKEND_BASE_URL="${BACKEND_BASE_URL}"
+export SERVER_URL="${SERVER_URL}"
+
+kubectl create secret generic nagelfluh-backend-secret \
+    --from-env-file=<(env/bin/python "${PROJECT_ROOT}/backend/bin/nagelfluh-render-backend-secret-env" "${PROJECT_ROOT}/config.env") \
+    -n nagelfluh \
+    --dry-run=client -o yaml | kubectl apply -f -
+echo "  nagelfluh-backend-secret applied"
 
 # ── Step 6b: Admin credentials secret ────────────────────────────────────────
 # ADMIN_USER and ADMIN_PASSWORD are read from config.env (defaults: admin/password).
@@ -471,9 +427,9 @@ fi
 # migration Job, (2) the static k8s/backend + k8s/frontend Deployments (imagePullPolicy:Never),
 # and (3) the hardcoded frontend NodePort Service. It runs as an in-cluster Job so
 # same-as-backend's K8sClient(kubeconfig=None) auto-detects in-cluster config; it reads config from
-# the nagelfluh-backend-config/secret created above via envFrom, resolves the default Cluster's
-# provider, and calls deploy_app() (→ apply_app_workloads: ConfigMap/Secret/migration Job/backend+
-# frontend Deployments + backend Service) then expose_app() (→ frontend NodePort). See
+# the nagelfluh-backend-secret created above via envFrom, resolves the default Cluster's
+# provider, and calls deploy_app() (→ apply_app_workloads: Secret/migration Job/backend+frontend
+# Deployments + backend Service) then expose_app() (→ frontend NodePort). See
 # docs/plans/app-deployment-hooks.md Phase 5.
 
 echo ""
@@ -489,6 +445,12 @@ spec:
   template:
     spec:
       serviceAccountName: nagelfluh-app-deployer
+      # nagelfluh-deploy-app reads its whole pod environment generically minus a short, fixed
+      # denylist (docs/plans/generic-backend-config-passthrough.md, Design decision 3) — without
+      # this, Kubernetes also injects a <SERVICE>_SERVICE_*/<SERVICE>_PORT_* env-var block per
+      # Service in this namespace, which is NOT a fixed list (it grows as Services are added), and
+      # would defeat that denylist. See backend/bin/nagelfluh-deploy-app's own module docstring.
+      enableServiceLinks: false
       imagePullSecrets:
       - name: nagelfluh-app-pull
       containers:
@@ -509,8 +471,6 @@ spec:
         - name: APP_IMAGE_TAG
           value: "${APP_IMAGE_VERSION}"
         envFrom:
-        - configMapRef:
-            name: nagelfluh-backend-config
         - secretRef:
             name: nagelfluh-backend-secret
       restartPolicy: Never

@@ -29,7 +29,7 @@ function SaveModelDialog({ onClose, flightlines, sourceProcess }) {
     sourceProcess ? sourceProcess.name : ''
   );
   const [environment, setEnvironment] = useState(
-    fullSourceProcess?.environment_id || selectedEnvironment || ''
+    fullSourceProcess?.environment?.id || selectedEnvironment || ''
   );
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -87,7 +87,7 @@ function SaveModelDialog({ onClose, flightlines, sourceProcess }) {
       const proc = {
         name: processName,
         type: 'import_nagelfluh_aem',
-        environment_id: environment,
+        environment: { id: environment },
         params: {
           msgpack_file: fileUrl
         },

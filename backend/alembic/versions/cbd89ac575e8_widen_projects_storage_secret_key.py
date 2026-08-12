@@ -18,8 +18,10 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     # storage_secret_key holds a plain string for MinIO/S3 backends but a full serialized GCS
     # service-account JSON key (2000+ chars) for the GCS backend — String(255) truncates it.
-    op.alter_column('projects', 'storage_secret_key', type_=sa.Text(), existing_type=sa.String(255))
+    with op.batch_alter_table('projects') as batch_op:
+        batch_op.alter_column('storage_secret_key', type_=sa.Text(), existing_type=sa.String(255))
 
 
 def downgrade() -> None:
-    op.alter_column('projects', 'storage_secret_key', type_=sa.String(255), existing_type=sa.Text())
+    with op.batch_alter_table('projects') as batch_op:
+        batch_op.alter_column('storage_secret_key', type_=sa.String(255), existing_type=sa.Text())

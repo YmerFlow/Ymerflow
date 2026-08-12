@@ -10,10 +10,18 @@ Forms are automatically generated from JSON Schema definitions provided by proce
 
 ```
 jsoneditor/
-├── index.js              # Main exports
-├── CustomForm.js         # Wrapper around @rjsf Form
-├── CustomStringField.js  # Custom string field with format detection
-└── DatasetSelector.js    # Dataset selection widget
+├── index.js                    # Main exports
+├── CustomForm.jsx              # Wrapper around @rjsf Form: custom fields/templates, form-data cleaning, error filtering
+├── CustomStringField.jsx       # Custom string field: routes to DatasetPathField / DatasetSelector / FileUploadField by x-format
+├── CustomNumberField.jsx       # Custom number field: routes to EPSGSelector for format: 'x-epsg'
+├── CustomFieldTemplate.jsx     # Field wrapper: label, required marker, description tooltip, errors, help
+├── CustomButtonTemplates.jsx   # Add/Copy/Move/Remove/Submit button templates (FontAwesome icons, Bootstrap classes)
+├── DatasetSelector.jsx         # Searchable dropdown widget for selecting another process's dataset output
+├── DatasetPathField.jsx        # Wraps DatasetColumnCombobox in "dataset" mode (process-scoped dataset path, no column)
+├── DatasetColumnCombobox.jsx   # Shared autocomplete combobox for dataset/column path strings, used by DatasetPathField and ExpressionField
+├── ExpressionField.jsx         # Toggle between a plain column reference and an anyOf-driven computation expression
+├── EPSGSelector.jsx            # Searchable dropdown widget for picking an EPSG coordinate system code
+└── FileUploadField.jsx         # File input widget that uploads via the API and stores the resulting URL
 ```
 
 ## Basic Usage
@@ -23,7 +31,8 @@ jsoneditor/
 **Always use `CustomForm` instead of the standard `@rjsf Form`:**
 
 ```javascript
-import CustomForm from './jsoneditor';
+import { CustomForm } from './jsoneditor';
+import validator from '@rjsf/validator-ajv8';
 
 function ProcessEditor() {
   const [formData, setFormData] = useState({});
@@ -51,6 +60,7 @@ function ProcessEditor() {
     <CustomForm
       schema={schema}
       formData={formData}
+      validator={validator}
       onChange={({ formData }) => setFormData(formData)}
       onSubmit={handleSubmit}
     />
@@ -58,14 +68,16 @@ function ProcessEditor() {
 }
 ```
 
+**Note:** `@rjsf/core` v6 requires an explicit `validator` prop — `CustomForm` does not supply a default one. Every call site (`ProcessEditor.jsx`, `Pane.jsx`, `TabSet.jsx`, `AddFlightlineDialog.jsx`, `CreateModelDialog.jsx`) imports `validator` from `@rjsf/validator-ajv8` and passes it explicitly.
+
 ### Why CustomForm?
 
-`CustomForm` provides:
-- **Custom field handlers**: Detects special formats like `x-format: "dataset"`
-- **Enhanced widgets**: Dataset selector, color picker, etc.
-- **Consistent styling**: Bootstrap-based theme
-- **Validation**: Built-in JSON Schema validation
-- **Error handling**: User-friendly error messages
+`CustomForm` is a thin wrapper around `@rjsf/core`'s `Form` (see `frontend/src/jsoneditor/CustomForm.jsx`). It passes through all normal `Form` props (including `validator`, which callers must still supply — see note above) and adds:
+
+- **Custom fields**: `StringField` → `CustomStringField` (dataset/upload/path widgets), `NumberField` → `CustomNumberField` (EPSG widget), `AnyOfField` → an inline `CustomAnyOfField` that special-cases `x-format: 'expression'` schemas by rendering `ExpressionField` instead of the default `anyOf` UI
+- **Custom templates**: `ButtonTemplates` (FontAwesome/Bootstrap-styled Add/Copy/Move/Remove/Submit buttons) and `FieldTemplate` → `CustomFieldTemplate` (label, required marker, description tooltip, errors, help text)
+- **Form-data cleaning**: `onSubmit` is wrapped to deep-strip `undefined`/`null` properties left behind when `anyOf` branches switch, before calling the caller's `onSubmit`
+- **Error filtering**: a default `transformErrors` (overridable via props) hides misleading per-branch validation errors on a field once an `anyOf` error already exists for that same path, so users see one clear error instead of every failed branch
 
 ## Dataset Selection
 
@@ -81,13 +93,15 @@ To enable dataset selection, use these schema properties:
   properties: {
     input_data: {
       type: 'string',
-      format: 'uri',           // Must be 'uri'
+      format: 'uri',           // Recommended convention (not enforced by code)
       'x-format': 'dataset',   // Triggers custom selector
       title: 'Input Dataset'
     }
   }
 }
 ```
+
+**Note:** `CustomStringField` only checks `schema['x-format'] === 'dataset'` — `format: 'uri'` is not inspected. Setting `format: 'uri'` is a recommended schema-authoring convention (it documents intent and keeps the field consistent with the JSON Schema spec), but it has no effect on whether the selector renders.
 
 ### DatasetSelector Component
 
@@ -98,13 +112,14 @@ The `DatasetSelector` provides a searchable dropdown for selecting process outpu
 - **Smart grouping**: When >4 processes match, shows first dataset + count
 - **Click to refine**: Click grouped item to add process name to search
 - **Format**: "Process Name / v123 / dataset-name"
-- **Value**: Stores full URL: `http://localhost:8000/dataset/{id}`
+- **Value**: Stores the dataset's `url` as returned by the search API, e.g. `http://localhost:8000/projects/{project_id}/files/.../datasets/{id}/...`. An older URL shape containing `/dataset/{id}` (without the `s`) is still recognized when resolving an existing value back to its display label, for back-compat with data saved before the format changed.
 
-**Implementation:** See `frontend/src/jsoneditor/DatasetSelector.js` for the complete implementation including:
+**Implementation:** See `frontend/src/jsoneditor/DatasetSelector.jsx` for the complete implementation including:
 - Debounced search (300ms)
 - Dataset grouping logic
 - Loading states
 - Click handlers
+- New-format (`/datasets/{id}/`) vs. old-format (`/dataset/{id}`) value resolution
 
 ### Using Selected Dataset
 
@@ -113,7 +128,7 @@ The form data will contain the dataset URL:
 ```javascript
 const handleSubmit = ({ formData }) => {
   console.log(formData.input_data);
-  // Output: "http://localhost:8000/dataset/abc-123-xyz"
+  // Output: "http://localhost:8000/projects/proj-abc/files/.../datasets/abc-123-xyz/..."
 
   // Fetch the dataset
   fetch(formData.input_data)
@@ -130,12 +145,63 @@ const handleSubmit = ({ formData }) => {
 
 ### CustomStringField Logic
 
-`CustomStringField` detects special `format` and `x-format` properties in the schema and renders appropriate widgets.
+`CustomStringField` detects special `x-format` properties in the schema and renders appropriate widgets. It checks `schema['x-format']` only — plain `format` values (other than as a schema-authoring convention, see above) are not inspected.
 
-**See:** `frontend/src/jsoneditor/CustomStringField.js` for format detection logic including:
-- Dataset selector (`format: 'uri'` + `x-format: 'dataset'`)
-- Color picker (`format: 'color'`)
+**See:** `frontend/src/jsoneditor/CustomStringField.jsx` for format detection logic including:
+- `x-format: 'dataset'` — dataset selector, see below
+- `x-format: 'datasetPath'` — dataset path field, see below
+- `x-format: 'upload'` — file upload field, see below
 - Extensible format detection pattern
+
+### `x-format: 'datasetPath'`
+
+```javascript
+{
+  type: 'string',
+  'x-format': 'datasetPath',
+  title: 'Dataset Path'
+}
+```
+
+Renders `DatasetPathField`, which wraps the shared `DatasetColumnCombobox` in `mode="dataset"`. It offers an autocomplete list of process-scoped dataset paths (e.g. `current.mydataset` for datasets already loaded into the widget, or `Process Name.version.dataset-name` for any process output in the project) without drilling into individual columns. Used where a value should reference a whole dataset rather than a specific column.
+
+### `x-format: 'upload'`
+
+```javascript
+{
+  type: 'string',
+  'x-format': 'upload',
+  title: 'Upload File'
+}
+```
+
+Renders `FileUploadField`, a file `<input>` that uploads the selected file via the API (`uploadFile` from `datamodel/api`), shows a progress bar while uploading, and calls `onChange` with the resulting URL once the upload completes. Errors from the upload are surfaced inline.
+
+## Expression Fields
+
+`x-format: 'expression'` is handled at the `anyOf` level, not by `CustomStringField`. `CustomForm` registers a custom `AnyOfField` (defined inline in `CustomForm.jsx`) that checks `props.schema['x-format'] === 'expression'`; when it matches, it renders `ExpressionField` instead of `@rjsf`'s default `anyOf` selector UI. This is used by plot/layer config schemas where a value can be either a plain dataset column reference or a computed expression built from other fields.
+
+```javascript
+{
+  type: 'object',
+  properties: {
+    color: {
+      'x-format': 'expression',
+      anyOf: [
+        { type: 'string' },              // plain "dataset.column" reference
+        { type: 'object', /* ... */ }    // computation schema(s), e.g. { operator, operands }
+      ],
+      title: 'Color'
+    }
+  }
+}
+```
+
+`ExpressionField` (`frontend/src/jsoneditor/ExpressionField.jsx`) toggles between two modes:
+- **Column mode** (default when `formData` is a string or empty): renders `DatasetColumnCombobox` in `mode="column"`, offering autocomplete over dataset/column paths (own loaded datasets under `current.*`, other processes' outputs as `Process Name.version.dataset.column`, lazily loading columns for outputs not yet fetched).
+- **Computation mode** (used when `formData` is an object, or after clicking the "ƒ" toggle button): renders the default `SchemaField` against an `anyOf` built from the object-typed branches of the schema (`schema._expressionAnyOf` if present, else `schema.anyOf`), letting the user build a structured computation. A toggle button (only shown when object-typed branches exist) switches back and forth; switching back to column mode clears the value.
+
+`DatasetColumnCombobox` (`frontend/src/jsoneditor/DatasetColumnCombobox.jsx`) is the shared autocomplete widget behind both `ExpressionField`'s column mode and `DatasetPathField`; the `mode` prop (`"column"` vs `"dataset"`) controls whether it offers full `dataset.column` paths or dataset-only paths.
 
 ### Adding Custom Formats
 
@@ -347,6 +413,7 @@ const schema = {
 <CustomForm
   schema={schema}
   formData={formData}
+  validator={validator}
   onSubmit={handleSubmit}
   onError={(errors) => console.log('Validation errors:', errors)}
 />
@@ -367,6 +434,7 @@ function validate(formData, errors) {
 <CustomForm
   schema={schema}
   formData={formData}
+  validator={validator}
   validate={validate}
   onSubmit={handleSubmit}
 />
@@ -380,6 +448,7 @@ Enable real-time validation:
 <CustomForm
   schema={schema}
   formData={formData}
+  validator={validator}
   liveValidate={true}  // Validate on every change
   onSubmit={handleSubmit}
 />
@@ -389,16 +458,7 @@ Enable real-time validation:
 
 ### Theme Customization
 
-CustomForm uses Bootstrap theme by default:
-
-```javascript
-import { ThemeProvider } from '@rjsf/core';
-import { Theme as Bootstrap4Theme } from '@rjsf/bootstrap-4';
-
-<ThemeProvider theme={Bootstrap4Theme}>
-  <CustomForm schema={schema} />
-</ThemeProvider>
-```
+There is no `@rjsf` theme package in use (`frontend/package.json` only depends on `@rjsf/core` and `@rjsf/validator-ajv8`, and no `ThemeProvider` is used anywhere) — `@rjsf/core`'s plain HTML-form rendering is used directly, restyled via `CustomFieldTemplate` and `CustomButtonTemplates` (Bootstrap-flavored classNames like `btn btn-primary`, `control-label`, etc.) plus the project's own CSS. Custom widgets such as `DatasetSelector`, `EPSGSelector`, and `FileUploadField` are built with `react-bootstrap` components (`Form.Control`, `ProgressBar`, ...) directly, since `bootstrap` and `react-bootstrap` are already project dependencies. To change the look, edit `CustomFieldTemplate.jsx` / `CustomButtonTemplates.jsx` or the project's global CSS rather than swapping in an `@rjsf` theme package.
 
 ### Custom CSS
 
@@ -583,5 +643,9 @@ For more details on JSON Schema form features, see:
 ### YmerFlow-Specific Extensions
 
 - `x-format: "dataset"`: Dataset selector widget
-- Custom field detection in `CustomStringField.js`
-- Smart dataset grouping in `DatasetSelector.js`
+- `x-format: "datasetPath"`: Dataset path field (whole-dataset reference)
+- `x-format: "upload"`: File upload field
+- `x-format: "expression"` (on an `anyOf` schema): Expression field (column reference or computation)
+- `format: "x-epsg"` (on a number field): EPSG code selector
+- Custom field detection in `CustomStringField.jsx` / `CustomNumberField.jsx`
+- Smart dataset grouping in `DatasetSelector.jsx`

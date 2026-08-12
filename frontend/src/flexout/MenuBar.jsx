@@ -101,10 +101,10 @@ export default function MenuBar({}) {
 
   return (
     <nav className="bg-dark navbar navbar-expand-lg navbar-dark">
-      <ul className="navbar-nav me-auto mb-2 mb-lg-0">
+      <ul className="navbar-nav me-auto mb-2 mb-lg-0 align-items-center">
         {leftItems.map(renderTopLevelItem)}
       </ul>
-      <ul className="navbar-nav mb-2 mb-lg-0">
+      <ul className="navbar-nav mb-2 mb-lg-0 align-items-center">
         {rightItems.map(renderTopLevelItem)}
       </ul>
     </nav>

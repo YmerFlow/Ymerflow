@@ -4,15 +4,15 @@ import uuid
 from datetime import timedelta
 
 import fsspec
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.database import get_db
-from backend.models import Upload
+from backend.models import Upload, Project
 from backend.services.storage_service import get_upload_storage_url, storage_url_to_http_url, get_fsspec_storage_options
-from backend.services.auth_service import get_current_user, AuthContext, create_access_token
+from backend.services.auth_service import get_current_user, AuthContext, create_access_token, require_project_member
 
 router = APIRouter(tags=["Uploads"])
 
@@ -42,11 +42,10 @@ async def _write_upload(content: bytes, project_id: str, upload_id: str, filenam
     return {"id": upload.id, "filename": upload.filename, "url": http_url}
 
 
-@router.post("/upload", summary="Upload a raw input file")
+@router.post("/projects/{project_id}/upload", summary="Upload a raw input file")
 async def upload_file(
     request: Request,
-    project_id: str = Query(None, description="Project ID from list_projects. Required unless using an upload token (upt_...) that already encodes the project."),
-    auth: AuthContext = Depends(get_current_user),
+    project: Project = Depends(require_project_member),
     db: AsyncSession = Depends(get_db)
 ):
     """Upload a raw input file (e.g. AEM data, CSV) that is not the output of any process.
@@ -54,33 +53,22 @@ async def upload_file(
     Supports two body formats (auto-detected from Content-Type):
 
     **Multipart/form-data** (browser or curl — any file size):
-        curl -F "file=@data.xyz" "https://host/upload?project_id=..."
+        curl -F "file=@data.xyz" "https://host/projects/{project_id}/upload"
 
     **JSON + base64** (MCP-friendly — for files up to ~20 MB):
-        POST /upload?project_id=...
+        POST /projects/{project_id}/upload
         Content-Type: application/json
         {"filename": "data.xyz", "content": "<base64>", "content_type": "application/x-aarhusxyz-msgpack"}
 
     For large files, request an upload token with POST /upload/request-token, then
     upload using that token as the Bearer credential — no full session needed:
-        curl -X POST "https://host/upload?project_id=..." \\
+        curl -X POST "https://host/projects/{project_id}/upload" \\
           -H "Authorization: Bearer upt_..." \\
           -F "file=@survey.xyz"
 
     The response 'url' is a direct HTTP file URL (no auth needed to download it)
     ready to pass as input_data to create_process.
     """
-    # Upload token (upt_) encodes the project; use it if no explicit project_id given
-    effective_project_id = project_id or auth.api_key_project_id
-    if not effective_project_id:
-        effective_project_id = auth.user.preferences.get("default_project") if auth.user.preferences else None
-    if not effective_project_id:
-        raise HTTPException(status_code=400, detail="project_id is required")
-
-    # If a scoped token is in use, reject mismatched project_id
-    if auth.api_key_project_id and project_id and project_id != auth.api_key_project_id:
-        raise HTTPException(status_code=403, detail="Token is not scoped to this project")
-
     upload_id = str(uuid.uuid4())
     content_type_header = request.headers.get("content-type", "")
 
@@ -102,7 +90,7 @@ async def upload_file(
         mime = file.content_type or "application/octet-stream"
         content = await file.read()
 
-    return await _write_upload(content, effective_project_id, upload_id, filename, mime, db)
+    return await _write_upload(content, project.id, upload_id, filename, mime, db)
 
 
 @router.post("/upload/request-token", summary="Request a short-lived upload token for large file uploads")

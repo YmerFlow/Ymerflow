@@ -37,8 +37,8 @@ class NodePortAppDeploymentMixin:
         # `image_pull_credentials`/`replicas` are threaded through app_config by the
         # nagelfluh-deploy-app entry point (it's the one place that resolves the registry axis and
         # any replica overrides); pulled back out here so apply_app_workloads() gets them as
-        # first-class args rather than buried in the ConfigMap data. Everything left in app_config
-        # after popping these is real ConfigMap material.
+        # first-class args rather than buried in the Secret data. Everything left in app_config
+        # after popping these is real Secret material.
         app_config = dict(app_config)
         image_pull_credentials = app_config.pop("_image_pull_credentials", None)
         replicas = app_config.pop("_replicas", None)

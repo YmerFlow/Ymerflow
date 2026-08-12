@@ -1,15 +1,18 @@
 import React, { useContext } from 'react';
 import { MessageContext } from './MessageContext';
+import { hooks } from './plugins/hooks';
 
 export default function MessageDisplay() {
   const { messages, removeMessage } = useContext(MessageContext);
+  const banners = hooks.run_jsx.header_banners();
 
-  if (!messages || messages.length === 0) {
+  if ((!messages || messages.length === 0) && banners.length === 0) {
     return null;
   }
 
   return (
     <div className="message-display-container">
+      {banners}
       {messages.map(msg => (
         <div
           key={msg.id}

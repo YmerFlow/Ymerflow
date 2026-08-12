@@ -14,21 +14,54 @@ A widget is a React component that:
 
 ### Widget Registration
 
-Widgets are registered in the `widgets` object in `frontend/src/App.js`.
+Widgets are not a static object — they're contributed through the plugin hook registry so that both built-in widgets and plugin-provided widgets can merge into the same list. `frontend/src/App.jsx` registers the built-ins via `registerHook('widgets', ...)`:
 
-**See:** `frontend/src/App.js` - look for the `widgets` constant where all built-in widgets are imported and registered.
+```javascript
+import { registerHook, hooks } from './plugins/hooks';
+
+// ── Register built-in widgets ─────────────────────────────────────────────────
+registerHook('widgets', () => [
+  { name: 'PlotView',          component: PlotView },
+  { name: 'FlowView',          component: FlowView },
+  { name: 'ProcessEditor',     component: ProcessEditor },
+  { name: 'EnvironmentView',   component: EnvironmentView },
+  { name: 'ProcessLog',        component: ProcessLog },
+  { name: 'ProcessProgress',   component: ProcessProgress },
+  { name: 'Export',            component: Export },
+  { name: 'ProcessInfo',       component: ProcessInfo },
+  { name: 'AEMModelSimulator', component: AEMModelSimulator },
+  { name: 'InUseEditor',       component: InUseEditor },
+  { name: 'PluginManager',     component: PluginManager },
+]);
+```
+
+A `buildWidgets()` function turns all registered `{ name, component }` entries into the `{ name: Component }` map the layout system consumes:
+
+```javascript
+function buildWidgets() {
+  const map = Object.fromEntries(
+    hooks.run.widgets().map(({ name, component }) => [name, component])
+  );
+  window.__nagelfluh_widgets = map;
+  return map;
+}
+```
+
+`buildWidgets()` is called again after plugins finish loading (see the `useEffect` inside `AuthenticatedApp` in `App.jsx`), so any widgets a plugin registers via its own `registerHook('widgets', ...)` call are merged in alongside the built-ins before the app renders.
+
+**See:** `frontend/src/App.jsx` - look for the `registerHook('widgets', ...)` call and `buildWidgets()`.
 
 ## Creating a New Widget
 
 ### Basic Widget Template
 
 ```javascript
-// MyWidget.js
-import React from 'react';
-import { useProcessContext } from './ProcessContext';
+// MyWidget.jsx
+import React, { useContext } from 'react';
+import { ProcessContext } from '../ProcessContext';
 
 function MyWidget() {
-  const { processes, activeProcess } = useProcessContext();
+  const { processes, activeProcess } = useContext(ProcessContext);
 
   return (
     <div style={{ padding: '10px' }}>
@@ -47,15 +80,15 @@ export default MyWidget;
 
 ### Register the Widget
 
-Add to `App.js`:
+Import it in `App.jsx` and add it to the `registerHook('widgets', ...)` call:
 
 ```javascript
-import MyWidget from './MyWidget';
+import MyWidget from './widgets/MyWidget';
 
-const widgets = {
+registerHook('widgets', () => [
   // ... existing widgets
-  MyWidget,
-};
+  { name: 'MyWidget', component: MyWidget },
+]);
 ```
 
 The widget will now appear in the dropdown menu of every pane.
@@ -75,7 +108,7 @@ Visual graph of processes and their dependencies.
 
 **Usage:**
 ```javascript
-const { processes, activeProcess, setActiveProcess } = useProcessContext();
+const { processes, activeProcess, setActiveProcess } = useContext(ProcessContext);
 ```
 
 **Key interactions:**
@@ -109,7 +142,7 @@ Dual-mode editor for creating and editing processes.
 
 **Data Access Pattern:**
 ```javascript
-const { processes, activeProcess } = useProcessContext();
+const { processes, activeProcess } = useContext(ProcessContext);
 
 // Find the full process object
 const process = processes.find(p => p.id === activeProcess?.processId);
@@ -128,93 +161,197 @@ Real-time log viewer with WebSocket streaming.
 **Features:**
 - Live log updates via WebSocket
 - Filter by process
-- Status badges (Running, Completed, Failed)
+- Status badges (Queued, Running, Done, Failed)
 - Auto-scroll to latest
 - Persistent log history
 
-**Implementation:** See `frontend/src/widgets/ProcessLog.js` - uses WebSocket connection to backend for real-time log streaming.
+**Implementation:** See `frontend/src/widgets/ProcessLog.jsx` - uses WebSocket connection to backend for real-time log streaming.
+
+### EnvironmentView
+
+Table of processing environments (Docker images with registered process types) available in the project.
+
+**Features:**
+- Lists environments with name, Docker image, creator (process or bootstrap), and creation time
+- Click a row to open a details modal
+- Points users at the `create_environment` process type for creating new environments
+
+**Implementation:** See `frontend/src/widgets/EnvironmentView.jsx`.
+
+### ProcessProgress
+
+Live plot of numeric progress values a running process reports in its logs.
+
+**Features:**
+- Parses a `##STATUS##<json>` tag out of log messages to extract numeric fields
+- Streams log entries over WebSocket while the process is queued/running, falls back to a REST fetch once finished
+- Dropdown to pick which numeric field to plot on the y-axis (x-axis is entry index)
+- Renders via a `gladly-plot` `Plot` instance with a custom `ProgressLinePlot` layer type, same GPU pipeline PlotView uses
+
+**Implementation:** See `frontend/src/widgets/ProcessProgress.jsx`.
+
+### Export
+
+Browsable tree of a process version's output datasets and their underlying files, for downloading.
+
+**Features:**
+- Fetches each dataset referenced in `process.versions[x].outputs` via `getDataset()`
+- Renders a collapsible tree of dataset → parts → files, mirroring the dataset's `parts` structure
+- Each file is a direct download link
+
+**Implementation:** See `frontend/src/widgets/Export.jsx`.
+
+### ProcessInfo
+
+Read-only YAML-style dump of the active process's configuration and current version data.
+
+**Features:**
+- Merges the process object and its active version object (minus noisy fields like `versions`, `flow_x`, `flow_y`) and renders them as indented YAML-like text
+- Auto-linkifies any URLs found in the dumped values (e.g. output dataset URLs)
+
+**Implementation:** See `frontend/src/widgets/ProcessInfo.jsx`.
+
+### AEMModelSimulator
+
+Interactive editor for hand-building or editing synthetic AEM (airborne electromagnetic) resistivity models, for testing inversions against known models.
+
+**Features:**
+- Create a new synthetic flightline/model or load an existing one from a process's XYZ output
+- Canvas-based brush painting of resistivity values and terrain, with adjustable brush radius/sharpness and colormap
+- Add additional flightlines to a model, and save the edited model back out as an XYZ dataset
+
+**Implementation:** See `frontend/src/widgets/AEMModelSimulator/index.jsx` and its supporting dialogs/canvas components in the same directory.
+
+### InUseEditor
+
+Companion control panel for bulk-editing per-sounding, per-gate "in use" flags on AEM data, driven by lasso selections made in a `PlotView` pane's `ChannelPlot` layers.
+
+**Features:**
+- Enable/Disable/Clear action modes, selectable via buttons or keyboard shortcuts (E/D/C)
+- Undo last edit (Ctrl+Z) and save all pending in-memory diffs back to the datasets
+- Shows aggregate stats (gate-sounding pairs edited, across how many datasets)
+- Reads/writes edit state via `ProcessContext`'s `inMemoryDiffs`, `inUseAction`, `undoLastEdit`, `saveAllDiffs`
+
+**Implementation:** See `frontend/src/widgets/InUseEditor.jsx`.
+
+### PluginManager
+
+Table of installed frontend/backend plugins with enable/disable/upgrade controls.
+
+**Features:**
+- Lists plugins (bundled or remote) with latest version, enabled state, and whether an upgrade is available
+- Enable/disable/upgrade actions via `useEnablePlugin`/`useDisablePlugin`/`useUpgradePlugin` mutations
+- Points users at the `build_frontend_plugin` process type for adding new plugins
+- Changes take effect after a page reload
+
+**Implementation:** See `frontend/src/widgets/PluginManager.jsx`.
 
 ### PlotView
 
-Plotly-based scientific plotting with extensible element system.
+GPU/WebGL scientific plotting built on the `gladly-plot` npm package, with a pluggable layer-type registry. There is no Plotly involved anywhere in this pipeline.
 
 **Architecture:**
-- **Plot Elements Registry**: Pluggable element types
-- **Unit Matching**: Automatic axis assignment
-- **Dataset Integration**: Direct dataset loading
-- **Dynamic Traces**: Builds Plotly traces from data
+- A `gladly-plot` `Plot` instance (from `frontend/src/widgets/PlotView/index.jsx`) owns a `<canvas>`-backed regl/WebGL2 context and renders a config-driven set of layers
+- **Layer Type Registry**: Pluggable layer types register themselves with `registerLayerType(name, new LayerType({...}))` at module load time (side-effect imports)
+- **Config-driven layers**: The pane's `layoutConfig` (`{ transforms, layers, axes }`) is handed to `plot.update({ data, config })`; each entry in `layers` names a registered layer type plus its parameters
+- **Dataset Integration**: `ProcessContext`'s `datasetCollection` is converted to a `DataGroup` (`dc.toDataGroup()`) for gladly's built-in resolution; custom layer types instead read raw dataset objects directly off `plot._rawData` (see the `gladly 0.0.6 DataGroup/_children Pattern` notes in project memory for why)
+- **Picking & interaction**: `plot.on('mousemove'|'click', handler)` and `plot.pick(x, y)` drive the status bar and sounding-selection logic in `PlotView`
 
-**Plot Element Structure:**
+**Layer Type Structure:**
 
-Plot elements are defined in `frontend/src/widgets/PlotView/elements/` directory. Each element exports:
-- `x_unit` and `y_unit` - For axis matching
-- `parameters` - JSON Schema for configuration
-- `render()` - Function that returns Plotly trace object
+Layer types are defined in `frontend/src/widgets/PlotView/elements/` and registered with `gladly-plot`'s `registerLayerType`. Each one supplies:
+- `getAxisConfig(parameters)` - returns `{ xAxis, xAxisQuantityKind, yAxis, yAxisQuantityKind }` for axis assignment
+- `vert` / `frag` - GLSL (`#version 300 es`) vertex and fragment shader source strings
+- `schema(data)` - JSON Schema for the layer's own configurable parameters
+- `createLayer(regl, parameters, data, plot)` - builds the actual attribute arrays (`Float32Array`s) and returns one or more `{ attributes, uniforms, primitive }` draw calls
 
-**See:** `frontend/src/widgets/PlotView/elements/index.js` for the registry of all plot elements.
-
-**Plot Element `data_context`:**
-
-**IMPORTANT**: When a plot element's `get_schema()` method is called, the `data_context` parameter contains **all entries from ProcessContext**. This includes:
+For example, `frontend/src/widgets/PlotView/elements/FlightlinePlot.js` registers a `FlightlinePlot` layer type that plots `lon`/`lat` (or configurable) columns as points/lines, colored by a single RGB uniform-per-vertex:
 
 ```javascript
-{
-  processes,           // Array of all process objects
-  activeProcess,       // { processId, version } or null
-  datasets,           // Array of dataset objects (from useProcessOutputDatasets)
-  datasetObjects,     // Loaded dataset objects
-  fetchedData,        // Fetched dataset data
-  currentProject,     // Current project ID
-  // ... and all other ProcessContext values
-}
+import { LayerType, registerLayerType, AXIS_GEOMETRY } from 'gladly-plot';
+
+registerLayerType('FlightlinePlot', new LayerType({
+  name: 'FlightlinePlot',
+
+  getAxisConfig: (parameters) => ({
+    xAxis: parameters.xAxis ?? 'xaxis_bottom',
+    xAxisQuantityKind: 'epsg_4326_x',
+    yAxis: parameters.yAxis ?? 'yaxis_left',
+    yAxisQuantityKind: 'epsg_4326_y',
+  }),
+
+  vert: RGB_VERT,   // GLSL vertex shader
+  frag: RGB_FRAG,   // GLSL fragment shader
+
+  schema: (data) => ({
+    type: 'object',
+    properties: {
+      dataset:  { type: 'string', 'x-format': 'datasetPath' },
+      x_column: { type: 'string', default: 'lon' },
+      y_column: { type: 'string', default: 'lat' },
+      mode:     { type: 'string', enum: ['lines', 'markers', 'lines+markers'], default: 'markers' },
+      color:    { type: 'string', default: 'blue' },
+      xAxis:    { type: 'string', enum: X_AXES, default: 'xaxis_bottom' },
+      yAxis:    { type: 'string', enum: Y_AXES, default: 'yaxis_left'   },
+    },
+    required: ['dataset'],
+  }),
+
+  createLayer: function(regl, parameters, data, plot) {
+    const rawData     = plot?._rawData ?? data;
+    const dataset      = resolveDataPath(rawData, parameters.dataset);
+    const flightlines  = dataset?.flightlines;
+    if (!flightlines) return [];
+    // ... build Float32Array attributes from flightlines[x_column]/[y_column] ...
+    return [{ attributes: attribs, uniforms: { pointSize: 3.0 }, primitive: 'points' }];
+  },
+}));
 ```
 
-**To get dataset names in `get_schema()`**, extract them from process outputs:
+**See:** `frontend/src/widgets/PlotView/elements/index.js` for the registry of all layer types, and `frontend/src/widgets/PlotView/index.jsx` for how the `Plot` instance is created and driven.
 
-```javascript
-get_schema: (data_context = {}) => {
-  const processes = data_context.processes || [];
+**Widget-level `get_schema`/`get_default` vs. per-layer-type `schema`:**
 
-  // Extract all output dataset names from all processes
-  const datasetNames = [];
-  processes.forEach(proc => {
-    proc.versions?.forEach(ver => {
-      if (ver.outputs) {
-        datasetNames.push(...Object.keys(ver.outputs));
-      }
-    });
-  });
+These are two unrelated conventions that happen to share the word "schema" — don't conflate them:
 
-  return {
-    // ... schema with datasetNames in enum
+- **Widget-level `get_schema(data_context)` / `get_default(data_context)`** is a generic convention any widget component can opt into (as static functions on the component, like `title`). `Pane.jsx` and `TabSet.jsx` check `Widget.get_schema` — if present, a "Configure" (gear icon) action appears in the pane menu that opens a modal rendering a JSON Schema form (`CustomForm`) built from `Widget.get_schema(data_context)`, pre-filled from `Widget.get_default(data_context)` merged with the node's current data. Submitting the form calls `parentUpdate('replace', node.id, formData)`. Among the built-in widgets, only `PlotView` currently defines `get_schema`/`get_default`.
+
+  `data_context` is threaded from `ProcessContext` down through `App.jsx` → `LayoutProvider` (`<LayoutProvider ... data_context={processContext}>`) → `LayoutContext`, and `Pane`/`TabSet` read it via `useContext(LayoutContext)`. So it really does carry the full `ProcessContext` value — but `PlotView.get_schema` itself does **not** walk `data_context.processes`/`versions`/`outputs` to build a dataset-name enum. It calls into `gladly-plot` directly:
+
+  ```javascript
+  PlotView.get_schema = (data_context = {}) => {
+    // Pass null data so gladly emits x-format:'expression' schemas (no column enums);
+    // combobox widgets populate options from ProcessContext at runtime.
+    const rawGladlySchema = Plot.schema(null, data_context.layoutConfig);
+    // ...wraps/patches rawGladlySchema for rjsf compatibility...
+    return {
+      type: 'object',
+      properties: {
+        id:           { type: 'string', title: 'ID',          readOnly: true },
+        widget:       { type: 'string', title: 'Widget Type', readOnly: true },
+        layoutConfig: gladlySchemaRest,
+      },
+      required: ['layoutConfig'],
+    };
   };
-}
-```
 
-**❌ DON'T** use `data_context.datasets` array and map `d.dataset_name` - this is the old pattern.
+  PlotView.get_default = () => ({
+    layoutConfig: { transforms: [], layers: [], axes: {} },
+  });
+  ```
 
-**✅ DO** use `data_context.processes` and extract output names from `process.versions[x].outputs` keys.
+- **Per-layer-type `schema(data)`** (see `FlightlinePlot.js` above) is a separate, unrelated convention internal to `gladly-plot`'s `LayerType` — it describes that one layer type's own parameters (e.g. `dataset`, `x_column`, `color`) and has nothing to do with `ProcessContext` or `data_context`.
 
-**Adding a Plot Element:**
+**Adding a Layer Type:**
 
-1. Create new file in `frontend/src/widgets/PlotView/elements/`
-2. Export an object with `xaxis`, `yaxis`, `get_schema()`, and `render()` function
-3. Register in `frontend/src/widgets/PlotView/elements/index.js`
+1. Create a new file in `frontend/src/widgets/PlotView/elements/`
+2. Call `registerLayerType(name, new LayerType({ getAxisConfig, vert, frag, schema, createLayer }))`
+3. Import it as a side effect in `frontend/src/widgets/PlotView/elements/index.js`
 
 **See existing examples:**
 - `frontend/src/widgets/PlotView/elements/ChannelPlot.js`
 - `frontend/src/widgets/PlotView/elements/FlightlinePlot.js`
 - `frontend/src/widgets/PlotView/elements/ResistivityCurtain.js`
-
-### MapView
-
-Geographic visualization of survey data.
-
-**Features:**
-- Interactive map with layers
-- Display flight lines
-- Show data coverage
-- Geographic coordinate handling
 
 ## Widget State Management
 
@@ -223,15 +360,15 @@ Geographic visualization of survey data.
 Most widgets need access to process data:
 
 ```javascript
-import { useProcessContext } from './ProcessContext';
+import { useContext } from 'react';
+import { ProcessContext } from '../ProcessContext';
 
 function MyWidget() {
   const {
     processes,          // Array of all processes
     activeProcess,      // { processId, version } or null
     setActiveProcess,   // Function to set active process
-    createProcess,      // Function to create new process
-  } = useProcessContext();
+  } = useContext(ProcessContext);
 
   // Access full process data
   const process = processes.find(p => p.id === activeProcess?.processId);
@@ -291,36 +428,29 @@ function MyWidget() {
 
 ### Persistent Widget Configuration
 
-For configuration that should persist across sessions, use the layout node's data:
+For configuration that should persist across sessions (survive save/reload of the workspace), store it directly as extra fields on the layout node itself. `Pane.jsx` renders `<Widget parentUpdate={parentUpdate} {...node} />` — every field on the node object is spread in as a prop, and `parentUpdate` is how the widget writes changes back into the layout tree. `PlotView` is the built-in example of this: it keeps its per-pane config under a `layoutConfig` field on the node.
 
 ```javascript
-// In LayoutContext, each node can have custom data
+// A layout node is a plain object; any extra fields become widget props
 {
   id: "pane-123",
   widget: "PlotView",
-  data: {
-    plotElements: [
-      { type: "Line", params: { dataset: "..." } }
-    ]
+  layoutConfig: {
+    layers: [ { FlightlinePlot: { dataset: "..." } } ],
+    axes: {},
   }
 }
 
-// Access in widget:
-function PlotView({ nodeId }) {
-  const { getNode, updateNode } = useLayoutContext();
-  const node = getNode(nodeId);
-  const plotElements = node.data?.plotElements || [];
-
-  const addElement = (element) => {
-    updateNode(nodeId, {
-      data: {
-        ...node.data,
-        plotElements: [...plotElements, element]
-      }
-    });
+// Access in the widget:
+function PlotView({ id, widget, layoutConfig, parentUpdate, ...rest }) {
+  const updateConfig = (newConfig) => {
+    parentUpdate('replace', id, { id, widget, layoutConfig: newConfig, ...rest });
   };
+  // ...
 }
 ```
+
+Widgets that want a "Configure" (gear icon) action in the pane menu instead of (or in addition to) editing their own state directly can define static `get_schema(data_context)` / `get_default(data_context)` on the component — see the PlotView section above for the real convention `Pane.jsx`/`TabSet.jsx` use to drive that modal.
 
 ## Widget Communication
 
@@ -329,48 +459,54 @@ function PlotView({ nodeId }) {
 The primary communication mechanism is through the active process:
 
 ```javascript
+import { useContext } from 'react';
+import { ProcessContext } from '../ProcessContext';
+import { useCreateProcess } from '../datamodel/useQueries';
+
 // ProcessEditor: User creates/edits process
-const { setActiveProcess, createProcess } = useProcessContext();
-await createProcess(type, params);
-setActiveProcess({ processId: newId, version: 0 });
+const { setActiveProcess, invalidateProject } = useContext(ProcessContext);
+const createProcess = useCreateProcess();
+const newProcess = await createProcess.mutateAsync({ proc, projectId });
+await invalidateProject(projectId);
+setActiveProcess({ processId: newProcess.id, version: 1 });
 
 // FlowView: Shows visual feedback
-const { activeProcess } = useProcessContext();
+const { activeProcess } = useContext(ProcessContext);
 // Highlights active process node
 
 // PlotView: Displays active process outputs
-const { processes, activeProcess } = useProcessContext();
+const { processes, activeProcess } = useContext(ProcessContext);
 const outputs = processes.find(p => p.id === activeProcess.processId)
   ?.versions[activeProcess.version]?.outputs;
 ```
 
 ### Via Custom Context
 
-For widget-specific communication, create custom contexts:
+For widget-specific communication that doesn't belong in `ProcessContext`, create a custom context and provide it alongside the other app-level providers in `App.jsx`. `PlotGroupContext` (`frontend/src/PlotGroupContext.jsx`) is the real built-in example — it lets multiple `PlotView` instances share a `gladly-plot` `PlotGroup` so their pan/zoom stay linked:
 
 ```javascript
-// MapContext.js
-const MapContext = createContext();
+// PlotGroupContext.jsx
+import React, { createContext, useEffect, useRef } from 'react';
+import { PlotGroup } from 'gladly-plot';
 
-export function MapProvider({ children }) {
-  const [selectedLocation, setSelectedLocation] = useState(null);
-  return (
-    <MapContext.Provider value={{ selectedLocation, setSelectedLocation }}>
-      {children}
-    </MapContext.Provider>
-  );
+export const PlotGroupContext = createContext(null);
+
+export function PlotGroupProvider({ children }) {
+  const groupRef = useRef(null);
+  if (!groupRef.current) {
+    groupRef.current = new PlotGroup({}, { autoLink: true });
+  }
+  useEffect(() => () => { groupRef.current?.destroy(); groupRef.current = null; }, []);
+
+  const value = {
+    addPlot:    (name, plot) => groupRef.current?.add(name, plot),
+    removePlot: (name)       => groupRef.current?.remove(name),
+  };
+  return <PlotGroupContext.Provider value={value}>{children}</PlotGroupContext.Provider>;
 }
 
-// Use in multiple widgets
-function MapView() {
-  const { setSelectedLocation } = useContext(MapContext);
-  // ...
-}
-
-function LocationInfo() {
-  const { selectedLocation } = useContext(MapContext);
-  // ...
-}
+// Used inside PlotView:
+const { addPlot, removePlot } = useContext(PlotGroupContext);
 ```
 
 ## Best Practices
@@ -462,18 +598,18 @@ import styles from './MyWidget.module.css';
 
 ### Widget Props
 
-Widgets receive props from the layout system:
+`Pane.jsx` renders each widget as `<Widget parentUpdate={parentUpdate} {...node} />` — so a widget receives `parentUpdate` plus every field on its layout node spread in directly (at minimum `id` and `widget`, plus whatever custom fields the widget itself stores there, e.g. PlotView's `layoutConfig`). There is no `onClose`/`onPopout` — popout-to-new-window is not implemented anywhere in the current codebase, and pane removal goes through `parentUpdate('remove', id)` instead of a dedicated callback prop.
 
 ```javascript
-function MyWidget({ nodeId, onClose, onPopout }) {
-  // nodeId: Unique identifier for this pane
-  // onClose: Function to close this pane
-  // onPopout: Function to popout this pane to new window
+function MyWidget({ id, widget, parentUpdate, ...rest }) {
+  // id: unique identifier for this pane's layout node
+  // widget: this widget's registered name (e.g. "MyWidget")
+  // parentUpdate(action, id, newNode): 'replace' this node's data, or 'remove' it
+  // ...rest: any custom fields this widget has stored on its own node
 
   return (
     <div>
-      <button onClick={onClose}>Close Me</button>
-      <button onClick={onPopout}>Popout</button>
+      <button onClick={() => parentUpdate('remove', id)}>Close Me</button>
     </div>
   );
 }
@@ -502,22 +638,19 @@ function MyWidget() {
 
 ### Multiple Instances
 
-Widgets can be instantiated multiple times:
+Widgets can be instantiated multiple times — each occurrence is a separate layout node with its own `id`, rendered by its own `Pane`:
 
 ```javascript
-// Two PlotView widgets can show different plots
-// Each maintains its own state and configuration
-<Layout>
-  <Pane widget="PlotView" nodeId="plot-1" />
-  <Pane widget="PlotView" nodeId="plot-2" />
-</Layout>
+// Two PlotView leaf nodes in the layout tree, each with its own config
+{ id: "plot-1", widget: "PlotView", layoutConfig: { /* ... */ } }
+{ id: "plot-2", widget: "PlotView", layoutConfig: { /* ... */ } }
 ```
 
-Use `nodeId` to distinguish between instances:
+Since `id` and any custom fields are spread in as props (see Widget Props above), each instance naturally receives its own data:
 
 ```javascript
-function PlotView({ nodeId }) {
-  const config = loadConfig(nodeId);  // Load instance-specific config
+function PlotView({ id, layoutConfig, parentUpdate }) {
+  // layoutConfig is this instance's own config, already scoped by the layout tree
   // ...
 }
 ```

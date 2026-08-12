@@ -1,15 +1,17 @@
 import hashlib
 from dataclasses import dataclass
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Dict, Optional
+from typing import Dict
 
 from backend.config import settings
 from backend.database import get_db
 from backend.auth_deps import require_admin
 from backend.models.cluster import Cluster
 from backend.models.storage_backend import StorageBackend
+from backend.models.tos import TosVersion
+from backend.models.user import User
 from backend.services.cluster_providers import get_cluster_provider
 from backend.services.cluster_job_provisioning import ensure_cluster_job_ready
 from backend.services.storage_protocols import get_protocol_handler
@@ -302,15 +304,15 @@ async def cluster_register_callback(
 
 @dataclass
 class _TestBackend:
-    """Consistent .endpoint/.config shape for test_connection(backend), whether called against
-    a real ORM row (update path) or a not-yet-created one (create/standalone-test-button path)."""
-    endpoint: Optional[str]
+    """Consistent .config shape for test_connection(backend), whether called against a real ORM
+    row (update path) or a not-yet-created one (create/standalone-test-button path)."""
     config: Dict
 
 
 def _storage_backend_admin_dict(backend: StorageBackend) -> Dict:
     d = backend.to_dict()
-    d["config"] = mask_config(backend.config)
+    handler = get_protocol_handler(backend.protocol)
+    d["config"] = mask_config(backend.config, secret_keys=handler.SECRET_CONFIG_KEYS)
     return d
 
 
@@ -325,7 +327,7 @@ async def _test_and_apply_storage_connection(backend: StorageBackend, body: Dict
         try:
             config = resolve_config(submitted, stored)
             handler = get_protocol_handler(protocol)
-            await handler.test_connection(_TestBackend(backend.endpoint, config))
+            await handler.test_connection(_TestBackend(config))
         except HTTPException:
             raise
         except ValueError as e:
@@ -338,16 +340,12 @@ async def _test_and_apply_storage_connection(backend: StorageBackend, body: Dict
 
 def _apply_storage_generic_fields(backend: StorageBackend, body: Dict) -> None:
     """Only touches a column if its key is present in body — write-only-if-provided, same rule
-    _apply_generic_fields follows for clusters. Must run before
-    _test_and_apply_storage_connection, since test_connection needs the (possibly just-updated)
-    endpoint."""
+    _apply_generic_fields follows for clusters."""
     if "name" in body:
         name = (body.get("name") or "").strip()
         if not name:
             raise HTTPException(status_code=400, detail="name is required")
         backend.name = name
-    if "endpoint" in body:
-        backend.endpoint = body.get("endpoint") or None
     if "bucket_prefix" in body:
         prefix = (body.get("bucket_prefix") or "").strip()
         if not prefix:
@@ -421,9 +419,41 @@ async def admin_test_storage_backend_connection(body: Dict, auth=Depends(require
     try:
         config = resolve_config(body.get("config") or {}, stored)
         handler = get_protocol_handler(protocol)
-        await handler.test_connection(_TestBackend(body.get("endpoint"), config))
+        await handler.test_connection(_TestBackend(config))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Connection test failed: {e}")
     return {"ok": True}
+
+
+# ── Terms of Service versions ────────────────────────────────────────────────────────────────
+
+@router.get("/admin/tos-versions")
+async def admin_list_tos_versions(auth=Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    stmt = (
+        select(TosVersion, User.username)
+        .outerjoin(User, User.id == TosVersion.created_by)
+        .order_by(TosVersion.version.desc())
+    )
+    result = await db.execute(stmt)
+    return [
+        {**tos_version.to_dict(), "created_by_username": username}
+        for tos_version, username in result.all()
+    ]
+
+
+@router.post("/admin/tos-versions")
+async def admin_create_tos_version(body: Dict, auth=Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    body_text = (body.get("body") or "").strip()
+    if not body_text:
+        raise HTTPException(status_code=400, detail="body is required")
+
+    max_version_stmt = select(func.max(TosVersion.version))
+    max_version_result = await db.execute(max_version_stmt)
+    next_version = (max_version_result.scalar_one_or_none() or 0) + 1
+
+    tos_version = TosVersion(version=next_version, body=body_text, created_by=auth.user.id)
+    db.add(tos_version)
+    await db.commit()
+    return {**tos_version.to_dict(), "created_by_username": auth.user.username}

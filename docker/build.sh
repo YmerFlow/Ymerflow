@@ -148,8 +148,6 @@ spec:
         command: ["python3", "/app/update_bootstrap_environment.py",
                   "/schemas/process_schemas.json", "${ENV_NAME}", "${FULL_IMAGE}"]
         envFrom:
-        - configMapRef:
-            name: nagelfluh-backend-config
         - secretRef:
             name: nagelfluh-backend-secret
         volumeMounts:

@@ -32,17 +32,28 @@ nagelfluh/
 │   ├── models.py              # Database models
 │   ├── config.py              # Configuration
 │   └── alembic/               # Database migrations
-├── frontend/                   # React frontend
+├── frontend/                   # React frontend (Vite + Vitest)
 │   ├── src/
-│   │   ├── App.js             # Main app component
-│   │   ├── ProcessContext.js  # Process state management
-│   │   ├── FlowView.js        # Process graph widget
-│   │   ├── ProcessEditor.js   # Process editor widget
-│   │   ├── ProcessLog.js      # Log viewer widget
-│   │   ├── PlotView.js        # Plotting widget
-│   │   ├── MapView.js         # Map widget
-│   │   ├── flexout/           # Layout system
-│   │   └── jsoneditor/        # JSON Schema forms
+│   │   ├── App.jsx             # Main app component (widget registration)
+│   │   ├── ProcessContext.jsx  # Process state management
+│   │   ├── datamodel/          # api.js (axios client), useQueries.js (TanStack Query hooks),
+│   │   │                       #   dataset.js and friends
+│   │   ├── widgets/             # Pluggable UI widgets, one dir/file per widget:
+│   │   │   ├── FlowView/       # Process graph widget
+│   │   │   ├── PlotView/       # Plotting widget (gladly-based)
+│   │   │   ├── ProcessEditor.jsx
+│   │   │   ├── ProcessLog.jsx
+│   │   │   └── ...             # AEMModelSimulator/, EnvironmentView.jsx, etc.
+│   │   ├── flexout/            # Layout system
+│   │   ├── jsoneditor/         # JSON Schema forms
+│   │   ├── plugins/            # Frontend plugin loading/hook registries
+│   │   ├── clusterProviders/   # Per-cluster-type admin form components
+│   │   ├── storageProviders/   # Per-storage-backend-type admin form components
+│   │   └── AdminPage.jsx, AccountPage.jsx, AuthContext.jsx, ProjectMembersModal.jsx,
+│   │       ProjectExportModal.jsx, ClustersAdminPanel.jsx, StorageBackendsAdminPanel.jsx,
+│   │       WorkspaceSharingModal.jsx, WorkspaceMenu.jsx, InviteAcceptPage.jsx, ...
+│   │       # Top-level account/admin/workspace-sharing/plugin-management features —
+│   │       # see the relevant architecture/frontend docs, or read the source directly.
 │   ├── public/
 │   └── package.json
 ├── docker/                     # Docker images
@@ -86,14 +97,16 @@ distribution metadata, not source — re-run `pip install -e .` for those to tak
 
 ### API Endpoints
 
-Key endpoints:
+Key endpoints (all project-resource endpoints live under `/projects/{project_id}/...` — the
+`project_id` path segment accepts either a real project id (read/write, real membership required)
+or a publication id (read-only; see `docs/plans/done/publication-readonly-projects.md`)):
 - `GET /` - Health check
 - `GET /process-types` - List available process types with schemas
-- `POST /process` - Create new process
-- `GET /processes` - List all processes
-- `GET /process/{id}` - Get process details
-- `GET /datasets` - Search datasets
-- `GET /dataset/{id}` - Get dataset content
+- `POST /projects/{project_id}/process` - Create new process
+- `GET /projects/{project_id}/processes` - List processes in a project
+- `GET /projects/{project_id}/process/{id}` - Get process details
+- `GET /projects/{project_id}/datasets` - Search datasets
+- `GET /projects/{project_id}/dataset/{id}` - Get dataset content
 - `WS /ws/logs` - WebSocket for log streaming
 - `WS /ws/state` - WebSocket for state updates
 
@@ -186,18 +199,24 @@ async def user_processes(
 
 ### Testing Backend
 
+Backend testing is minimal and ad hoc — there's no `pytest.ini`/`conftest.py`/pytest section in
+`pyproject.toml`, and no test suite covering the API or models. What exists is a handful of
+standalone smoke-test scripts alongside the code they check, e.g.
+`backend/test_log_manager_integration.py` (`test_log_manager_smoke()` — verifies `LogManager`
+imports, instantiates, and its dedup/checkpoint logic behaves, without hitting a real database).
+
 ```bash
 cd backend
 
-# Run tests (TODO: Add tests)
-pytest
+# Run a smoke test directly
+python test_log_manager_integration.py
 
-# Run with coverage
-pytest --cov=backend tests/
-
-# Run specific test
-pytest tests/test_processes.py::test_create_process
+# Or under pytest (works even without a pytest config file)
+pytest test_log_manager_integration.py -v
 ```
+
+If you add real backend tests, prefer wiring up a proper pytest config (`pytest.ini` or a
+`[tool.pytest.ini_options]` section) rather than continuing the standalone-script pattern.
 
 ## Frontend Development
 
@@ -288,64 +307,50 @@ const {
 
 ### API Calls
 
-Centralized in `src/api.js`:
+**Do not write manual `fetch()` calls or ad hoc API objects.** Data fetching goes through
+TanStack Query hooks in `frontend/src/datamodel/useQueries.js` (e.g. `useProcesses`,
+`useSearchDatasets`, `useCreateProcess`), and all cache invalidation goes through the
+`ProcessContext` helpers (`invalidateProcess`, `invalidateProject`, `invalidateDatasets`) —
+never `queryClient.invalidateQueries()` directly. This is a hard rule; see CLAUDE.md's Data
+Access Patterns section.
 
-```javascript
-// api.js
-export const api = {
-  baseUrl: 'http://localhost:8000',
+Underneath those hooks, the actual HTTP client lives in `frontend/src/datamodel/api.js`: an
+axios instance plus one exported async function per endpoint (`getProcesses`, `createProcess`,
+`getDataset`, `searchDatasets`, ...), along with `API`/`ABSOLUTE_API`/`WS_API` (base URLs derived
+from `VITE_API_URL`) and `setAuthToken()`. You should rarely need to touch `api.js` directly —
+add a new exported function there only when adding a new hook in `useQueries.js` that needs it.
 
-  async fetchProcessTypes() {
-    const response = await fetch(`${this.baseUrl}/process-types`);
-    return response.json();
-  },
-
-  async createProcess(type, parameters, resources) {
-    const response = await fetch(`${this.baseUrl}/process`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, parameters, resources })
-    });
-    return response.json();
-  },
-};
-```
+See [Query Architecture](frontend/queries.md) for the complete hook/invalidation pattern.
 
 ### Testing Frontend
+
+The frontend uses [Vitest](https://vitest.dev/) (`npm test` runs `vitest`), not Jest/CRA. There
+are currently no `*.test.*` files anywhere under `frontend/src` — the test suite is empty. Unlike
+Jest, Vitest watches by default when run interactively in a terminal; `npm test` alone drops you
+into watch mode.
 
 ```bash
 cd frontend
 
-# Run tests
+# Run in watch mode (default interactive behavior)
 npm test
 
-# Run tests in watch mode
-npm test -- --watch
+# Run once and exit (e.g. for CI)
+npm test -- --run
 
-# Run tests with coverage
+# Run with coverage
 npm test -- --coverage
 
-# Run specific test file
-npm test MyWidget.test.js
+# Run a specific test file, once it exists
+npm test -- MyWidget.test.jsx
 ```
 
-**Example test:**
-
-```javascript
-// MyWidget.test.js
-import { render, screen } from '@testing-library/react';
-import MyWidget from './MyWidget';
-import { ProcessProvider } from './ProcessContext';
-
-test('renders widget title', () => {
-  render(
-    <ProcessProvider>
-      <MyWidget />
-    </ProcessProvider>
-  );
-  expect(screen.getByText(/My Widget/i)).toBeInTheDocument();
-});
-```
+When adding the first tests for a widget, follow Vitest's own conventions (`import { describe,
+it, expect } from 'vitest'`) and place the file next to the component it covers (e.g.
+`frontend/src/widgets/MyWidget.test.jsx`). `@testing-library/react` is not currently a
+dependency — if you want component-rendering tests, add it (`npm install --save-dev
+@testing-library/react`, with the user's approval per CLAUDE.md's package-installation rule)
+rather than assuming it's already available.
 
 ### Linting
 
@@ -494,18 +499,48 @@ JWT_SECRET_KEY=your-secret-key-here-change-in-production
 
 ### Backend Configuration
 
-Edit `backend/config.py`:
+`backend/config.py` defines a `pydantic_settings.BaseSettings` subclass, `Settings`, with typed
+fields and defaults; it's read from `config.env` (via `Config.env_file`) and instantiated once as
+the module-level `settings` object:
 
 ```python
-import os
+from pydantic_settings import BaseSettings
+from typing import List, Optional
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./nagelfluh.db")
-STORAGE_PROTOCOL = os.getenv("STORAGE_PROTOCOL", "s3")
-STORAGE_ENDPOINT = os.getenv("STORAGE_ENDPOINT", "")
-STORAGE_BUCKET_PREFIX = os.getenv("STORAGE_BUCKET_PREFIX", "nagelfluh-project-")
-K8S_NAMESPACE = os.getenv("K8S_NAMESPACE", "nagelfluh-jobs")
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key")
+class Settings(BaseSettings):
+    database_url: str = "sqlite:///./nagelfluh.db"
+
+    # Per-project storage — seed-only; see the comment in config.py for why runtime code
+    # doesn't read these directly anymore (routing goes through each project's StorageBackend row)
+    storage_protocol: str = "s3"
+    storage_endpoint: str = "https://localhost:9000"
+    storage_bucket_prefix: str = "nagelfluh-project-"
+    storage_tls_skip_verify: bool = False
+
+    jwt_secret_key: Optional[str] = None   # None => generated at startup, warns in logs
+    jwt_algorithm: str = "HS256"
+    access_token_expire_days: int = 30
+
+    cors_origins: List[str] = ["http://localhost:3000"]
+    backend_base_url: str = "http://localhost:8000"
+    frontend_base_url: str = "http://localhost:3000"
+
+    # ... plus SMTP, container registry, and plugin-npm-build settings — see config.py directly.
+
+    class Config:
+        env_file = "config.env"
+        env_file_encoding = "utf-8"
+        extra = "ignore"
+
+settings = Settings()
 ```
+
+Import `settings` from `backend.config` and use `settings.database_url`, etc. — don't call
+`os.getenv()` directly in application code.
+
+**Note:** `process_cost` and `initial_user_balance` still exist as fields on `Settings`, but
+billing has moved to a plugin — treat them as legacy/vestigial rather than active config unless
+you've confirmed something still reads them.
 
 ### Frontend Configuration
 

@@ -38,10 +38,11 @@ Dual-mode editor that changes based on whether a process is selected:
 1. **Select Process Type**: Choose from dropdown (e.g., "fft", "inversion")
 2. **Enter Process Name**: Give your process a meaningful name
 3. **Configure Resources**:
+   - **Cluster**: Choose which compute cluster runs the process, if more than one is available
    - **CPU**: 0.1 - 8 cores (default: 1)
    - **Memory**: 0.5 - 32 GB (default: 2 GB)
    - **Deadline**: 1 - 1440 minutes (default: 60 minutes)
-4. **View Cost Estimate**: See maximum possible cost
+4. **View Cost Estimate**: If billing is enabled, see the maximum possible cost
 5. **Fill Parameters**: Form fields based on process type
 6. **Submit**: Click to create and run process
 
@@ -77,13 +78,15 @@ Interactive scientific plotting:
 - **Multi-dataset**: Overlay multiple datasets
 - **Unit Matching**: Automatic axis assignment by units
 
-#### MapView - Geographic Visualization
+#### EnvironmentView - Manage Environments
 
-Display survey data on interactive maps:
+Lists every environment available in the current project:
 
-- **Flight Lines**: Visualize survey paths
-- **Data Coverage**: See spatial distribution
-- **Interactive**: Pan, zoom, click for details
+- **Table view**: Name, Docker image, creator, and creation date for each environment
+- **Details**: Click a row to see full details, including packages and process types for
+  environments built from a process
+- **Creating environments**: Use ProcessEditor to run a "create_environment" process (see
+  Creating Custom Environments below)
 
 ### Layout Customization
 
@@ -103,24 +106,42 @@ Click **⧉** button in pane header to open in separate window (great for multi-
 
 #### Changing Widget Type
 
-Use dropdown in pane header to switch widget (e.g., PlotView → MapView).
+Use dropdown in pane header to switch widget (e.g., PlotView → EnvironmentView).
 
 #### Closing Panes
 
 Click **×** button in pane header.
 
+#### Workspaces - Saving and Sharing Layouts
+
+A pane layout can be saved as a named **workspace** so you and your collaborators can return to
+it later:
+
+- **Save As New Workspace...**: From the Workspaces menu, save the current layout under a new
+  name
+- **Save**: Once a workspace is loaded, save your changes as a new version of it — older
+  versions stay available from a version dropdown next to its name
+- **Load a workspace**: Click a workspace's name in the Workspaces menu to switch to it, or pick
+  an older version from its dropdown
+- **Publish Workspaces...**: Mark one of your workspaces as public so it appears in the public
+  gallery for other users to find
+- **Public Workspaces...**: Search the public gallery and fork any published workspace into your
+  current project as a starting point for your own layout
+
 ## Creating and Running Processes
 
 ### Process Lifecycle
 
-1. **Create Process**: Define parameters and resources
-2. **Estimation**: System calculates maximum cost
-3. **Validation**: Checks balance and parameter schema
-4. **Hold Funds**: Reserves maximum possible cost
-5. **Queuing**: Kueue queues job until resources available
-6. **Execution**: Kubernetes pod runs process, streams logs
-7. **Completion**: Actual cost charged, held funds released
-8. **Outputs**: Datasets registered and available for visualization
+1. **Create Process**: Define parameters, resources, and (if more than one is available) the
+   cluster to run on
+2. **Validation**: Checks the parameters against the process type's schema
+3. **Billing check** (only if a billing plugin is enabled): Estimates the maximum possible cost,
+   checks your balance, and holds the estimated amount
+4. **Queuing**: Kueue queues the job until resources are available on the selected cluster
+5. **Execution**: Kubernetes pod runs the process, streams logs
+6. **Completion** (if billing is enabled): You're charged the actual cost, and the rest of the
+   hold is released
+7. **Outputs**: Datasets registered and available for visualization
 
 To stop a process before it finishes, click the **Cancel** button in ProcessEditor while the version is shown as pending or running. The Kubernetes job is deleted immediately and the version is marked as failed.
 
@@ -137,6 +158,11 @@ To stop a process before it finishes, click the **Cancel** button in ProcessEdit
 3. **Name your process**: Enter descriptive name (e.g., "FFT Analysis - Line 1")
 
 4. **Configure resources**:
+
+   **Cluster** (if more than one is available):
+   - Choose which compute cluster runs the process
+   - Each cluster may have its own CPU, memory, and runtime limits — the sliders below adjust to
+     match the selected cluster
 
    **CPU Cores**:
    - 0.1 cores: Light processing
@@ -155,9 +181,8 @@ To stop a process before it finishes, click the **Cancel** button in ProcessEdit
    - Be generous - unused time doesn't cost extra
    - Default: 60 minutes
 
-5. **Review cost estimate**: Shows maximum possible cost based on deadline
-   - Actual cost will be less (based on actual runtime)
-   - Example: 1 core, 2 GB, 60 min → ~$0.0024 max
+5. **Review cost estimate** (if billing is enabled): Shows the maximum possible cost based on
+   the deadline — the actual cost, charged once the process finishes, will be less
 
 6. **Fill in parameters**:
    - Parameters depend on process type
@@ -216,10 +241,6 @@ Datasets are output files from processes. Each process can produce multiple data
 - Select dataset from searchable dropdown
 - Visualize immediately
 
-**In MapView**:
-- Select geographic datasets
-- Overlay on map
-
 ### Dataset Search
 
 When selecting datasets in forms:
@@ -276,41 +297,28 @@ kubectl get workloads -n nagelfluh-jobs
 
 ## Billing and Costs
 
-### How Billing Works
+Billing is an optional, pluggable feature. If your Nagelfluh installation has a billing plugin
+enabled, you'll see cost estimates and balance information when creating and running processes.
+If it doesn't, this section doesn't apply — processes simply run.
 
-YmerFlow uses a **hold/release** billing model to ensure fair resource pricing:
+### How It Works
 
-1. **Process Creation**:
-   - System calculates **maximum possible cost** (deadline × resources)
-   - Checks your account balance
-   - If sufficient: Creates **HOLD** transaction (reserves funds)
-   - If insufficient: Rejects process creation
+When a billing plugin is active:
 
-2. **Process Execution**:
-   - Pod runs in Kubernetes cluster
-   - Uses resources (CPU, memory)
-   - Streams logs to UI
+- **Before running**: The system estimates the maximum possible cost for a process (based on
+  the requested resources and deadline) and checks that your account balance can cover it
+- **While running**: The estimated amount is held against your balance
+- **After completion**: You're charged the actual cost, based on actual runtime and resources
+  used, and any unused portion of the hold is released back to your balance
 
-3. **Process Completion**:
-   - System calculates **actual cost** (actual runtime × resources used)
-   - Creates **DEBIT** transaction (charges actual cost)
-   - Creates **RELEASE** transaction (frees remaining held funds)
-   - Updates account balance
+Exact pricing, plans, and top-up options depend on how your installation's billing plugin is
+configured — check your account page for current rates and balance.
 
-### Cost Formula
+### Viewing Balance and Transactions
 
-```
-Max Cost = (CPU cores × $0.0001/minute) + (Memory GB × $0.00002/minute) × Deadline
-Actual Cost = (CPU cores × $0.0001/minute) + (Memory GB × $0.00002/minute) × Actual Runtime
-```
-
-### Example Costs
-
-| Configuration | Deadline | Max Cost | 5-second Runtime | 60-minute Runtime |
-|---------------|----------|----------|------------------|-------------------|
-| 1 core, 2 GB  | 60 min   | $0.0024  | ~$0.0006         | $0.0024           |
-| 4 cores, 8 GB | 120 min  | $0.0384  | ~$0.0024         | $0.0192           |
-| 8 cores, 16 GB| 240 min  | $0.1536  | ~$0.0048         | $0.0768           |
+If billing is enabled, your account page shows your current balance, plan usage, and a full
+transaction history (top-ups, holds, charges, releases, and subscription fees). Clicking a
+transaction that's linked to a process takes you to that process.
 
 ### Tips for Managing Costs
 
@@ -320,43 +328,80 @@ Actual Cost = (CPU cores × $0.0001/minute) + (Memory GB × $0.00002/minute) × 
 4. **Reuse results**: Datasets persist - don't re-run unnecessarily
 5. **Test with small data**: Validate workflow before processing full datasets
 
-### Viewing Balance and Transactions
-
-(UI features coming soon)
-
-- View current balance
-- See transaction history
-- Filter by transaction type (HOLD, DEBIT, RELEASE)
-- Download billing statements
-
 ## Managing Projects and Environments
 
 ### Projects
 
 Each project has:
-- **Isolated storage bucket**: Per-project S3/GCS bucket
+- **Isolated storage**: Its own storage bucket, on a backend you choose when you create the
+  project
 - **Separate processes**: Processes don't cross projects
 - **Dedicated credentials**: Scoped IAM permissions
-- **Independent billing**: Track costs per project
+- **Independent billing**: Track costs per project (if billing is enabled)
+
+#### Creating a Project
+
+From the project dropdown, choose "Create New Project...":
+
+1. **Name the project**
+2. **Choose a storage backend**: If your installation offers more than one place to store
+   project data, pick one here
+3. **Optionally import from an export**: Attach a previously exported project zip to seed the
+   new project with its processes, datasets, and uploads instead of starting empty
+
+### Project Membership
+
+Projects can have multiple collaborators. From "Manage Members..." in the project dropdown:
+
+- **Invite a collaborator**: Create an invite link, optionally tied to an email address, and
+  share it. Anyone who opens the link and accepts it joins the project
+- **Pending Invites**: See and cancel invites that haven't been accepted yet
+- **Members**: See everyone who currently has access to the project
+- **Leave a project**: Remove yourself from a project you no longer need access to
+
+### Publications - Read-Only Sharing
+
+A publication is a read-only link into a project — anyone who opens it can view the project's
+processes and datasets, but can never make changes. Publications are created from the
+"Publications" tab in "Manage Members...":
+
+- **Create a publication**: Optionally make it findable in every user's Projects list, and
+  optionally allow anonymous access (no login required)
+- **Copy the link**: Share it with anyone who needs to see the project's results
+- **Delete a publication**: Revokes the link immediately
+
+### Project Export and Import
+
+"Export Project..." in the project dropdown packs a project's processes, versions, output
+datasets, uploads, and tags into a downloadable zip archive. Attach that zip when creating a new
+project (see Creating a Project above) to seed it with the same data — the import only ever
+affects the new project, never the original.
 
 ### Environments
 
 Environments define the available process types and Docker images:
 
 - **Bootstrap**: Default environment with basic process types
-- **Custom environments**: Created via "create_environment" process
+- **Custom environments**: Created via a "create_environment" process
   - Define custom Docker images
   - Install specific libraries
   - Configure environment variables
 
+Use the EnvironmentView widget to browse the environments available in a project and see
+details for each one.
+
 ### Creating Custom Environments
 
-(Coming soon: Process-based environment builder)
+1. Run a "create_environment" process
+2. Specify a base Docker image, and any Python packages or extra Dockerfile instructions needed
+3. System builds and pushes the Docker image
+4. New environment appears in the environment dropdown
 
-1. Run "create_environment" process
-2. Specify base image and dependencies
-3. System builds Docker image
-4. New environment appears in dropdown
+### Administration
+
+If you're an administrator, additional panels are available for managing clusters, storage
+backends, and installed plugins — look for the admin link in the navigation once signed in with
+an administrator account.
 
 ## Troubleshooting
 
@@ -422,13 +467,14 @@ Environments define the available process types and Docker images:
 
 ### Out of Balance
 
-**Cause**: Insufficient funds for process creation
+**Cause**: Insufficient funds for process creation (only applies if your installation has
+billing enabled)
 
 **Solutions**:
-1. Check current balance (UI coming soon)
-2. Contact administrator to add funds
+1. Check your current balance and transaction history on your account page
+2. Top up your balance, or contact your administrator to add funds
 3. Reduce resource requirements or deadline
-4. Delete unnecessary processes to free held funds (if cancelled)
+4. Cancel a queued or running process to release its held funds back to your balance
 
 ## Best Practices
 
@@ -457,7 +503,8 @@ Environments define the available process types and Docker images:
 - **Use FlowView**: Arrange nodes to show workflow clearly
 - **Version control**: Create new process versions rather than deleting
 - **Document decisions**: Use process names to indicate variations
-- **Save layouts**: Layout persists in browser
+- **Save layouts**: Save your pane layout as a workspace so you can return to it later or share
+  it with collaborators (see Workspaces)
 
 ### Performance Tips
 
@@ -498,6 +545,10 @@ Environments define the available process types and Docker images:
 - **Project**: Isolated workspace with own storage and billing
 - **Widget**: UI component (FlowView, ProcessEditor, etc.)
 - **Pane**: Container for a widget in the layout
+- **Workspace**: A saved, versioned pane layout that can be reloaded, shared, and forked
+- **Publication**: A read-only, shareable link into a project
+- **Invite**: A link used to add a collaborator to a project
+- **Cluster**: A Kubernetes cluster processes can run on; an installation may offer more than one
 - **Kueue**: Job queuing system that manages cluster resources
 - **Pod**: Kubernetes container that runs a process
 - **AEM**: Airborne Electromagnetic (geophysical survey method)

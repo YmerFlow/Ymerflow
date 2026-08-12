@@ -23,7 +23,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv("config.env")
 
 # Import models
-from backend.models.workspace import Workspace
+from backend.models.workspace import Workspace, WorkspaceVersion
+
+DEFAULT_PROJECT_ID = "default-project-00000000-0000-0000-0000-000000000000"
 
 # Get database URL from environment
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./nagelfluh.db")
@@ -71,8 +73,8 @@ def get_workspace(workspace_id: str, pretty: bool):
             click.echo(f"Error: Workspace '{workspace_id}' not found", err=True)
             sys.exit(1)
 
-        # Convert to dictionary
-        workspace_data = ws.to_dict(include_layout=True)
+        # Convert to dictionary (includes full version history)
+        workspace_data = ws.to_dict()
 
         # Output JSON
         if pretty:
@@ -88,8 +90,13 @@ def get_workspace(workspace_id: str, pretty: bool):
 @click.argument("workspace_id")
 @click.argument("json_input", type=click.File("r"), default="-")
 @click.option("--title", help="Override the title from JSON")
-def save_workspace(workspace_id: str, json_input, title: str):
-    """Save a new workspace from JSON definition
+@click.option("--project", "project_id", default=DEFAULT_PROJECT_ID,
+              help="Project ID the workspace belongs to (only used when creating a new workspace)")
+def save_workspace(workspace_id: str, json_input, title: str, project_id: str):
+    """Save a workspace from a JSON definition
+
+    Appends a new version to an existing workspace, or creates a new workspace (version 1)
+    if the id does not yet exist.
 
     Args:
         workspace_id: The ID for the workspace
@@ -112,17 +119,19 @@ def save_workspace(workspace_id: str, json_input, title: str):
         existing = session.query(Workspace).filter(Workspace.id == workspace_id).first()
 
         if existing:
-            # Update existing
+            # Append a new version (never overwrites prior layouts)
             existing.title = workspace_title
-            existing.layout = layout
-            click.echo(f"Updated workspace '{workspace_id}'")
+            next_version = max((v.version for v in existing.versions), default=0) + 1
+            session.add(WorkspaceVersion(workspace_id=existing.id, version=next_version, layout=layout))
+            click.echo(f"Added version {next_version} to workspace '{workspace_id}'")
         else:
-            # Create new
+            # Create new workspace with its version-1 layout
             ws = Workspace(
                 id=workspace_id,
                 title=workspace_title,
-                layout=layout
+                project_id=project_id,
             )
+            ws.versions.append(WorkspaceVersion(version=1, layout=layout))
             session.add(ws)
             click.echo(f"Created workspace '{workspace_id}'")
 

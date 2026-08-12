@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useMemo, useState, useEffect, useContext, useReducer } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useProcesses, useEnvironments, useProcessOutputDatasets, useProjects, useCreateProcess } from "./datamodel/useQueries";
+import { useProcesses, useEnvironments, useProcessOutputDatasets, useProjects, useCreateProcess, useWorkspace } from "./datamodel/useQueries";
 import { loadDataset, DatasetCollectionAdapter } from './datamodel/dataset';
 import XYZ from './datamodel/libaarhusxyz';
 import { useWebSocket } from './hooks/useWebSocket';
@@ -90,11 +90,12 @@ function inUseDiffReducer(state, action) {
 const EMPTY_ARRAY = [];
 
 // Helper to parse URL pathname into params
-// Expected format: /app/w/:workspace/p/:project/pr/:process/v/:version/part/:part/s/:sounding
+// Expected format: /app/w/:workspace/wv/:workspaceVersion/p/:project/pr/:process/v/:version/part/:part/s/:sounding
 // All segments are optional
 function parseUrlParams(pathname) {
   const params = {
     workspace: null,
+    workspaceVersion: null,
     project: null,
     process: null,
     version: null,
@@ -110,6 +111,9 @@ function parseUrlParams(pathname) {
     const segment = segments[i];
     if (segment === 'w' && i + 1 < segments.length) {
       params.workspace = segments[i + 1];
+      i++;
+    } else if (segment === 'wv' && i + 1 < segments.length) {
+      params.workspaceVersion = parseInt(segments[i + 1], 10);
       i++;
     } else if (segment === 'p' && i + 1 < segments.length) {
       params.project = segments[i + 1];
@@ -133,11 +137,14 @@ function parseUrlParams(pathname) {
 }
 
 // Helper to build URL path from params
-function buildUrlPath(workspace, project, process, version, part, sounding) {
+export function buildUrlPath(workspace, workspaceVersion, project, process, version, part, sounding) {
   let path = '/app';
 
   if (workspace) {
     path += `/w/${workspace}`;
+    if (workspaceVersion !== null && workspaceVersion !== undefined) {
+      path += `/wv/${workspaceVersion}`;
+    }
     if (project) {
       path += `/p/${project}`;
       if (process) {
@@ -169,6 +176,7 @@ export function ProcessProvider({ children }) {
 
   // Extract values from URL - memoize objects to prevent unnecessary re-renders
   const selectedEnvironment = urlParams.workspace;
+  const selectedEnvironmentVersion = urlParams.workspaceVersion;
   const currentProject = urlParams.project;
   const activeProcess = useMemo(() =>
     urlParams.process ? { processId: urlParams.process, version: urlParams.version } : null,
@@ -177,9 +185,12 @@ export function ProcessProvider({ children }) {
   const currentPart = urlParams.part || "all";
   const currentSounding = urlParams.sounding !== null ? urlParams.sounding : 0;
 
-  const { data: projects = EMPTY_ARRAY, isLoading: projectsLoading, error: projectsError } = useProjects();
+  const { data: projects = EMPTY_ARRAY, isLoading: projectsLoading, error: projectsError } = useProjects(currentProject);
   const { data: processes = EMPTY_ARRAY, isLoading, error: processesError, refetch } = useProcesses(currentProject);
   const { data: environments = EMPTY_ARRAY, isLoading: environmentsLoading, error: environmentsError } = useEnvironments();
+  // Needed by setCurrentProject below to decide whether the currently-selected workspace
+  // (which may be owned by a different project, or public) should carry across a project switch.
+  const { data: currentWorkspace } = useWorkspace(selectedEnvironment);
 
   // InUse diff state
   const [inUseDiffState, dispatchInUseDiff] = useReducer(inUseDiffReducer, { diffs: {}, history: {} });
@@ -226,30 +237,36 @@ export function ProcessProvider({ children }) {
   }, [currentProject, projects, addMessage]);
 
   // Setter functions that update the URL
-  const setSelectedEnvironment = useCallback((workspace) => {
-    const path = buildUrlPath(workspace, currentProject, activeProcess?.processId, activeProcess?.version, currentPart === "all" ? null : currentPart, currentSounding);
+  const setSelectedEnvironment = useCallback((workspace, workspaceVersion = null) => {
+    const path = buildUrlPath(workspace, workspaceVersion, currentProject, activeProcess?.processId, activeProcess?.version, currentPart === "all" ? null : currentPart, currentSounding);
     navigate(path);
   }, [navigate, currentProject, activeProcess, currentPart, currentSounding]);
 
   const setCurrentProject = useCallback((project) => {
-    const path = buildUrlPath(selectedEnvironment, project, null, null, null, null);
+    // A public workspace's identity is independent of "current project", so it stays open
+    // across a switch. A private workspace has no meaning outside its owning project, so it's
+    // dropped rather than left stranded pointing at a project that doesn't have it.
+    const [carryWorkspace, carryWorkspaceVersion] = currentWorkspace?.is_public
+      ? [selectedEnvironment, selectedEnvironmentVersion]
+      : [null, null];
+    const path = buildUrlPath(carryWorkspace, carryWorkspaceVersion, project, null, null, null, null);
     navigate(path);
-  }, [navigate, selectedEnvironment]);
+  }, [navigate, selectedEnvironment, selectedEnvironmentVersion, currentWorkspace]);
 
   const setActiveProcess = useCallback((process) => {
-    const path = buildUrlPath(selectedEnvironment, currentProject, process?.processId, process?.version, null, null);
+    const path = buildUrlPath(selectedEnvironment, selectedEnvironmentVersion, currentProject, process?.processId, process?.version, null, null);
     navigate(path);
-  }, [navigate, selectedEnvironment, currentProject]);
+  }, [navigate, selectedEnvironment, selectedEnvironmentVersion, currentProject]);
 
   const setCurrentPart = useCallback((part) => {
-    const path = buildUrlPath(selectedEnvironment, currentProject, activeProcess?.processId, activeProcess?.version, part === "all" ? null : part, null);
+    const path = buildUrlPath(selectedEnvironment, selectedEnvironmentVersion, currentProject, activeProcess?.processId, activeProcess?.version, part === "all" ? null : part, null);
     navigate(path);
-  }, [navigate, selectedEnvironment, currentProject, activeProcess]);
+  }, [navigate, selectedEnvironment, selectedEnvironmentVersion, currentProject, activeProcess]);
 
   const setCurrentSounding = useCallback((sounding) => {
-    const path = buildUrlPath(selectedEnvironment, currentProject, activeProcess?.processId, activeProcess?.version, currentPart === "all" ? null : currentPart, sounding);
+    const path = buildUrlPath(selectedEnvironment, selectedEnvironmentVersion, currentProject, activeProcess?.processId, activeProcess?.version, currentPart === "all" ? null : currentPart, sounding);
     navigate(path);
-  }, [navigate, selectedEnvironment, currentProject, activeProcess, currentPart]);
+  }, [navigate, selectedEnvironment, selectedEnvironmentVersion, currentProject, activeProcess, currentPart]);
 
   // Centralized cache invalidation helpers - THE ONLY WAY to invalidate queries in the app
   const invalidateHelpers = useMemo(() => ({
@@ -395,7 +412,7 @@ export function ProcessProvider({ children }) {
   const process = activeProcess ? processes.find(p => p.id === activeProcess.processId) : null;
   const version = activeProcess?.version;
 
-  const { data: datasets = EMPTY_ARRAY, isLoading: datasetsQueryLoading } = useProcessOutputDatasets(process, version);
+  const { data: datasets = EMPTY_ARRAY, isLoading: datasetsQueryLoading } = useProcessOutputDatasets(process, version, currentProject);
 
   // State for dataset objects and data - use stable initial values
   const [datasetObjects, setDatasetObjects] = useState(INITIAL_DATASET_OBJECTS);
@@ -411,7 +428,7 @@ export function ProcessProvider({ children }) {
 
       for (const dataset of datasets) {
         try {
-          const datasetObj = await loadDataset(dataset.id);
+          const datasetObj = await loadDataset(dataset.id, currentProject);
           newDatasetObjects[dataset.dataset_name] = datasetObj;
         } catch (error) {
           console.error(`Failed to load dataset ${dataset.dataset_name}:`, error);
@@ -434,7 +451,7 @@ export function ProcessProvider({ children }) {
       setDatasetObjects(INITIAL_DATASET_OBJECTS);
       setDatasetsLoading(false);
     }
-  }, [datasets, addMessage]);
+  }, [datasets, addMessage, currentProject]);
 
   // Fetch data for current part whenever datasetObjects or currentPart changes
   useEffect(() => {
@@ -482,15 +499,6 @@ export function ProcessProvider({ children }) {
     }
   }, [projects, currentProject, setCurrentProject, location.pathname]);
 
-  // Auto-select latest environment if none selected (only on /app routes)
-  React.useEffect(() => {
-    if (!selectedEnvironment && environments.length > 0 && location.pathname.startsWith('/app')) {
-      // Select the last environment (most recently created)
-      const latestEnv = environments[environments.length - 1];
-      setSelectedEnvironment(latestEnv.id);
-    }
-  }, [environments, selectedEnvironment, setSelectedEnvironment, location.pathname]);
-
   const contextValue = useMemo(
     () => ({
       projects,
@@ -508,6 +516,7 @@ export function ProcessProvider({ children }) {
       currentPart,
       setCurrentPart,
       selectedEnvironment,
+      selectedEnvironmentVersion,
       setSelectedEnvironment,
       environments,
       environmentsLoading,
@@ -547,6 +556,7 @@ export function ProcessProvider({ children }) {
       currentPart,
       setCurrentPart,
       selectedEnvironment,
+      selectedEnvironmentVersion,
       setSelectedEnvironment,
       environments,
       environmentsLoading,

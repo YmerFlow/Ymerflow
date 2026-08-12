@@ -60,7 +60,7 @@ async def get_allowed_clusters(db, user, project_id=None, resource_requests=None
     empty union means no clusters are allowed, not a fallback to "all active".
     """
     if hooks.any_registered("select_clusters"):
-        allowed_ids = set(hooks.run.select_clusters(db, user, project_id, resource_requests))
+        allowed_ids = set(await hooks.run_async.select_clusters(db, user, project_id, resource_requests))
         stmt = select(Cluster).where(Cluster.id.in_(allowed_ids), Cluster.active == True)
     else:
         stmt = select(Cluster).where(Cluster.active == True)

@@ -31,13 +31,7 @@ async def list_environments(
     result = await db.execute(stmt)
     environments = result.scalars().all()
 
-    if include_schemas:
-        return [e.to_dict() for e in environments]
-    else:
-        return [
-            {**e.to_dict(), "process_types": list((e.process_types or {}).keys())}
-            for e in environments
-        ]
+    return [e.to_dict(include_schemas=include_schemas) for e in environments]
 
 
 @router.get("/{env_id}/process-types", summary="Get all process type schemas for an environment")

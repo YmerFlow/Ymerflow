@@ -107,7 +107,7 @@ export default function ProcessEditor() {
   // Sync all state from process data when active process/version changes
   useEffect(() => {
     if (!process || !versionObj) return;
-    setLocalEnvironment(process.environment_id);
+    setLocalEnvironment(process.environment?.id);
     setLocalType(process.type);
     setFormData(versionObj.parameters || {});
     setSelectedTags(versionObj.tags || []);
@@ -117,7 +117,7 @@ export default function ProcessEditor() {
       setMemoryGb(parseFloat(versionObj.resource_requests.memory ?? "2Gi"));
     }
     if (versionObj.deadline_seconds != null) setDeadlineMinutes(versionObj.deadline_seconds / 60);
-    setClusterId(versionObj.cluster_id ?? null);
+    setClusterId(versionObj.cluster?.id ?? null);
   }, [activeProcess?.processId, activeProcess?.version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-generate name when type changes in new-process mode
@@ -162,9 +162,9 @@ export default function ProcessEditor() {
       createProcessMutation.mutate({
         proc: {
           id: process.id, name: process.name, type: localType,
-          environment_id: localEnvironment, params: cleanedData,
+          environment: { id: localEnvironment }, params: cleanedData,
           resource_requests: resourceRequests, deadline_seconds: deadlineMinutes * 60,
-          cluster_id: clusterId,
+          cluster: clusterId ? { id: clusterId } : null,
         },
         projectId: currentProject
       }, {
@@ -178,15 +178,16 @@ export default function ProcessEditor() {
     } else {
       createProcessMutation.mutate({
         proc: {
-          name: processName, type: localType, environment_id: localEnvironment,
+          name: processName, type: localType, environment: { id: localEnvironment },
           params: cleanedData, resource_requests: resourceRequests,
-          deadline_seconds: deadlineMinutes * 60, cluster_id: clusterId, inputs: [], outputs: []
+          deadline_seconds: deadlineMinutes * 60, cluster: clusterId ? { id: clusterId } : null,
+          inputs: [], outputs: []
         },
         projectId: currentProject
       }, {
         onSuccess: async (newProcess) => {
           await Promise.all(selectedTags.map(tag =>
-            addVersionTagMutation.mutateAsync({ processId: newProcess.id, version: 1, tagId: tag.id })
+            addVersionTagMutation.mutateAsync({ processId: newProcess.id, version: 1, tagId: tag.id, projectId: currentProject })
           ));
           await invalidateProject();
           setActiveProcess({ processId: newProcess.id, version: 1 });
@@ -215,7 +216,7 @@ export default function ProcessEditor() {
                 variant="outline-danger" size="sm"
                 disabled={cancelProcessMutation.isPending}
                 onClick={() => cancelProcessMutation.mutate(
-                  { processId: process.id, version: activeProcess.version },
+                  { processId: process.id, version: activeProcess.version, projectId: currentProject },
                   { onSuccess: () => invalidateProject(), onError: () => alert("Failed to cancel process") }
                 )}
               >
@@ -268,7 +269,7 @@ export default function ProcessEditor() {
           </h3>
           <Card>
             <Card.Body>
-              <div className="mb-2"><strong>Cluster:</strong> {selectedCluster?.name ?? "—"}</div>
+              <div className="mb-2"><strong>Cluster:</strong> {(isExisting && !showResourceModal ? versionObj.cluster?.name : selectedCluster?.name) ?? "—"}</div>
               <div className="mb-2"><strong>CPU:</strong> {cpuCores} cores</div>
               <div className="mb-2"><strong>Memory:</strong> {memoryGb} GB</div>
               <div className="mb-2"><strong>Deadline:</strong> {deadlineMinutes} minutes</div>

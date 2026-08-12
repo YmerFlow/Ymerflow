@@ -1,10 +1,10 @@
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import { ProcessContext } from '../ProcessContext';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { API, WS_API } from '../datamodel/api';
+import { WS_API, getProcessLogs } from '../datamodel/api';
 
 function ProcessLog() {
-  const { activeProcess, processes } = useContext(ProcessContext);
+  const { activeProcess, processes, currentProject } = useContext(ProcessContext);
   const [logs, setLogs] = useState({}); // Changed to object keyed by timestamp
   const [state, setState] = useState(null);
   const [shouldStreamLogs, setShouldStreamLogs] = useState(false);
@@ -70,8 +70,7 @@ function ProcessLog() {
 
     // If not streaming, fetch logs via REST API
     if (!shouldStream) {
-      fetch(`${API}/process/${processId}/logs?version=${version}`)
-        .then(res => res.json())
+      getProcessLogs(processId, version, currentProject)
         .then(data => {
           if (Array.isArray(data)) {
             // Convert array to object keyed by timestamp
@@ -89,7 +88,7 @@ function ProcessLog() {
           setLogs({});
         });
     }
-  }, [processId, version, processes]); // Only depend on processId, version, and processes
+  }, [processId, version, processes, currentProject]); // Only depend on processId, version, processes, currentProject
 
   // WebSocket for live log streaming with auto-reconnect
   useWebSocket(

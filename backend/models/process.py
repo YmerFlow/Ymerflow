@@ -64,11 +64,14 @@ class Process(Base):
             "id": self.id,
             "name": self.name,
             "type": self.type,
-            "environment_id": self.environment_id,
+            # minimal=True: only the process's own environment id/name are ever
+            # consumed by the frontend — not worth shipping docker_image/process_id/
+            # process_types (even just names) on every process.
+            "environment": self.environment.to_dict(minimal=True) if self.environment else None,
             "project_id": self.project_id,
             "flow_x": self.flow_x,
             "flow_y": self.flow_y,
-            "versions": [v.to_dict() for v in sorted(self.versions, key=lambda x: x.version)]
+            "versions": [v.to_dict(self.project_id) for v in sorted(self.versions, key=lambda x: x.version)]
         }
 
     @staticmethod
@@ -79,14 +82,19 @@ class Process(Base):
         def find_dataset_urls(obj, path=""):
             """Recursively find dataset URLs in nested structures"""
             if isinstance(obj, str):
-                # Match both old format (/dataset/{id}) and new format (/files/.../datasets/{id}/...)
+                # Match both old format (/projects/{project_id}/dataset/{id}) and new format
+                # (/files/.../datasets/{id}/...)
+                import re
                 from backend.config import settings
-                dataset_url_prefix = f"{settings.backend_base_url}/dataset/"
+                dataset_url_pattern = re.compile(
+                    rf"^{re.escape(settings.backend_base_url)}/projects/[^/]+/dataset/([^/]+)$"
+                )
                 files_url_prefix = f"{settings.backend_base_url}/files/"
 
-                if obj.startswith(dataset_url_prefix):
+                dataset_url_match = dataset_url_pattern.match(obj)
+                if dataset_url_match:
                     # Old format: extract dataset_id from URL
-                    dataset_id = obj.split("/")[-1]
+                    dataset_id = dataset_url_match.group(1)
                     dependencies.append({
                         "source_dataset_id": dataset_id,
                         "target_param_name": path
@@ -185,8 +193,8 @@ class Process(Base):
 
         # --- Resolve and validate the requested cluster ---
         # Re-derives the allowed set and limits server-side rather than trusting the
-        # submitted cluster_id/resource_requests — the client already enforced the same
-        # limits via sliders bounded by GET /utilities/available-clusters.
+        # submitted cluster/resource_requests — the client already enforced the same
+        # limits via sliders bounded by GET /projects/{project_id}/utilities/available-clusters.
         from backend.models.cluster import get_allowed_clusters
         from backend.services.k8s_client import k8s_clients, _parse_cpu_cores, _parse_memory_gb
 
@@ -194,7 +202,8 @@ class Process(Base):
         if not allowed:
             raise HTTPException(status_code=400, detail="No clusters available to run this process.")
 
-        cluster_id = proc.get("cluster_id")
+        cluster_ref = proc.get("cluster")
+        cluster_id = cluster_ref["id"] if cluster_ref else None
         if cluster_id is None:
             cluster = allowed[0]  # first by sort_order — MCP/script clients that omit cluster_id
         else:
@@ -283,6 +292,9 @@ class ProcessVersion(Base):
     process = relationship("Process", back_populates="versions")
     datasets = relationship("Dataset", back_populates="process_version")
     tags = relationship("ProcessTag", secondary=process_version_tags_table, viewonly=True)
+    # viewonly=True: nothing should mutate cluster assignment through this relationship —
+    # k8s_cluster_id stays the column that's actually written.
+    cluster = relationship("Cluster", foreign_keys=[k8s_cluster_id], viewonly=True)
 
     # Tag history (append-only log of tag additions/removals, stored by name+color)
     tags_history = Column(JSON, default=list, nullable=True)
@@ -292,12 +304,17 @@ class ProcessVersion(Base):
         UniqueConstraint('process_id', 'version', name='uq_process_version'),
     )
 
-    def to_dict(self):
+    def to_dict(self, project_id: str):
         """Convert to API response format.
 
-        Note: Requires self.datasets and self.tags to be eagerly loaded.
-        Use selectinload(ProcessVersion.datasets) and selectinload(ProcessVersion.tags).
-        Logs are not included — use GET /process/{id}/logs for paginated log access.
+        Note: Requires self.datasets, self.tags, and self.cluster to be eagerly loaded.
+        Use selectinload(ProcessVersion.datasets), selectinload(ProcessVersion.tags), and
+        selectinload(ProcessVersion.cluster). Logs are not included — use
+        GET /projects/{project_id}/process/{id}/logs for paginated log access.
+
+        project_id must be passed explicitly (rather than read off self.process) to avoid
+        a lazy-load on the process backref, which isn't populated by selectinload(Process.versions)
+        and would raise a MissingGreenlet error in async context.
         """
         from backend.services.storage_service import translate_urls_in_dict
 
@@ -305,7 +322,7 @@ class ProcessVersion(Base):
 
         from backend.config import settings
         outputs = {
-            dataset.dataset_name: f"{settings.backend_base_url}/dataset/{dataset.id}"
+            dataset.dataset_name: f"{settings.backend_base_url}/projects/{project_id}/dataset/{dataset.id}"
             for dataset in self.datasets
         }
 
@@ -317,7 +334,7 @@ class ProcessVersion(Base):
             "dependencies": self.dependencies,
             "resource_requests": self.resource_requests,
             "deadline_seconds": self.deadline_seconds,
-            "cluster_id": self.k8s_cluster_id,
+            "cluster": self.cluster.to_dict() if self.cluster else None,
             "tags": [t.to_dict() for t in self.tags],
         }
 

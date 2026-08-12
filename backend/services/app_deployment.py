@@ -17,9 +17,13 @@ manifests since the minikube-plugin migration — deployed per-protocol by each 
 job-running RBAC (`ensure_cluster_job_ready()`'s concern). This module owns only: the backend/frontend
 Deployments, the backend's in-namespace ClusterIP Service (`backend-service` — also the target of
 the separate, unrelated `nagelfluh-jobs` ExternalName Service job pods use to reach the backend,
-which stays a static k8s/ manifest), the `nagelfluh-backend-config`/`nagelfluh-backend-secret`
-ConfigMap/Secret, and the one-shot DB migration Job. How external traffic actually reaches the
-frontend (NodePort, LoadBalancer, Ingress, ...) is deliberately NOT this module's job — that's the
+which stays a static k8s/ manifest), the single `nagelfluh-backend-secret` Secret (the
+`nagelfluh-backend-config` ConfigMap was retired — see
+docs/plans/generic-backend-config-passthrough.md — every app runtime config/secret value now rides
+in one Secret, since `envFrom` already flattens each of its keys to its own container env var; a
+second K8s object bought nothing but a "which list does this key belong on" classification
+problem), and the one-shot DB migration Job. How external traffic actually reaches the frontend
+(NodePort, LoadBalancer, Ingress, ...) is deliberately NOT this module's job — that's the
 "genuinely provider-specific part" a `ClusterProvider.expose_app()` implementation owns (Design
 decision 2).
 
@@ -44,7 +48,6 @@ from backend.services.k8s_client import API_REQUEST_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
-CONFIG_MAP_NAME = "nagelfluh-backend-config"
 SECRET_NAME = "nagelfluh-backend-secret"
 IMAGE_PULL_SECRET_NAME = "nagelfluh-app-pull"
 MIGRATION_JOB_NAME = "nagelfluh-app-migrate"
@@ -81,13 +84,16 @@ async def apply_app_workloads(k8s_client, namespace: str, images: dict, app_conf
         images: `{"backend": <fully-resolved image ref>, "frontend": <fully-resolved image ref>}`
             — already-resolved `RegistryProtocolHandler.image_url()` strings (Design decision 4);
             this module never resolves a registry itself.
-        app_config: flat str->str ConfigMap data merged into `nagelfluh-backend-config`.
-        secrets: flat str->str Secret data merged into `nagelfluh-backend-secret` — must include
-            "DATABASE_URL" (already fully resolved, e.g. with the Postgres password inlined;
-            Postgres itself is outside this module's scope, see module docstring). May include
-            "JWT_SECRET_KEY" as an explicit override (mirrors today's config.env JWT_SECRET_KEY
-            precedence); if omitted, an existing Secret's JWT_SECRET_KEY is reused, and only a
-            brand-new deployment generates one (Design decision 5).
+        app_config: flat str->str data merged into `nagelfluh-backend-secret` alongside `secrets`
+            (the two are only distinguished by caller convention — both end up in the same
+            Secret, see module docstring).
+        secrets: flat str->str data merged into `nagelfluh-backend-secret` alongside `app_config`
+            — the combined map must include "DATABASE_URL" (already fully resolved, e.g. with the
+            Postgres password inlined; Postgres itself is outside this module's scope, see module
+            docstring). May include "JWT_SECRET_KEY" as an explicit override (mirrors today's
+            config.env JWT_SECRET_KEY precedence); if omitted, an existing Secret's
+            JWT_SECRET_KEY is reused, and only a brand-new deployment generates one (Design
+            decision 5).
         image_pull_credentials: optional `{"registry_server", "username", "password"}` — when
             given, a shared `kubernetes.io/dockerconfigjson` Secret is applied and attached to
             every pod here as imagePullSecrets. `None` means the cluster can pull `images`
@@ -97,10 +103,12 @@ async def apply_app_workloads(k8s_client, namespace: str, images: dict, app_conf
     await k8s_client._ensure_initialized()
     replicas = replicas or {}
 
-    jwt_secret_key = await _resolve_jwt_secret_key(k8s_client, namespace, secrets)
-    secret_data = {**secrets, "JWT_SECRET_KEY": jwt_secret_key}
+    # app_config and secrets merge into the one Secret — see module docstring and
+    # docs/plans/generic-backend-config-passthrough.md. Merged before resolving JWT_SECRET_KEY so
+    # an explicit override is found regardless of which of the two dicts the caller put it in.
+    secret_data = {**app_config, **secrets}
+    secret_data["JWT_SECRET_KEY"] = await _resolve_jwt_secret_key(k8s_client, namespace, secret_data)
     await _apply_secret(k8s_client, namespace, SECRET_NAME, secret_data)
-    await _apply_config_map(k8s_client, namespace, CONFIG_MAP_NAME, app_config)
 
     pull_secret_names = []
     if image_pull_credentials:
@@ -132,21 +140,7 @@ async def _create_or_patch_namespaced(create, patch) -> None:
         await patch()
 
 
-# ── ConfigMap / Secret ───────────────────────────────────────────────────────────────────────
-
-
-async def _apply_config_map(k8s_client, namespace, name, data) -> None:
-    config_map = client.V1ConfigMap(
-        api_version="v1", kind="ConfigMap",
-        metadata=client.V1ObjectMeta(name=name, namespace=namespace),
-        data={k: str(v) for k, v in data.items()},
-    )
-    await _create_or_patch_namespaced(
-        create=lambda: k8s_client.core_api.create_namespaced_config_map(
-            namespace, config_map, _request_timeout=API_REQUEST_TIMEOUT_SECONDS),
-        patch=lambda: k8s_client.core_api.patch_namespaced_config_map(
-            name, namespace, config_map, _request_timeout=API_REQUEST_TIMEOUT_SECONDS),
-    )
+# ── Secret ───────────────────────────────────────────────────────────────────────────────────
 
 
 async def _apply_secret(k8s_client, namespace, name, data) -> None:
@@ -196,13 +190,13 @@ async def _apply_image_pull_secret(k8s_client, namespace, name, credentials) -> 
     )
 
 
-async def _resolve_jwt_secret_key(k8s_client, namespace, secrets) -> str:
+async def _resolve_jwt_secret_key(k8s_client, namespace, config) -> str:
     """Design decision 5: check-before-generate against the K8s API, replacing the host-file
     (`NAGELFLUH_DATA_DIR/jwt_secret_key`) persistence mechanism. Priority matches today's shell
-    logic exactly: an explicit override in `secrets` (config.env's JWT_SECRET_KEY) wins, then an
+    logic exactly: an explicit override in `config` (config.env's JWT_SECRET_KEY) wins, then an
     existing Secret's value is reused so existing tokens stay valid across a redeploy, and only a
     genuinely first-ever deployment generates a fresh one."""
-    explicit = secrets.get("JWT_SECRET_KEY")
+    explicit = config.get("JWT_SECRET_KEY")
     if explicit:
         return explicit
 
@@ -226,10 +220,7 @@ async def _resolve_jwt_secret_key(k8s_client, namespace, secrets) -> str:
 
 
 def _env_from() -> list:
-    return [
-        client.V1EnvFromSource(config_map_ref=client.V1ConfigMapEnvSource(name=CONFIG_MAP_NAME)),
-        client.V1EnvFromSource(secret_ref=client.V1SecretEnvSource(name=SECRET_NAME)),
-    ]
+    return [client.V1EnvFromSource(secret_ref=client.V1SecretEnvSource(name=SECRET_NAME))]
 
 
 def _image_pull_secrets(pull_secret_names) -> list | None:

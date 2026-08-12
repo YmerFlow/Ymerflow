@@ -11,7 +11,7 @@ import hashlib
 import logging
 
 from backend.config import settings
-from backend.models import User, Project, ProjectMember
+from backend.models import User, Project, ProjectMember, Publication
 from backend.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -161,6 +161,20 @@ async def get_current_user(
     return AuthContext(user=user, api_key_project_id=None)
 
 
+async def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+) -> AuthContext | None:
+    """Same as get_current_user, but returns None instead of raising on missing/invalid
+    credentials. Used to distinguish "anonymous but publication allows it" from "not
+    authenticated at all" in resolve_project_for_read.
+    """
+    try:
+        return await get_current_user(credentials=credentials, db=db)
+    except HTTPException:
+        return None
+
+
 async def require_project_member(
     project_id: str,
     auth: AuthContext = Depends(get_current_user),
@@ -183,7 +197,58 @@ async def require_project_member(
     )
     result = await db.execute(stmt)
     project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=403, detail="Not a member of this project")
+    if project:
+        return project
 
-    return project
+    # Not a member — distinguish "valid publication link, but it's read-only" from a
+    # plain not-found/not-a-member so publication viewers get an informative 403.
+    pub_stmt = select(Publication).where(Publication.id == project_id)
+    pub_result = await db.execute(pub_stmt)
+    if pub_result.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=403, detail="This is a read-only publication link — cannot write")
+
+    raise HTTPException(status_code=403, detail="Not a member of this project")
+
+
+@dataclass
+class ProjectReadAccess:
+    project: Project
+    read_only: bool
+    publication: Publication | None = None
+
+
+async def resolve_project_for_read(
+    project_id: str,
+    auth: AuthContext | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+) -> ProjectReadAccess:
+    """Dependency for pure-read endpoints: resolves project_id as either a real project
+    (real membership required) or a Publication id (read-only, optionally anonymous).
+    """
+    # Try real membership first (same query as require_project_member, but a miss falls
+    # through to the publication lookup below instead of raising).
+    if auth is not None and (auth.api_key_project_id is None or auth.api_key_project_id == project_id):
+        stmt = (
+            select(Project)
+            .join(ProjectMember, ProjectMember.project_id == Project.id)
+            .where(Project.id == project_id, ProjectMember.user_id == auth.user.id)
+        )
+        result = await db.execute(stmt)
+        project = result.scalar_one_or_none()
+        if project:
+            return ProjectReadAccess(project=project, read_only=False, publication=None)
+
+    pub_stmt = (
+        select(Publication)
+        .options(selectinload(Publication.project))
+        .where(Publication.id == project_id)
+    )
+    pub_result = await db.execute(pub_stmt)
+    publication = pub_result.scalar_one_or_none()
+    if publication is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if not publication.allow_anonymous and auth is None:
+        raise HTTPException(status_code=401, detail="Authentication required to view this publication")
+
+    return ProjectReadAccess(project=publication.project, read_only=True, publication=publication)

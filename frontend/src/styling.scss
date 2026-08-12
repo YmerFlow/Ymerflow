@@ -267,3 +267,22 @@
     font-size: 0.9rem;
   }
 }
+
+// Landing Page - Open Source Card
+.open-source-link {
+  display: flex;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+
+  i {
+    font-size: 1.75rem;
+    width: 2rem;
+    text-align: center;
+  }
+
+  &:hover, &:focus {
+    color: #0d6efd;
+    text-decoration: underline;
+  }
+}
