@@ -15,11 +15,11 @@ function McpConfigCard({ apiKeys }) {
   const [copiedCmd, setCopiedCmd] = useState(false);
   const [copiedMcpJson, setCopiedMcpJson] = useState(false);
 
-  const cliCommand = `claude mcp add --scope user --transport http nagelfluh ${MCP_URL} --header "Authorization: Bearer <your-api-key>"`;
+  const cliCommand = `claude mcp add --scope user --transport http ymerflow ${MCP_URL} --header "Authorization: Bearer <your-api-key>"`;
 
   const mcpJson = JSON.stringify({
     mcpServers: {
-      nagelfluh: {
+      ymerflow: {
         type: 'http',
         url: MCP_URL,
         headers: { Authorization: 'Bearer <your-api-key>' },
@@ -91,7 +91,7 @@ function McpConfigCard({ apiKeys }) {
         Project config{' '}
         <span className="text-muted fw-normal">
           — save as <code>.mcp.json</code> in your project root, then add{' '}
-          <code>"enabledMcpjsonServers": ["nagelfluh"]</code> to <code>.claude/settings.json</code>
+          <code>"enabledMcpjsonServers": ["ymerflow"]</code> to <code>.claude/settings.json</code>
         </span>
       </p>
       <div className="d-flex align-items-start gap-2">
@@ -210,7 +210,7 @@ export default function AccountPage() {
   };
 
   const fullConfig = revealedKey
-    ? `claude mcp add --scope user --transport http nagelfluh ${MCP_URL} --header "Authorization: Bearer ${revealedKey}"`
+    ? `claude mcp add --scope user --transport http ymerflow ${MCP_URL} --header "Authorization: Bearer ${revealedKey}"`
     : '';
 
   const handleCopyFullConfig = () => {

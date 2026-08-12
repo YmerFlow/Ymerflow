@@ -35,7 +35,7 @@ export function releaseFetchSlot() {
   }
 }
 
-const DB_NAME = "NagelfluhCache";
+const DB_NAME = "YmerFlowCache";
 const DB_VERSION = 1;
 
 // ── Quantity kind registrations ──────────────────────────────────────────────

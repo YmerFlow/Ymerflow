@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [
     react(),
     federation({
-      name: 'nagelfluh_host',
+      name: 'ymerflow_host',
       dts: false,
       remotes: {},
       // Shared singletons — one instance shared between host and all plugins.

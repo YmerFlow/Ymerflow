@@ -6,7 +6,7 @@ async function ensureInit(remotes) {
   if (mfInitialised) return
   const { init } = await import('@module-federation/runtime')
   await init({
-    name: 'nagelfluh_host',
+    name: 'ymerflow_host',
     remotes,
     shared: {
       react:                   { version: '18.2.0', lib: () => import('react'),    singleton: true },

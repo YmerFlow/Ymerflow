@@ -11,7 +11,7 @@ export default function LandingPage() {
       <div className="w-100">
         <div className="d-flex align-items-center flex-wrap mb-5 gap-4">
           <img
-            src="/Nagelfluh.jpg"
+            src="/YmerFlow.jpg"
             alt="YmerFlow"
             style={{ maxWidth: '200px', width: '100%', height: 'auto', flexShrink: 0 }}
           />
