@@ -147,14 +147,11 @@ def main():
                 (1.0, f1), xytext=(-14, -26), textcoords="offset points",
                 fontsize=8.5, color="#d95926", fontweight="bold", ha="right")
 
+    # The ±3% band is ~0.026 decades — unrenderable against an eight-decade axis, so
+    # it is left to the legend and to the lower panel, where the y-axis is fractional.
+
     # the crossing geometry: 20% cull sits where ambient ~ signal/5, since
     # sqrt(0.20^2 - 0.03^2) = 0.198 — the relative term contributes ~1% at this threshold
-    ax.annotate("±3% spans 0.026 decades — narrower than the signal line\n"
-                "at this scale. It is visible in the lower panel, where the\n"
-                "y-axis is fractional rather than absolute.",
-                xy=(tms[6], sig[6]), xytext=(30, -78), textcoords="offset points",
-                fontsize=8.5, color="#5b53a8")
-
     kk = int(len(tms) * 0.62)
     ax.annotate("20% cull lands where the ambient floor\nsits ~5× below signal — the 3%\n"
                 "term shifts it by ~1% at this threshold",
