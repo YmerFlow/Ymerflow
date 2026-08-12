@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # (see docs/plans/done/per-project-storage-routing.md).
     storage_protocol: str = "s3"  # s3, gcs, az, or file
     storage_endpoint: str = "https://localhost:9000"  # MinIO URL; overridden by k8s ConfigMap in prod
-    storage_bucket_prefix: str = "nagelfluh-project-"
+    storage_bucket_prefix: str = "ymerflow-project-"
 
     # MinIO Admin Credentials (for bucket/user management)
     minio_root_user: str = "minioadmin"

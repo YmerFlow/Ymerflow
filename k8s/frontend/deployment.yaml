@@ -6,7 +6,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend
-  namespace: nagelfluh
+  namespace: ymerflow
 spec:
   replicas: 1
   selector:
@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: nagelfluh-frontend:prod
+        image: ymerflow-frontend:prod
         imagePullPolicy: Never
         ports:
         - containerPort: 80
@@ -39,7 +39,7 @@ spec:
       volumes:
       - name: admin-htpasswd
         secret:
-          secretName: nagelfluh-admin-secret
+          secretName: ymerflow-admin-secret
           items:
           - key: htpasswd
             path: admin.htpasswd

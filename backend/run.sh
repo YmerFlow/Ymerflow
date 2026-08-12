@@ -18,7 +18,7 @@ fi
 # always turns on registry auth even if config.env doesn't set these. See
 # docs/plans/done/self-signed-tls-minio-registry.md.
 if [ -z "${REGISTRY_AUTH:-}" ]; then
-    export REGISTRY_AUTH=$(printf '%s:%s' "${REGISTRY_USER:-nagelfluh}" "${REGISTRY_PASSWORD:-nagelfluh}" | base64 -w0)
+    export REGISTRY_AUTH=$(printf '%s:%s' "${REGISTRY_USER:-ymerflow}" "${REGISTRY_PASSWORD:-ymerflow}" | base64 -w0)
 fi
 
 # Activate virtual environment if it exists

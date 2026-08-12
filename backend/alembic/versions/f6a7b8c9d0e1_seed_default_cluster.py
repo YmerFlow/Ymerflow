@@ -37,7 +37,7 @@ def upgrade() -> None:
             "registry_auth": settings.registry_auth,
             # K8S_NAMESPACE is a raw env var read directly in k8s_client.py, NOT a field
             # on backend.config.Settings — read it the same raw way here.
-            "namespace": os.getenv("K8S_NAMESPACE", "nagelfluh-jobs"),
+            "namespace": os.getenv("K8S_NAMESPACE", "ymerflow-jobs"),
             "created_at": datetime.utcnow().isoformat(),
         })
 

@@ -65,7 +65,7 @@ else
 fi
 
 # Convert localhost endpoint to internal service name (like job_orchestrator.py does)
-POD_STORAGE_ENDPOINT="${CONFIG_STORAGE_ENDPOINT/http:\/\/localhost:9000/http:\/\/minio-nagelfluh.nagelfluh-jobs.svc.cluster.local:9000}"
+POD_STORAGE_ENDPOINT="${CONFIG_STORAGE_ENDPOINT/http:\/\/localhost:9000/http:\/\/minio-nagelfluh.ymerflow-jobs.svc.cluster.local:9000}"
 
 echo "=========================================="
 echo "Starting Debug Pod in K8s"
@@ -86,8 +86,8 @@ POD_NAME="debug-${PROCESS_ID}-$(date +%s)"
 cleanup() {
     echo ""
     echo "Cleaning up..."
-    kubectl delete pod $POD_NAME -n nagelfluh-jobs --wait=false 2>/dev/null || true
-    kubectl delete configmap $POD_NAME-scripts -n nagelfluh-jobs 2>/dev/null || true
+    kubectl delete pod $POD_NAME -n ymerflow-jobs --wait=false 2>/dev/null || true
+    kubectl delete configmap $POD_NAME-scripts -n ymerflow-jobs 2>/dev/null || true
     rm -f "$KUBECONFIG_FILE"
     echo "Cleanup complete"
 }
@@ -97,7 +97,7 @@ trap cleanup EXIT
 kubectl create configmap "$POD_NAME-scripts" \
     --from-file=debug_runner.py="$SCRIPT_DIR/debug_runner.py" \
     --from-file=runner.py="$SCRIPT_DIR/runner_debug.py" \
-    -n nagelfluh-jobs \
+    -n ymerflow-jobs \
     --dry-run=client -o yaml | kubectl apply -f -
 
 # Create pod YAML
@@ -106,7 +106,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: $POD_NAME
-  namespace: nagelfluh-jobs
+  namespace: ymerflow-jobs
 spec:
   restartPolicy: Never
   containers:
@@ -152,7 +152,7 @@ EOF
 
 echo ""
 echo "Waiting for pod to start..."
-kubectl wait --for=condition=Ready pod/$POD_NAME -n nagelfluh-jobs --timeout=60s
+kubectl wait --for=condition=Ready pod/$POD_NAME -n ymerflow-jobs --timeout=60s
 
 echo ""
 echo "=========================================="
@@ -161,7 +161,7 @@ echo "=========================================="
 echo ""
 
 # Execute the debug runner interactively in the pod
-kubectl exec -it $POD_NAME -n nagelfluh-jobs -- python /app/debug_runner.py
+kubectl exec -it $POD_NAME -n ymerflow-jobs -- python /app/debug_runner.py
 
 echo ""
 echo "=========================================="

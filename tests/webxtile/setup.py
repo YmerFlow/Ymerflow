@@ -51,7 +51,7 @@ DATASET_ID   = str(uuid.uuid4())
 WORKSPACE_ID = str(uuid.uuid4())
 DATASET_NAME = 'webxtile_test'
 
-BUCKET    = f'nagelfluh-project-{PROJECT_ID}'
+BUCKET    = f'ymerflow-project-{PROJECT_ID}'
 TILE_PATH = f'processes/{PROCESS_ID}/1/datasets/{DATASET_ID}'
 BASE_URL  = f'http://localhost:8000/files/{BUCKET}/{TILE_PATH}'
 
@@ -94,7 +94,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 
 # ── Database records ──────────────────────────────────────────────────────────
 print('Inserting database records...')
-db = sqlite3.connect(str(ROOT / 'nagelfluh.db'))
+db = sqlite3.connect(str(ROOT / 'ymerflow.db'))
 
 env_id = db.execute("SELECT id FROM environments LIMIT 1").fetchone()
 if not env_id:

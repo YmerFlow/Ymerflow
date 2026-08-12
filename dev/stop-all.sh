@@ -1,7 +1,7 @@
 #!/bin/bash
 # Stop all YmerFlow development services
 
-SCREEN_SESSION="nagelfluh-dev"
+SCREEN_SESSION="ymerflow-dev"
 
 echo "Stopping YmerFlow development services..."
 

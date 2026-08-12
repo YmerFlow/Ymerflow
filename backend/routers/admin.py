@@ -68,7 +68,7 @@ def _apply_generic_fields(cluster: Cluster, body: Dict) -> None:
             raise HTTPException(status_code=400, detail="name is required")
         cluster.name = name
     if "namespace" in body:
-        cluster.namespace = body.get("namespace") or "nagelfluh-jobs"
+        cluster.namespace = body.get("namespace") or "ymerflow-jobs"
     if "sort_order" in body:
         try:
             cluster.sort_order = int(body["sort_order"])
@@ -137,7 +137,7 @@ async def admin_create_cluster(body: Dict, auth=Depends(require_admin), db: Asyn
             detail=f"{cluster_type} clusters are created via self-service registration, not directly",
         )
 
-    cluster = Cluster(name=body["name"].strip(), namespace=body.get("namespace") or "nagelfluh-jobs")
+    cluster = Cluster(name=body["name"].strip(), namespace=body.get("namespace") or "ymerflow-jobs")
     await _test_and_apply_connection(cluster, body)
     _apply_generic_fields(cluster, body)
     if "cluster_type" in body or "provider_config" in body:
@@ -297,7 +297,7 @@ async def cluster_register_callback(
 
 # The remote self-service *setup script* endpoint (GET /static/assets/setup-minikube-remote.sh)
 # used to live here, but it is wholly minikube-specific and now lives in the ymerflow-minikube
-# plugin (minikube_plugin/routes.py, mounted via the register_routers nagelfluh.hook). Only the
+# plugin (minikube_plugin/routes.py, mounted via the register_routers ymerflow.hook). Only the
 # GENERIC callback below (cluster_register_callback, which dispatches through get_cluster_provider)
 # stays in core. See docs/plans/done/generic-deployment-orchestration.md.
 

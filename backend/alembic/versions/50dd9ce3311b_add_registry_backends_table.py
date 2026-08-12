@@ -36,7 +36,7 @@ def _default_protocol_and_config():
 
     from backend.config import settings
 
-    user, password = "nagelfluh", "nagelfluh"
+    user, password = "ymerflow", "ymerflow"
     if settings.registry_auth:
         decoded = base64.b64decode(settings.registry_auth).decode()
         user, _, password = decoded.partition(":")

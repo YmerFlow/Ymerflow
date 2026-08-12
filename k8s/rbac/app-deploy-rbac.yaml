@@ -1,25 +1,25 @@
 ---
 # ServiceAccount the in-cluster yf-deploy-app Job runs as (see prod/runall-production.sh and
-# docs/plans/app-deployment-hooks.md Phase 5). Distinct from the nagelfluh namespace's `default`
+# docs/plans/app-deployment-hooks.md Phase 5). Distinct from the ymerflow namespace's `default`
 # SA (which carries the backend's own job-running identity, k8s/rbac/backend-jobs-rbac.yaml) so
 # the broad app-deployment permissions below aren't granted to every backend pod — only to the
 # short-lived deploy Job.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: nagelfluh-app-deployer
-  namespace: nagelfluh
+  name: ymerflow-app-deployer
+  namespace: ymerflow
 ---
 # Namespaced Role: everything backend.services.app_deployment.apply_app_workloads() +
 # NodePortAppDeploymentMixin.expose_app() do is namespaced to the app namespace — manage the
 # backend/frontend Deployments, their Service + the frontend NodePort Service, the
-# nagelfluh-backend-secret + app pull Secret, and the one-shot DB migration Job (create,
+# ymerflow-backend-secret + app pull Secret, and the one-shot DB migration Job (create,
 # then read its pod logs). No cluster-scoped permissions are needed.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: nagelfluh-app-deployer
-  namespace: nagelfluh
+  name: ymerflow-app-deployer
+  namespace: ymerflow
 rules:
 - apiGroups: ["apps"]
   resources: ["deployments"]
@@ -37,13 +37,13 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: nagelfluh-app-deployer
-  namespace: nagelfluh
+  name: ymerflow-app-deployer
+  namespace: ymerflow
 subjects:
 - kind: ServiceAccount
-  name: nagelfluh-app-deployer
-  namespace: nagelfluh
+  name: ymerflow-app-deployer
+  namespace: ymerflow
 roleRef:
   kind: Role
-  name: nagelfluh-app-deployer
+  name: ymerflow-app-deployer
   apiGroup: rbac.authorization.k8s.io

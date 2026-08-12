@@ -17,7 +17,7 @@ the registry protocol/config and the cluster type/config from the same `<AXIS>_P
 migrations use — see `50dd9ce3311b_add_registry_backends_table.py::_default_protocol_and_config`
 and `d1266f2f6e68_generic_seed_default_cluster.py`, the source of truth this mirrors.
 
-Config is read from this Job's environment (populated by `envFrom` the `nagelfluh-backend-secret`
+Config is read from this Job's environment (populated by `envFrom` the `ymerflow-backend-secret`
 Secret the shell created — see docs/plans/generic-backend-config-passthrough.md). Every key
 actually assigned in config.env reaches this pod's environment that way, generically — this script
 never enumerates plugin config vars by name. `_generic_app_config()` picks up the whole pod
@@ -30,7 +30,7 @@ denylist short and fixed: without it, Kubernetes also injects a `<SERVICE>_SERVI
 every Service a plugin adds.
 
 Emits the `expose_app()` result (JSON, e.g. `{"url": ...}`) to stdout; all diagnostics go to
-stderr, same clean-stdout discipline as nagelfluh-registry-push / yf-bootstrap-provision.
+stderr, same clean-stdout discipline as ymerflow-registry-push / yf-bootstrap-provision.
 """
 import asyncio
 import base64
@@ -47,11 +47,11 @@ from backend.services.registry_protocols import get_registry_protocol_handler
 from backend.services.cluster_providers import get_cluster_provider
 
 # Default repository names + tag the app images are pushed under (see prod/runall-production.sh's
-# nagelfluh-registry-push calls). Overridable via env for a non-standard build.
+# ymerflow-registry-push calls). Overridable via env for a non-standard build.
 BACKEND_REPOSITORY = os.getenv("APP_BACKEND_REPOSITORY", "ymerflow-backend")
-FRONTEND_REPOSITORY = os.getenv("APP_FRONTEND_REPOSITORY", "nagelfluh-frontend")
+FRONTEND_REPOSITORY = os.getenv("APP_FRONTEND_REPOSITORY", "ymerflow-frontend")
 APP_IMAGE_TAG = os.getenv("APP_IMAGE_TAG", "prod")
-APP_NAMESPACE = os.getenv("APP_NAMESPACE", "nagelfluh")
+APP_NAMESPACE = os.getenv("APP_NAMESPACE", "ymerflow")
 
 # Platform-level env this script's own pod carries that is NOT app runtime config — never a
 # plugin's concern, so this stays fixed as plugins add config.env keys (Design decision 3 of
@@ -91,7 +91,7 @@ def _resolve_registry():
     if protocol and config_json:
         return protocol, json.loads(config_json)
 
-    user, password = "nagelfluh", "nagelfluh"
+    user, password = "ymerflow", "ymerflow"
     registry_auth = os.getenv("REGISTRY_AUTH")
     if registry_auth:
         decoded = base64.b64decode(registry_auth).decode()
@@ -148,7 +148,7 @@ async def main():
     secrets = {}
 
     # Resolve the real hostname BEFORE anything below bakes SERVER_URL/BACKEND_BASE_URL into the
-    # nagelfluh-backend-secret Secret. Most providers (same-as-backend/minikube) just echo back
+    # ymerflow-backend-secret Secret. Most providers (same-as-backend/minikube) just echo back
     # SERVER_URL unchanged — cheap, idempotent no-op. A provider whose hostname isn't knowable
     # until a resource is reserved (e.g. GKE's static IP) overrides this to reserve it now and
     # return the real address, so the Secret is correct from the very first deploy instead of

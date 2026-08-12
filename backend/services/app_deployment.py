@@ -16,8 +16,8 @@ manifests since the minikube-plugin migration — deployed per-protocol by each 
 `bootstrap()`, see docs/plans/done/generic-deployment-orchestration.md), and the backend's
 job-running RBAC (`ensure_cluster_job_ready()`'s concern). This module owns only: the backend/frontend
 Deployments, the backend's in-namespace ClusterIP Service (`backend-service` — also the target of
-the separate, unrelated `nagelfluh-jobs` ExternalName Service job pods use to reach the backend,
-which stays a static k8s/ manifest), the single `nagelfluh-backend-secret` Secret (the
+the separate, unrelated `ymerflow-jobs` ExternalName Service job pods use to reach the backend,
+which stays a static k8s/ manifest), the single `ymerflow-backend-secret` Secret (the
 `ymerflow-backend-config` ConfigMap was retired — see
 docs/plans/generic-backend-config-passthrough.md — every app runtime config/secret value now rides
 in one Secret, since `envFrom` already flattens each of its keys to its own container env var; a
@@ -48,22 +48,22 @@ from backend.services.k8s_client import API_REQUEST_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
-SECRET_NAME = "nagelfluh-backend-secret"
-IMAGE_PULL_SECRET_NAME = "nagelfluh-app-pull"
-MIGRATION_JOB_NAME = "nagelfluh-app-migrate"
+SECRET_NAME = "ymerflow-backend-secret"
+IMAGE_PULL_SECRET_NAME = "ymerflow-app-pull"
+MIGRATION_JOB_NAME = "ymerflow-app-migrate"
 MIGRATION_JOB_TIMEOUT_SECONDS = 300
 MIGRATION_JOB_POLL_INTERVAL_SECONDS = 3
 STALE_JOB_DELETE_TIMEOUT_SECONDS = 60
 
 # Matches job_orchestrator.py's hardcoded BACKEND_URL ("http://backend-service:8000") and
-# k8s/backend/service.yaml's ExternalName Service in the nagelfluh-jobs namespace, which points
+# k8s/backend/service.yaml's ExternalName Service in the ymerflow-jobs namespace, which points
 # at this exact name — job pods reach the backend through that ExternalName, which this module
 # does not create or touch (it lives in a different namespace and is unrelated to app hosting).
 BACKEND_SERVICE_NAME = "backend-service"
 BACKEND_DEPLOYMENT_NAME = "backend"
 FRONTEND_DEPLOYMENT_NAME = "frontend"
 
-ADMIN_HTPASSWD_SECRET_NAME = "nagelfluh-admin-secret"
+ADMIN_HTPASSWD_SECRET_NAME = "ymerflow-admin-secret"
 HEADLAMP_TOKEN_SECRET_NAME = "headlamp-nginx-token"
 
 
@@ -77,17 +77,17 @@ async def apply_app_workloads(k8s_client, namespace: str, images: dict, app_conf
     Args:
         k8s_client: a `backend.services.k8s_client.K8sClient` (or subclass) already carrying
             whatever provider_config this cluster needs.
-        namespace: the namespace to apply everything into (the app namespace, e.g. "nagelfluh")
+        namespace: the namespace to apply everything into (the app namespace, e.g. "ymerflow")
             — NOT necessarily `Cluster.namespace`, which is the *jobs* namespace; app hosting
             shares a `Cluster` row with job execution, not necessarily its namespace (Design
             decision 1 in docs/plans/app-deployment-hooks.md).
         images: `{"backend": <fully-resolved image ref>, "frontend": <fully-resolved image ref>}`
             — already-resolved `RegistryProtocolHandler.image_url()` strings (Design decision 4);
             this module never resolves a registry itself.
-        app_config: flat str->str data merged into `nagelfluh-backend-secret` alongside `secrets`
+        app_config: flat str->str data merged into `ymerflow-backend-secret` alongside `secrets`
             (the two are only distinguished by caller convention — both end up in the same
             Secret, see module docstring).
-        secrets: flat str->str data merged into `nagelfluh-backend-secret` alongside `app_config`
+        secrets: flat str->str data merged into `ymerflow-backend-secret` alongside `app_config`
             — the combined map must include "DATABASE_URL" (already fully resolved, e.g. with the
             Postgres password inlined; Postgres itself is outside this module's scope, see module
             docstring). May include "JWT_SECRET_KEY" as an explicit override (mirrors today's
@@ -192,7 +192,7 @@ async def _apply_image_pull_secret(k8s_client, namespace, name, credentials) -> 
 
 async def _resolve_jwt_secret_key(k8s_client, namespace, config) -> str:
     """Design decision 5: check-before-generate against the K8s API, replacing the host-file
-    (`NAGELFLUH_DATA_DIR/jwt_secret_key`) persistence mechanism. Priority matches today's shell
+    (`YMERFLOW_DATA_DIR/jwt_secret_key`) persistence mechanism. Priority matches today's shell
     logic exactly: an explicit override in `config` (config.env's JWT_SECRET_KEY) wins, then an
     existing Secret's value is reused so existing tokens stay valid across a redeploy, and only a
     genuinely first-ever deployment generates a fresh one."""
@@ -244,7 +244,7 @@ async def _run_migration_job(k8s_client, namespace, backend_image, pull_secret_n
         spec=client.V1JobSpec(
             backoff_limit=0,
             template=client.V1PodTemplateSpec(
-                metadata=client.V1ObjectMeta(labels={"app": "nagelfluh-app-migrate"}),
+                metadata=client.V1ObjectMeta(labels={"app": "ymerflow-app-migrate"}),
                 spec=client.V1PodSpec(
                     restart_policy="Never",
                     image_pull_secrets=_image_pull_secrets(pull_secret_names),
@@ -365,7 +365,7 @@ async def _apply_backend(k8s_client, namespace, image, pull_secret_names, replic
     await _apply_deployment(k8s_client, namespace, deployment, BACKEND_DEPLOYMENT_NAME)
 
     # ClusterIP Service, needed internally regardless of provider (frontend nginx proxies /api to
-    # it; the separate nagelfluh-jobs ExternalName Service DNS-points at it too) — not
+    # it; the separate ymerflow-jobs ExternalName Service DNS-points at it too) — not
     # provider-specific exposure, so it lives here rather than in expose_app().
     service = client.V1Service(
         api_version="v1", kind="Service",

@@ -11,7 +11,7 @@ Usage:
 Arguments:
     process_schemas_json: JSON string or path to JSON file with process schemas
     environment_name: Name of the environment (defaults to "Bootstrap")
-    docker_image: Docker image reference (defaults to "nagelfluh-runner:latest")
+    docker_image: Docker image reference (defaults to "ymerflow-runner:latest")
 """
 
 import sys
@@ -26,14 +26,14 @@ from sqlalchemy.orm import sessionmaker
 def get_database_url():
     """Get database URL from environment variable or use default. Strips "+asyncpg" the same way
     backend/alembic/env.py and yf-build-and-push's get_database_url() do: this script
-    always opens a synchronous engine, but DATABASE_URL (e.g. from nagelfluh-backend-secret's
+    always opens a synchronous engine, but DATABASE_URL (e.g. from ymerflow-backend-secret's
     envFrom, per docker/build.sh's production-mode db-update Job) is the async URL the FastAPI
     app itself needs."""
-    return os.getenv('DATABASE_URL', 'sqlite:///./nagelfluh.db').replace(
+    return os.getenv('DATABASE_URL', 'sqlite:///./ymerflow.db').replace(
         "postgresql+asyncpg://", "postgresql://")
 
 
-def update_bootstrap_environment(process_types, env_name="Bootstrap", docker_image="nagelfluh-runner:latest"):
+def update_bootstrap_environment(process_types, env_name="Bootstrap", docker_image="ymerflow-runner:latest"):
     """Update or create an environment with process types."""
     database_url = get_database_url()
 
@@ -111,12 +111,12 @@ def main():
         print("Usage: python docker/update_bootstrap_environment.py <process_schemas_json> [environment_name] [docker_image]")
         print("  process_schemas_json: JSON string or path to JSON file")
         print("  environment_name: Name of the environment (defaults to 'Bootstrap')")
-        print("  docker_image: Docker image reference (defaults to 'nagelfluh-runner:latest')")
+        print("  docker_image: Docker image reference (defaults to 'ymerflow-runner:latest')")
         sys.exit(1)
 
     process_schemas_arg = sys.argv[1]
     env_name = sys.argv[2] if len(sys.argv) > 2 else "Bootstrap"
-    docker_image = sys.argv[3] if len(sys.argv) > 3 else "nagelfluh-runner:latest"
+    docker_image = sys.argv[3] if len(sys.argv) > 3 else "ymerflow-runner:latest"
 
     # Try to parse as JSON string first, then try as file path
     try:

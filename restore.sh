@@ -70,21 +70,21 @@ EOF
 }
 
 # Scale down
-kubectl scale deployment/backend   -n nagelfluh --replicas=0
-kubectl scale statefulset/postgres -n nagelfluh --replicas=0
+kubectl scale deployment/backend   -n ymerflow --replicas=0
+kubectl scale statefulset/postgres -n ymerflow --replicas=0
 kubectl scale deployment/minio     -n minio      --replicas=0
-kubectl wait pod -n nagelfluh -l app=backend  --for=delete --timeout=60s 2>/dev/null || true
-kubectl wait pod -n nagelfluh -l app=postgres --for=delete --timeout=60s 2>/dev/null || true
+kubectl wait pod -n ymerflow -l app=backend  --for=delete --timeout=60s 2>/dev/null || true
+kubectl wait pod -n ymerflow -l app=postgres --for=delete --timeout=60s 2>/dev/null || true
 kubectl wait pod -n minio     -l app=minio    --for=delete --timeout=60s 2>/dev/null || true
 
-restore_secrets "$BACKUP_DIR/secrets-nagelfluh.yaml"
-restore_pvc "PostgreSQL" nagelfluh data-postgres-0 "$BACKUP_DIR/postgres.tar.gz"
+restore_secrets "$BACKUP_DIR/secrets-ymerflow.yaml"
+restore_pvc "PostgreSQL" ymerflow data-postgres-0 "$BACKUP_DIR/postgres.tar.gz"
 restore_pvc "MinIO"      minio     minio-pvc        "$BACKUP_DIR/minio.tar.gz"
 
 # Scale back up
-kubectl scale statefulset/postgres -n nagelfluh --replicas=1
+kubectl scale statefulset/postgres -n ymerflow --replicas=1
 kubectl scale deployment/minio     -n minio      --replicas=1
-kubectl scale deployment/backend   -n nagelfluh --replicas=1
+kubectl scale deployment/backend   -n ymerflow --replicas=1
 
 echo ""
 echo "Done"

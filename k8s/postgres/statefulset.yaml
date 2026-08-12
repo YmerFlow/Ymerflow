@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
-  namespace: nagelfluh
+  namespace: ymerflow
 spec:
   serviceName: postgres
   replicas: 1
@@ -22,13 +22,13 @@ spec:
           name: postgres
         env:
         - name: POSTGRES_DB
-          value: nagelfluh
+          value: ymerflow
         - name: POSTGRES_USER
-          value: nagelfluh
+          value: ymerflow
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: nagelfluh-postgres-secret
+              name: ymerflow-postgres-secret
               key: postgres-password
         - name: PGDATA
           value: /var/lib/postgresql/data/pgdata
@@ -37,7 +37,7 @@ spec:
           mountPath: /var/lib/postgresql/data
         readinessProbe:
           exec:
-            command: ["pg_isready", "-U", "nagelfluh", "-d", "nagelfluh"]
+            command: ["pg_isready", "-U", "ymerflow", "-d", "ymerflow"]
           initialDelaySeconds: 5
           periodSeconds: 5
   volumeClaimTemplates:

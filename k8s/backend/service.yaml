@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: backend-service
-  namespace: nagelfluh
+  namespace: ymerflow
 spec:
   type: ClusterIP
   ports:
@@ -12,16 +12,16 @@ spec:
   selector:
     app: backend
 ---
-# ExternalName so process jobs in nagelfluh-jobs can reach the backend
+# ExternalName so process jobs in ymerflow-jobs can reach the backend
 # (job_orchestrator.py hardcodes http://backend-service:8000 as BACKEND_URL)
 apiVersion: v1
 kind: Service
 metadata:
   name: backend-service
-  namespace: nagelfluh-jobs
+  namespace: ymerflow-jobs
 spec:
   type: ExternalName
-  externalName: backend-service.nagelfluh.svc.cluster.local
+  externalName: backend-service.ymerflow.svc.cluster.local
   ports:
   - port: 8000
     name: http

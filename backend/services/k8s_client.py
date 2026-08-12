@@ -42,7 +42,7 @@ def _parse_memory_gb(value: str) -> float:
 
 class K8sClient:
     def __init__(self, namespace=None, kubeconfig=None):
-        self.namespace = namespace or os.getenv('K8S_NAMESPACE', 'nagelfluh-jobs')
+        self.namespace = namespace or os.getenv('K8S_NAMESPACE', 'ymerflow-jobs')
         # kubeconfig: optional dict, resolved by a ClusterProvider from Cluster.provider_config
         # (backend/services/cluster_providers/), to load an explicit config for this cluster.
         # None = auto-detect (in-cluster config or local kubeconfig) — the behavior every cluster
@@ -312,7 +312,7 @@ class K8sClient:
         except Exception as e:
             return False, None
 
-    async def get_cluster_queue_limits(self, queue_name: str = "nagelfluh-cluster-queue") -> dict:
+    async def get_cluster_queue_limits(self, queue_name: str = "ymerflow-cluster-queue") -> dict:
         """Read nominalQuota from a Kueue ClusterQueue and return cpu/memory limits.
 
         Returns dict with keys 'max_cpu_cores' (float) and 'max_memory_gb' (float),

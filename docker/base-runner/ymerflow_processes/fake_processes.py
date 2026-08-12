@@ -83,8 +83,8 @@ class create_environment:
         # Construct Dockerfile
         # If base_image doesn't have a registry prefix, add the local registry
         if base_image and not base_image.startswith(('registry:', 'localhost:', 'gcr.io/', 'docker.io/')):
-            # Check if it's a nagelfluh base image and needs registry prefix
-            if base_image.startswith('nagelfluh-'):
+            # Check if it's a ymerflow base image and needs registry prefix
+            if base_image.startswith('ymerflow-'):
                 base_image_with_registry = f"{registry_url}/{base_image}"
             else:
                 # External image from Docker Hub, use as-is

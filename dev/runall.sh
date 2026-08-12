@@ -214,7 +214,7 @@ print_section "Step 5b: Syncing Bootstrap Config to Database"
 # bootstrap-provision run, not just the first. Without this step, every run after the DB's first
 # migration leaves the DB holding a now-deleted key while a fresh, working one sits unused in this
 # shell's env, so anything reading the active backend row straight from the DB (e.g.
-# nagelfluh-build-and-push, Step 7) fails with a permanent "Invalid JWT Signature" — not a
+# yf-build-and-push, Step 7) fails with a permanent "Invalid JWT Signature" — not a
 # transient propagation delay. Unconditionally overwrite protocol+config on the active row for
 # each bootstrapped axis, every run, so the DB can never go stale relative to what Step 2 actually
 # provisioned.
@@ -234,7 +234,7 @@ def sync(model, protocol_env, config_env):
     if not protocol or not config_json:
         return
     config = json.loads(config_json)
-    database_url = os.getenv("DATABASE_URL", "sqlite:///./nagelfluh.db").replace(
+    database_url = os.getenv("DATABASE_URL", "sqlite:///./ymerflow.db").replace(
         "postgresql+asyncpg://", "postgresql://")
     engine = create_engine(database_url)
     with engine.begin() as conn:
@@ -291,7 +291,7 @@ print_status "Docker image built and pushed to registry"
 print_section "Step 8: Starting Services"
 
 # Kill existing screen session
-SCREEN_SESSION="nagelfluh-dev"
+SCREEN_SESSION="ymerflow-dev"
 kill_screen "$SCREEN_SESSION"
 
 # Create a new detached screen session with the first window (backend)

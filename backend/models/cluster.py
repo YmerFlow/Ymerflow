@@ -18,7 +18,7 @@ class Cluster(Base):
     # dispatches to a StorageProtocolHandler. provider_config is that provider's opaque config.
     cluster_type = Column(String(32), nullable=False, default="kubeconfig")
     provider_config = Column(JSON, nullable=False, default=dict)
-    namespace = Column(String(255), nullable=False, default="nagelfluh-jobs")
+    namespace = Column(String(255), nullable=False, default="ymerflow-jobs")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     sort_order = Column(Integer, nullable=False, default=0)
     active = Column(Boolean, nullable=False, default=True)

@@ -7,7 +7,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: frontend
-  namespace: nagelfluh
+  namespace: ymerflow
 spec:
   type: NodePort
   ports:

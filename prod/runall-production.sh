@@ -79,7 +79,7 @@ docker build -t "ymerflow-backend:${APP_IMAGE_VERSION}" \
 # MinioProtocolHandler/DockerV2ProtocolHandler.bootstrap() deploy MinIO/the registry into it —
 # each is idempotent, so re-running this on every prod/runall-production.sh invocation is a fast
 # no-op once already provisioned. The enriched {protocol, config} result is folded into
-# nagelfluh-backend-secret below (Step 6). See docs/plans/registry-backend-hooks.md (Design
+# ymerflow-backend-secret below (Step 6). See docs/plans/registry-backend-hooks.md (Design
 # decision 6).
 #
 # Run host-side via the same host venv the rest of this script already uses (env/bin/python — see
@@ -92,9 +92,9 @@ docker build -t "ymerflow-backend:${APP_IMAGE_VERSION}" \
 # host's own Docker socket / kubeconfig / MINIKUBE_* config vars from config.env; a cloud plugin:
 # its own gcloud/SA credentials) is already natively present in this shell's environment. The
 # script no longer knows or cares which cluster plugin it's driving.
-NAGELFLUH_DATA_DIR="${NAGELFLUH_DATA_DIR:-$HOME/.nagelfluh/data}"
-mkdir -p "${NAGELFLUH_DATA_DIR}"
-export NAGELFLUH_DATA_DIR
+YMERFLOW_DATA_DIR="${YMERFLOW_DATA_DIR:-$HOME/.ymerflow/data}"
+mkdir -p "${YMERFLOW_DATA_DIR}"
+export YMERFLOW_DATA_DIR
 
 echo ""
 echo "Step 3: Bootstrap-provisioning configured backends..."
@@ -132,7 +132,7 @@ print(",".join(axis for axis in ("registry", "storage", "cluster") if axis in da
 ' "${BOOTSTRAP_JSON}")
 
 if [ -n "${BOOTSTRAPPED_AXES}" ]; then
-    echo "  Bootstrap-provisioned axes: ${BOOTSTRAPPED_AXES} (enriched config will be folded into nagelfluh-backend-secret)"
+    echo "  Bootstrap-provisioned axes: ${BOOTSTRAPPED_AXES} (enriched config will be folded into ymerflow-backend-secret)"
 else
     echo "  No axes bootstrap-provisioned (no <AXIS>_PROTOCOL/<AXIS>_CONFIG_JSON set in config.env)"
 fi
@@ -176,7 +176,7 @@ kubectl apply -f "${PROJECT_ROOT}/k8s/00-namespaces.yaml"
 # hand-rolled here — see plugins/ymerflow-minikube's registry_protocol.py).
 #
 # Resolved directly from REGISTRY_PROTOCOL/REGISTRY_CONFIG_JSON (already exported by Step 3's
-# bootstrap-provision above) via NAGELFLUH_RESOLVED_REGISTRY_JSON, rather than letting
+# bootstrap-provision above) via YMERFLOW_RESOLVED_REGISTRY_JSON, rather than letting
 # yf-build-and-push query the database itself, because Postgres isn't reachable host-side
 # here (it runs in-cluster and hasn't even been migrated/seeded yet at this point).
 
@@ -188,13 +188,13 @@ import json, os
 print(json.dumps({"protocol": os.environ["REGISTRY_PROTOCOL"], "config": json.loads(os.environ["REGISTRY_CONFIG_JSON"])}))
 ')
 
-BACKEND_IMAGE=$(NAGELFLUH_RESOLVED_REGISTRY_JSON="${RESOLVED_REGISTRY_JSON}" env/bin/python \
+BACKEND_IMAGE=$(YMERFLOW_RESOLVED_REGISTRY_JSON="${RESOLVED_REGISTRY_JSON}" env/bin/python \
     "${PROJECT_ROOT}/backend/bin/yf-build-and-push" \
     "${PROJECT_ROOT}/backend/Dockerfile" "${PROJECT_ROOT}" ymerflow-backend "${APP_IMAGE_VERSION}" \
     --build-arg "BACKEND_PLUGINS=${BACKEND_PLUGINS:-}")
-FRONTEND_IMAGE=$(NAGELFLUH_RESOLVED_REGISTRY_JSON="${RESOLVED_REGISTRY_JSON}" env/bin/python \
+FRONTEND_IMAGE=$(YMERFLOW_RESOLVED_REGISTRY_JSON="${RESOLVED_REGISTRY_JSON}" env/bin/python \
     "${PROJECT_ROOT}/backend/bin/yf-build-and-push" \
-    "${PROJECT_ROOT}/frontend/Dockerfile" "${PROJECT_ROOT}/frontend" nagelfluh-frontend "${APP_IMAGE_VERSION}")
+    "${PROJECT_ROOT}/frontend/Dockerfile" "${PROJECT_ROOT}/frontend" ymerflow-frontend "${APP_IMAGE_VERSION}")
 
 # The registry server address (everything before the first '/' of the resolved ref) — still
 # needed by Step 6c's image-pull secret below, which wants a bare host (that's what
@@ -211,15 +211,15 @@ REGISTRY_ADDR="${BACKEND_IMAGE%%/*}"
 # bootstrap() provisioned, so truncating to host-only (as REGISTRY_ADDR does) silently produces an
 # unwritable/nonexistent path for GAR. Resolved via RegistryProtocolHandler.image_prefix() (the
 # same mechanism image_url() itself is built on) rather than assumed from BACKEND_IMAGE's shape.
-# Exported: Step 6 folds this into nagelfluh-backend-secret as a script-computed override (see
-# nagelfluh-render-backend-secret-env).
+# Exported: Step 6 folds this into ymerflow-backend-secret as a script-computed override (see
+# ymerflow-render-backend-secret-env).
 export REGISTRY_URL=$(env/bin/python "${PROJECT_ROOT}/backend/bin/yf-registry-image-prefix" \
     "${REGISTRY_PROTOCOL}" "${REGISTRY_CONFIG_JSON}")
 
 echo "  Pushed ${BACKEND_IMAGE}"
 echo "  Pushed ${FRONTEND_IMAGE}"
 
-# ── Step 6: nagelfluh-backend-secret ────────────────────────────────────────
+# ── Step 6: ymerflow-backend-secret ────────────────────────────────────────
 # Carries every app runtime config/secret value the in-cluster yf-deploy-app Job (Step 9)
 # reads via envFrom. yf-deploy-app hands its contents to
 # backend.services.app_deployment.apply_app_workloads(), which then re-applies (create-or-patch)
@@ -230,40 +230,40 @@ echo "  Pushed ${FRONTEND_IMAGE}"
 # assigned in config.env reaches this Secret, and from there the backend pod, with ZERO changes to
 # this script or yf-deploy-app — a plugin author adding e.g. TICKETS_GITHUB_TOKEN only ever
 # touches config.env (and their own plugin's config.py). A short, fixed set of script-computed
-# overrides (nagelfluh-render-backend-secret-env's OVERRIDE_KEYS) still wins over the generic
+# overrides (ymerflow-render-backend-secret-env's OVERRIDE_KEYS) still wins over the generic
 # layer — these are the only keys core deployment code is still allowed to know by name.
 #
-# JWT persistence: NO host-file (NAGELFLUH_DATA_DIR/jwt_secret_key) mechanism. If the operator set
+# JWT persistence: NO host-file (YMERFLOW_DATA_DIR/jwt_secret_key) mechanism. If the operator set
 # JWT_SECRET_KEY in config.env it passes through generically and wins; otherwise it is absent here,
 # and apply_app_workloads generates-or-reuses it against the K8s API (check-before-generate: reuse
-# the existing nagelfluh-backend-secret's value across a redeploy / minikube recreate so existing
+# the existing ymerflow-backend-secret's value across a redeploy / minikube recreate so existing
 # tokens stay valid, generate a fresh one only on a first-ever deploy). This works identically for
 # a cluster that shares no filesystem with this host.
 
 echo ""
-echo "Step 6: Creating nagelfluh-backend-secret..."
+echo "Step 6: Creating ymerflow-backend-secret..."
 
-kubectl create secret generic nagelfluh-postgres-secret \
-    --from-literal=postgres-password=nagelfluhpass \
-    -n nagelfluh \
+kubectl create secret generic ymerflow-postgres-secret \
+    --from-literal=postgres-password=ymerflowpass \
+    -n ymerflow \
     --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl create secret generic pgadmin-pgpass \
-    --from-literal=pgpass="postgres.nagelfluh.svc.cluster.local:5432:nagelfluh:nagelfluh:nagelfluhpass" \
-    -n nagelfluh \
+    --from-literal=pgpass="postgres.ymerflow.svc.cluster.local:5432:ymerflow:ymerflow:ymerflowpass" \
+    -n ymerflow \
     --dry-run=client -o yaml | kubectl apply -f -
 
 MINIO_ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
 export MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
 export MC_HOST_minio="https://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio.minio.svc.cluster.local:9000"
 
-# REGISTRY_USER/REGISTRY_PASSWORD (config.env, defaults nagelfluh/nagelfluh) only feed
+# REGISTRY_USER/REGISTRY_PASSWORD (config.env, defaults ymerflow/ymerflow) only feed
 # REGISTRY_AUTH below — yf-deploy-app's fallback registry credential when REGISTRY_PROTOCOL/
 # REGISTRY_CONFIG_JSON aren't in the Secret at all. With the default config.env (bootstrap-provision
 # always sets both), REGISTRY_AUTH is never actually consumed; it's kept only for an operator who
 # has explicitly disabled the registry bootstrap axis.
-REGISTRY_USER="${REGISTRY_USER:-nagelfluh}"
-REGISTRY_PASSWORD="${REGISTRY_PASSWORD:-nagelfluh}"
+REGISTRY_USER="${REGISTRY_USER:-ymerflow}"
+REGISTRY_PASSWORD="${REGISTRY_PASSWORD:-ymerflow}"
 export REGISTRY_AUTH=$(printf '%s:%s' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" | base64 -w0)
 
 # DATABASE_URL is fully resolved here (Postgres password inlined) so apply_app_workloads' migration
@@ -271,12 +271,12 @@ export REGISTRY_AUTH=$(printf '%s:%s' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" 
 # substitution needed (that substitution lived in the old static k8s/backend/deployment.yaml). It
 # uses the asyncpg driver for the backend app; the migration Job's alembic step strips "+asyncpg"
 # itself (see backend/alembic/env.py).
-export DATABASE_URL="postgresql+asyncpg://nagelfluh:nagelfluhpass@postgres.nagelfluh.svc.cluster.local:5432/nagelfluh"
+export DATABASE_URL="postgresql+asyncpg://ymerflow:ymerflowpass@postgres.ymerflow.svc.cluster.local:5432/ymerflow"
 
 # BACKEND_BASE_URL must use the public host:port because that is the address clients' browsers
 # follow when fetching dataset URLs. REGISTRY_PUBLIC_HOST/REGISTRY_URL/STORAGE_ENDPOINT/
 # STORAGE_BUCKET_PREFIX below are also script-computed rather than raw config.env text — see
-# nagelfluh-render-backend-secret-env's module docstring for why each one must win over a stray
+# ymerflow-render-backend-secret-env's module docstring for why each one must win over a stray
 # config.env value (STORAGE_ENDPOINT in particular: an operator's dev-host STORAGE_ENDPOINT must
 # NEVER leak into production, which always talks to MinIO via its in-cluster Service DNS name).
 #
@@ -293,19 +293,19 @@ export DATABASE_URL="postgresql+asyncpg://nagelfluh:nagelfluhpass@postgres.nagel
 # `MinioProtocolHandler.fsspec_kwargs()`/`test_connection()` read `backend.endpoint` directly at
 # runtime — it stays here as the one genuinely load-bearing key.
 export STORAGE_ENDPOINT="https://minio.minio.svc.cluster.local:9000"
-export STORAGE_BUCKET_PREFIX="nagelfluh-project-"
+export STORAGE_BUCKET_PREFIX="ymerflow-project-"
 export BACKEND_BASE_URL="${BACKEND_BASE_URL}"
 export SERVER_URL="${SERVER_URL}"
 
-kubectl create secret generic nagelfluh-backend-secret \
-    --from-env-file=<(env/bin/python "${PROJECT_ROOT}/backend/bin/nagelfluh-render-backend-secret-env" "${PROJECT_ROOT}/config.env") \
-    -n nagelfluh \
+kubectl create secret generic ymerflow-backend-secret \
+    --from-env-file=<(env/bin/python "${PROJECT_ROOT}/backend/bin/ymerflow-render-backend-secret-env" "${PROJECT_ROOT}/config.env") \
+    -n ymerflow \
     --dry-run=client -o yaml | kubectl apply -f -
-echo "  nagelfluh-backend-secret applied"
+echo "  ymerflow-backend-secret applied"
 
 # ── Step 6b: Admin credentials secret ────────────────────────────────────────
 # ADMIN_USER and ADMIN_PASSWORD are read from config.env (defaults: admin/password).
-# nagelfluh-admin-secret is idempotent: skip if it already exists so a running deployment's
+# ymerflow-admin-secret is idempotent: skip if it already exists so a running deployment's
 # credentials are never silently rotated.
 
 ADMIN_USER="${ADMIN_USER:-admin}"
@@ -313,20 +313,20 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-password}"
 
 echo ""
 echo "Step 6b: Creating admin credentials secret..."
-if ! kubectl get secret nagelfluh-admin-secret -n nagelfluh &>/dev/null; then
+if ! kubectl get secret ymerflow-admin-secret -n ymerflow &>/dev/null; then
     HTPASSWD="${ADMIN_USER}:$(openssl passwd -apr1 "${ADMIN_PASSWORD}")"
-    kubectl create secret generic nagelfluh-admin-secret \
+    kubectl create secret generic ymerflow-admin-secret \
         --from-literal=htpasswd="${HTPASSWD}" \
         --from-literal=pgadmin-email="${ADMIN_USER}@example.com" \
         --from-literal=admin-password="${ADMIN_PASSWORD}" \
-        -n nagelfluh
-    echo "  Created nagelfluh-admin-secret"
+        -n ymerflow
+    echo "  Created ymerflow-admin-secret"
     echo "  Admin username: ${ADMIN_USER}"
     echo "  Admin password: ${ADMIN_PASSWORD}"
     echo "  pgAdmin login:  ${ADMIN_USER}@example.com / ${ADMIN_PASSWORD}"
 else
-    echo "  nagelfluh-admin-secret already exists, skipping"
-    echo "  (delete it with: kubectl delete secret nagelfluh-admin-secret -n nagelfluh)"
+    echo "  ymerflow-admin-secret already exists, skipping"
+    echo "  (delete it with: kubectl delete secret ymerflow-admin-secret -n ymerflow)"
 fi
 
 # ── Step 6c: App image-pull Secret ────────────────────────────────────────────
@@ -348,11 +348,11 @@ PULL_CREDS_JSON=$(env/bin/python "${PROJECT_ROOT}/backend/bin/yf-registry-pull-c
 PULL_USER=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("username") or "")' "${PULL_CREDS_JSON}")
 PULL_PASSWORD=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("password") or "")' "${PULL_CREDS_JSON}")
 
-kubectl create secret docker-registry nagelfluh-app-pull \
+kubectl create secret docker-registry ymerflow-app-pull \
     --docker-server="${REGISTRY_ADDR}" \
     --docker-username="${PULL_USER}" \
     --docker-password="${PULL_PASSWORD}" \
-    -n nagelfluh \
+    -n ymerflow \
     --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl apply -f "${PROJECT_ROOT}/k8s/rbac/app-deploy-rbac.yaml"
@@ -360,7 +360,7 @@ kubectl apply -f "${PROJECT_ROOT}/k8s/rbac/app-deploy-rbac.yaml"
 # ── Step 7: Apply base Kubernetes manifests ───────────────────────────────────
 # Everything EXCEPT the app's own backend/frontend Deployments + the frontend NodePort Service,
 # which yf-deploy-app (Step 12) now owns. Postgres, the backend ExternalName Service in the
-# nagelfluh-jobs namespace, pgAdmin and Headlamp are all still plain manifests. The Postgres
+# ymerflow-jobs namespace, pgAdmin and Headlamp are all still plain manifests. The Postgres
 # PersistentVolume is no longer a host manifest here — it's applied by the active CLUSTER_TYPE's
 # ClusterProvider.bootstrap() (Step 3, before this step runs), mirroring how MinIO's PV moved into
 # plugins/ymerflow-minikube's own MinioProtocolHandler.bootstrap() — see
@@ -387,17 +387,17 @@ kubectl apply -R \
 
 echo ""
 echo "  Waiting for PostgreSQL to be ready..."
-kubectl rollout status statefulset/postgres -n nagelfluh --timeout=120s
-kubectl wait --for=condition=ready pod -l app=postgres -n nagelfluh --timeout=120s
+kubectl rollout status statefulset/postgres -n ymerflow --timeout=120s
+kubectl wait --for=condition=ready pod -l app=postgres -n ymerflow --timeout=120s
 
-# ── Step 8: Copy Headlamp SA token to nagelfluh namespace for nginx ───────────
+# ── Step 8: Copy Headlamp SA token to ymerflow namespace for nginx ───────────
 # The headlamp SA token lives in the headlamp namespace; nginx (in the frontend pod) runs in
-# nagelfluh. We copy the decoded token into a separate secret so nginx can mount and inject it as
+# ymerflow. We copy the decoded token into a separate secret so nginx can mount and inject it as
 # a request header, enabling automatic Headlamp authentication. Done BEFORE yf-deploy-app so
 # the frontend pod it creates finds the (optional) headlamp-nginx-token secret already present.
 
 echo ""
-echo "Step 8: Copying Headlamp token to nagelfluh namespace..."
+echo "Step 8: Copying Headlamp token to ymerflow namespace..."
 for i in $(seq 1 30); do
     HEADLAMP_TOKEN=$(kubectl get secret headlamp-static-token -n headlamp \
         -o jsonpath='{.data.token}' 2>/dev/null | base64 -d 2>/dev/null || true)
@@ -417,9 +417,9 @@ done
 if [ -n "${HEADLAMP_TOKEN}" ]; then
     kubectl create secret generic headlamp-nginx-token \
         --from-literal=token="${HEADLAMP_TOKEN}" \
-        -n nagelfluh \
+        -n ymerflow \
         --dry-run=client -o yaml | kubectl apply -f -
-    echo "  headlamp-nginx-token secret created/updated in nagelfluh namespace."
+    echo "  headlamp-nginx-token secret created/updated in ymerflow namespace."
 fi
 
 # ── Step 9: Deploy the app via yf-deploy-app (dogfoods deploy_app/expose_app) ──────────
@@ -427,24 +427,24 @@ fi
 # migration Job, (2) the static k8s/backend + k8s/frontend Deployments (imagePullPolicy:Never),
 # and (3) the hardcoded frontend NodePort Service. It runs as an in-cluster Job so
 # same-as-backend's K8sClient(kubeconfig=None) auto-detects in-cluster config; it reads config from
-# the nagelfluh-backend-secret created above via envFrom, resolves the default Cluster's
+# the ymerflow-backend-secret created above via envFrom, resolves the default Cluster's
 # provider, and calls deploy_app() (→ apply_app_workloads: Secret/migration Job/backend+frontend
 # Deployments + backend Service) then expose_app() (→ frontend NodePort). See
 # docs/plans/app-deployment-hooks.md Phase 5.
 
 echo ""
 echo "Step 9: Deploying the application (yf-deploy-app Job)..."
-kubectl delete job yf-deploy-app -n nagelfluh --ignore-not-found=true 2>/dev/null
+kubectl delete job yf-deploy-app -n ymerflow --ignore-not-found=true 2>/dev/null
 kubectl apply -f - <<MANIFEST
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: yf-deploy-app
-  namespace: nagelfluh
+  namespace: ymerflow
 spec:
   template:
     spec:
-      serviceAccountName: nagelfluh-app-deployer
+      serviceAccountName: ymerflow-app-deployer
       # yf-deploy-app reads its whole pod environment generically minus a short, fixed
       # denylist (docs/plans/generic-backend-config-passthrough.md, Design decision 3) — without
       # this, Kubernetes also injects a <SERVICE>_SERVICE_*/<SERVICE>_PORT_* env-var block per
@@ -452,7 +452,7 @@ spec:
       # would defeat that denylist. See backend/bin/yf-deploy-app's own module docstring.
       enableServiceLinks: false
       imagePullSecrets:
-      - name: nagelfluh-app-pull
+      - name: ymerflow-app-pull
       containers:
       - name: deploy
         image: ${BACKEND_IMAGE}
@@ -472,7 +472,7 @@ spec:
           value: "${APP_IMAGE_VERSION}"
         envFrom:
         - secretRef:
-            name: nagelfluh-backend-secret
+            name: ymerflow-backend-secret
       restartPolicy: Never
   backoffLimit: 0
 MANIFEST
@@ -484,26 +484,26 @@ MANIFEST
 # Job's logs before exiting so the migration/apply error is visible.
 deploy_app_deadline=$((SECONDS + 900))
 while true; do
-    complete=$(kubectl get job/yf-deploy-app -n nagelfluh \
+    complete=$(kubectl get job/yf-deploy-app -n ymerflow \
         -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null)
-    failed=$(kubectl get job/yf-deploy-app -n nagelfluh \
+    failed=$(kubectl get job/yf-deploy-app -n ymerflow \
         -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null)
     [ "$complete" = "True" ] && break
     if [ "$failed" = "True" ]; then
         echo "  yf-deploy-app Job failed — logs follow:"
-        kubectl logs job/yf-deploy-app -n nagelfluh || true
+        kubectl logs job/yf-deploy-app -n ymerflow || true
         exit 1
     fi
     if [ "$SECONDS" -ge "$deploy_app_deadline" ]; then
         echo "  yf-deploy-app Job did not complete — logs follow:"
-        kubectl logs job/yf-deploy-app -n nagelfluh || true
+        kubectl logs job/yf-deploy-app -n ymerflow || true
         exit 1
     fi
     sleep 2
 done
-DEPLOY_APP_LOGS=$(kubectl logs job/yf-deploy-app -n nagelfluh)
+DEPLOY_APP_LOGS=$(kubectl logs job/yf-deploy-app -n ymerflow)
 echo "${DEPLOY_APP_LOGS}"
-kubectl delete job yf-deploy-app -n nagelfluh
+kubectl delete job yf-deploy-app -n ymerflow
 
 # yf-deploy-app's last stdout line is a JSON object — {"url": ..., ...} — from whichever
 # ClusterProvider.expose_app() ran (backend/bin/yf-deploy-app's final `print(json.dumps(result))`).
@@ -529,8 +529,8 @@ fi
 
 echo ""
 echo "  Waiting for app Deployments to be ready..."
-kubectl rollout status deployment/backend -n nagelfluh --timeout=180s
-kubectl rollout status deployment/frontend -n nagelfluh --timeout=60s
+kubectl rollout status deployment/backend -n ymerflow --timeout=180s
+kubectl rollout status deployment/frontend -n ymerflow --timeout=60s
 
 # ── Step 10: Build runner image and update bootstrap environment ──────────────
 # build.sh builds the process-runner image on the host's own Docker daemon and pushes it through
@@ -565,13 +565,13 @@ if [ -n "${STORAGE_CONFIG_JSON:-}" ]; then
     echo "${STORAGE_CONFIG_JSON}" | python3 -m json.tool | sed 's/^/    /'
 fi
 echo ""
-echo "  Admin credentials are in secret nagelfluh-admin-secret (nagelfluh namespace)."
-echo "  To rotate: kubectl delete secret nagelfluh-admin-secret -n nagelfluh, then re-run."
+echo "  Admin credentials are in secret ymerflow-admin-secret (ymerflow namespace)."
+echo "  To rotate: kubectl delete secret ymerflow-admin-secret -n ymerflow, then re-run."
 echo ""
 echo "Useful commands:"
-echo "  kubectl logs -f deployment/backend  -n nagelfluh"
-echo "  kubectl logs -f deployment/frontend -n nagelfluh"
-echo "  kubectl get pods -n nagelfluh"
+echo "  kubectl logs -f deployment/backend  -n ymerflow"
+echo "  kubectl logs -f deployment/frontend -n ymerflow"
+echo "  kubectl get pods -n ymerflow"
 echo ""
 echo "All traffic goes through nginx on the frontend NodePort (30080)."
 echo "The backend is only reachable inside the cluster."

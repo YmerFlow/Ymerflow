@@ -17,9 +17,9 @@ Usage:
 
 `--resolve-only` prints the active RegistryBackend's `{"protocol": ..., "config": ...}` as JSON
 and exits without building or pushing anything — for the same production (all-in-cluster)
-in-pod-then-host split `nagelfluh-registry-push` used to solve (Postgres there is ClusterIP-only, unreachable from
+in-pod-then-host split `ymerflow-registry-push` used to solve (Postgres there is ClusterIP-only, unreachable from
 the host build machine; a pod that CAN reach it resolves the backend, then hands the JSON to a
-host-side invocation of this same script via the NAGELFLUH_RESOLVED_REGISTRY_JSON env var below).
+host-side invocation of this same script via the YMERFLOW_RESOLVED_REGISTRY_JSON env var below).
 
 Only the final pushed image reference goes to stdout; everything else (including docker build's
 own output) goes to stderr, so a caller can capture just the ref from stdout.
@@ -72,7 +72,7 @@ def get_active_registry_backend():
 
 
 def resolve_registry():
-    resolved_json = os.environ.get("NAGELFLUH_RESOLVED_REGISTRY_JSON")
+    resolved_json = os.environ.get("YMERFLOW_RESOLVED_REGISTRY_JSON")
     if resolved_json:
         resolved = json.loads(resolved_json)
         return resolved["protocol"], resolved["config"]

@@ -6,7 +6,7 @@ a Kueue `ResourceFlavor`/`ClusterQueue`/`LocalQueue` from real node allocatable 
 applies the backend's `ymerflow-backend-jobs`/`ymerflow-backend-kueue-reader` RBAC.
 
 This replaces two independent, duplicated shell implementations (the minikube-only
-`plugins/ymerflow-minikube`'s provision-nagelfluh-jobs.sh and the GCP plugin's own GKE setup script) with one
+`plugins/ymerflow-minikube`'s provision-ymerflow-jobs.sh and the GCP plugin's own GKE setup script) with one
 provider-agnostic Python routine — see Design decision 8 in
 `docs/plans/registry-backend-hooks.md`. None of this logic is actually specific to any given
 `Cluster.cluster_type`: everything here operates purely through `kubernetes_asyncio` against
@@ -51,11 +51,11 @@ KUEUE_GROUP = "kueue.x-k8s.io"
 KUEUE_API_VERSION_STR = "v1beta2"
 
 RESOURCE_FLAVOR_NAME = "default-flavor"
-CLUSTER_QUEUE_NAME = "nagelfluh-cluster-queue"
-LOCAL_QUEUE_NAME = "nagelfluh-queue"
+CLUSTER_QUEUE_NAME = "ymerflow-cluster-queue"
+LOCAL_QUEUE_NAME = "ymerflow-queue"
 EPHEMERAL_STORAGE_QUOTA = "100Gi"  # not computed from node capacity, mirrors the shell exactly
 
-# Headroom/floor mirror plugins/ymerflow-minikube's provision-nagelfluh-jobs.sh's `-1`/`-1` reservation and `<1 -> 1`
+# Headroom/floor mirror plugins/ymerflow-minikube's provision-ymerflow-jobs.sh's `-1`/`-1` reservation and `<1 -> 1`
 # floor, now applied to the *summed* allocatable capacity across every node (Design decision 8:
 # "the more general of the two approaches ... works identically for minikube").
 QUOTA_HEADROOM_CPU_CORES = 1.0
@@ -77,12 +77,12 @@ KUEUE_CONTROLLER_POLL_INTERVAL_SECONDS = 2
 KUEUE_WEBHOOK_POLL_TIMEOUT_SECONDS = 400
 KUEUE_WEBHOOK_POLL_INTERVAL_SECONDS = 5
 
-# The backend's own ServiceAccount namespace. Mirrors the shell's `NAGELFLUH_BACKEND_NAMESPACE`
-# env var, which every real deployment leaves at its default ("nagelfluh") — this routine has no
+# The backend's own ServiceAccount namespace. Mirrors the shell's `YMERFLOW_BACKEND_NAMESPACE`
+# env var, which every real deployment leaves at its default ("ymerflow") — this routine has no
 # access to config.env-style env vars (it's called from the backend process itself, on-demand,
 # not at shell-provisioning time), so a fixed literal is simpler than threading a new parameter
 # through ensure_cluster_job_ready()'s signature for a value that's effectively always constant.
-BACKEND_SERVICE_ACCOUNT_NAMESPACE = "nagelfluh"
+BACKEND_SERVICE_ACCOUNT_NAMESPACE = "ymerflow"
 
 RBAC_ROLE_NAME = "ymerflow-backend-jobs"
 RBAC_CLUSTERROLE_NAME = "ymerflow-backend-kueue-reader"

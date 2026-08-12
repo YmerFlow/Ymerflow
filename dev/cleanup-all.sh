@@ -46,8 +46,8 @@ echo ""
 # Step 1: Stop Screen Sessions
 # ==========================================
 echo "Step 1: Stopping screen sessions..."
-if screen -list | grep -q "nagelfluh-dev"; then
-    screen -X -S nagelfluh-dev quit 2>/dev/null || true
+if screen -list | grep -q "ymerflow-dev"; then
+    screen -X -S ymerflow-dev quit 2>/dev/null || true
     print_status "Screen session stopped"
 else
     print_status "No screen session running"

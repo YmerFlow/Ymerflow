@@ -73,10 +73,10 @@ def upgrade() -> None:
     is_prod = 'gcp' in database_url or 'cloud' in database_url
 
     if is_prod:
-        gcp_project = os.getenv('GCP_PROJECT', 'nagelfluh')
-        docker_image = f'gcr.io/{gcp_project}/nagelfluh-runner:latest'
+        gcp_project = os.getenv('GCP_PROJECT', 'ymerflow')
+        docker_image = f'gcr.io/{gcp_project}/ymerflow-runner:latest'
     else:
-        docker_image = 'nagelfluh-runner:latest'  # Use minikube's docker daemon
+        docker_image = 'ymerflow-runner:latest'  # Use minikube's docker daemon
 
     # Check if Bootstrap environment already exists
     connection = op.get_bind()

@@ -338,7 +338,7 @@ Plot elements are defined in `frontend/src/widgets/PlotView/elements/`:
 ### Working with Storage
 
 All dataset I/O uses `fsspec` for storage abstraction. Processes receive `storage_context` with:
-- `storage_base` - Base URL (e.g., `s3://nagelfluh-project-abc123`)
+- `storage_base` - Base URL (e.g., `s3://ymerflow-project-abc123`)
 - `storage_kwargs` - Additional fsspec arguments (e.g., MinIO endpoint)
 - `process_id` - Current process ID
 - `project_id` - Project ID

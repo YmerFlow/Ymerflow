@@ -9,7 +9,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend
-  namespace: nagelfluh
+  namespace: ymerflow
 spec:
   replicas: 1
   selector:
@@ -26,22 +26,22 @@ spec:
         command:
         - sh
         - -c
-        - until pg_isready -h postgres -p 5432 -U nagelfluh; do echo "Waiting for postgres..."; sleep 2; done
+        - until pg_isready -h postgres -p 5432 -U ymerflow; do echo "Waiting for postgres..."; sleep 2; done
       - name: migrate
         image: ymerflow-backend:prod
         imagePullPolicy: Never
         command: ["alembic", "-c", "backend/alembic.ini", "upgrade", "head"]
         envFrom:
         - secretRef:
-            name: nagelfluh-backend-secret
+            name: ymerflow-backend-secret
         env:
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: nagelfluh-postgres-secret
+              name: ymerflow-postgres-secret
               key: postgres-password
         - name: DATABASE_URL
-          value: "postgresql+asyncpg://nagelfluh:$(POSTGRES_PASSWORD)@postgres.nagelfluh.svc.cluster.local:5432/nagelfluh"
+          value: "postgresql+asyncpg://ymerflow:$(POSTGRES_PASSWORD)@postgres.ymerflow.svc.cluster.local:5432/ymerflow"
       containers:
       - name: backend
         image: ymerflow-backend:prod
@@ -50,15 +50,15 @@ spec:
         - containerPort: 8000
         envFrom:
         - secretRef:
-            name: nagelfluh-backend-secret
+            name: ymerflow-backend-secret
         env:
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: nagelfluh-postgres-secret
+              name: ymerflow-postgres-secret
               key: postgres-password
         - name: DATABASE_URL
-          value: "postgresql+asyncpg://nagelfluh:$(POSTGRES_PASSWORD)@postgres.nagelfluh.svc.cluster.local:5432/nagelfluh"
+          value: "postgresql+asyncpg://ymerflow:$(POSTGRES_PASSWORD)@postgres.ymerflow.svc.cluster.local:5432/ymerflow"
         readinessProbe:
           httpGet:
             path: /

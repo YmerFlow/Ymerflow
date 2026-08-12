@@ -105,7 +105,7 @@ class ClusterProvider:
     async def deploy_app(self, k8s_client, provider_config: dict, namespace: str, images: dict,
                          app_config: dict, secrets: dict) -> None:
         """Apply the YmerFlow application's own workload-level resources (backend + frontend
-        Deployments/Service, the nagelfluh-backend-secret Secret, the DB migration Job) onto this
+        Deployments/Service, the ymerflow-backend-secret Secret, the DB migration Job) onto this
         provider's cluster. Optional — only ever called when `supports_app_deployment` is True;
         the default raises so a provider that sets the flag but forgets to implement this fails
         loudly rather than silently no-op'ing.
@@ -119,7 +119,7 @@ class ClusterProvider:
         Args:
             k8s_client: a `K8sClient` for this cluster (typically `self.connect(...)`).
             provider_config: this Cluster row's `provider_config`.
-            namespace: the app namespace to deploy into (e.g. "nagelfluh") — distinct from
+            namespace: the app namespace to deploy into (e.g. "ymerflow") — distinct from
                 `Cluster.namespace`, which is the *jobs* namespace.
             images: `{"backend": <resolved image ref>, "frontend": <resolved image ref>}`,
                 already resolved through the registry axis (Design decision 4).

@@ -45,7 +45,7 @@ export KUBECONFIG="$KUBECONFIG_FILE"
 APP_IMAGE_VERSION="${APP_IMAGE_VERSION:-$(env/bin/python backend/bin/yf-resolve-app-image-tag)}"
 
 echo "=== Building YmerFlow Runner Image for ${ENV_NAME} Environment ==="
-echo "    Repository: nagelfluh-base-runner:${ENV_TAG}"
+echo "    Repository: ymerflow-base-runner:${ENV_TAG}"
 echo ""
 
 # Registry-protocol-agnostic build+push: `docker build` runs against the HOST's own Docker
@@ -54,7 +54,7 @@ echo ""
 # through whatever RegistryProtocolHandler the active RegistryBackend resolves to via
 # backend/bin/yf-build-and-push. It prints only the resolved full image reference to
 # stdout; the build log and all diagnostics go to stderr.
-echo "Building and pushing nagelfluh-base-runner:${ENV_TAG}..."
+echo "Building and pushing ymerflow-base-runner:${ENV_TAG}..."
 
 if [ "${DEPLOYMENT:-}" = "production" ]; then
     # yf-build-and-push needs a DB connection to look up the active RegistryBackend, but
@@ -69,14 +69,14 @@ if [ "${DEPLOYMENT:-}" = "production" ]; then
 import json, os
 print(json.dumps({"protocol": os.environ["REGISTRY_PROTOCOL"], "config": json.loads(os.environ["REGISTRY_CONFIG_JSON"])}))
 ')
-    FULL_IMAGE=$(NAGELFLUH_RESOLVED_REGISTRY_JSON="${RESOLVED_JSON}" env/bin/python backend/bin/yf-build-and-push \
-        docker/base-runner/Dockerfile . nagelfluh-base-runner "${ENV_TAG}")
+    FULL_IMAGE=$(YMERFLOW_RESOLVED_REGISTRY_JSON="${RESOLVED_JSON}" env/bin/python backend/bin/yf-build-and-push \
+        docker/base-runner/Dockerfile . ymerflow-base-runner "${ENV_TAG}")
 else
     FULL_IMAGE=$(env/bin/python backend/bin/yf-build-and-push \
-        docker/base-runner/Dockerfile . nagelfluh-base-runner "${ENV_TAG}")
+        docker/base-runner/Dockerfile . ymerflow-base-runner "${ENV_TAG}")
 fi
 
-echo "✓ Image nagelfluh-base-runner:${ENV_TAG} built and pushed to: ${FULL_IMAGE}"
+echo "✓ Image ymerflow-base-runner:${ENV_TAG} built and pushed to: ${FULL_IMAGE}"
 echo ""
 
 # Extract process schemas from the built image and update environment
@@ -89,7 +89,7 @@ SCHEMA_FILE=$(mktemp)
 
 # Extract process_schemas.json from the image using docker (local build tag, still present in
 # the host's own Docker daemon from the build above)
-if docker run --rm --entrypoint cat "nagelfluh-base-runner:${ENV_TAG}" /app/process_schemas.json > "$SCHEMA_FILE" 2>&1; then
+if docker run --rm --entrypoint cat "ymerflow-base-runner:${ENV_TAG}" /app/process_schemas.json > "$SCHEMA_FILE" 2>&1; then
     echo "✓ Extracted process schemas from image"
 
     # Show what we extracted
@@ -121,22 +121,22 @@ config = json.loads(os.environ["REGISTRY_CONFIG_JSON"])
 print(get_registry_protocol_handler(protocol).image_url(config, "ymerflow-backend", os.environ["APP_IMAGE_VERSION"]))
 ')
 
-        kubectl delete configmap "runner-schemas-${ENV_TAG}" -n nagelfluh --ignore-not-found=true 2>/dev/null
+        kubectl delete configmap "runner-schemas-${ENV_TAG}" -n ymerflow --ignore-not-found=true 2>/dev/null
         kubectl create configmap "runner-schemas-${ENV_TAG}" \
             --from-file=process_schemas.json="$SCHEMA_FILE" \
-            -n nagelfluh
-        kubectl delete job "db-update-${ENV_TAG}" -n nagelfluh --ignore-not-found=true 2>/dev/null
+            -n ymerflow
+        kubectl delete job "db-update-${ENV_TAG}" -n ymerflow --ignore-not-found=true 2>/dev/null
         kubectl apply -f - <<MANIFEST
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: db-update-${ENV_TAG}
-  namespace: nagelfluh
+  namespace: ymerflow
 spec:
   template:
     spec:
       imagePullSecrets:
-      - name: nagelfluh-app-pull
+      - name: ymerflow-app-pull
       containers:
       - name: update
         image: ${BACKEND_IMAGE}
@@ -149,7 +149,7 @@ spec:
                   "/schemas/process_schemas.json", "${ENV_NAME}", "${FULL_IMAGE}"]
         envFrom:
         - secretRef:
-            name: nagelfluh-backend-secret
+            name: ymerflow-backend-secret
         volumeMounts:
         - name: schemas
           mountPath: /schemas
@@ -160,14 +160,14 @@ spec:
       restartPolicy: Never
   backoffLimit: 0
 MANIFEST
-        kubectl wait --for=condition=complete "job/db-update-${ENV_TAG}" -n nagelfluh --timeout=60s
-        kubectl logs "job/db-update-${ENV_TAG}" -n nagelfluh
-        kubectl delete job "db-update-${ENV_TAG}" -n nagelfluh
-        kubectl delete configmap "runner-schemas-${ENV_TAG}" -n nagelfluh
+        kubectl wait --for=condition=complete "job/db-update-${ENV_TAG}" -n ymerflow --timeout=60s
+        kubectl logs "job/db-update-${ENV_TAG}" -n ymerflow
+        kubectl delete job "db-update-${ENV_TAG}" -n ymerflow
+        kubectl delete configmap "runner-schemas-${ENV_TAG}" -n ymerflow
         echo ""
         echo "✓ ${ENV_NAME} environment updated successfully"
     elif python3 docker/update_bootstrap_environment.py "$SCHEMA_FILE" "$ENV_NAME" "$FULL_IMAGE"; then
-        # No nagelfluh namespace → dev mode with local SQLite database
+        # No ymerflow namespace → dev mode with local SQLite database
         echo ""
         echo "✓ ${ENV_NAME} environment updated successfully"
     else

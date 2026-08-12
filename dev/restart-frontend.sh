@@ -1,7 +1,7 @@
 #!/bin/bash
-# Restart the frontend dev server in the nagelfluh-dev screen session
+# Restart the frontend dev server in the ymerflow-dev screen session
 
-SCREEN_SESSION="nagelfluh-dev"
+SCREEN_SESSION="ymerflow-dev"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 if ! screen -list | grep -q "\.$SCREEN_SESSION\s"; then

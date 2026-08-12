@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: nagelfluh
+  name: ymerflow
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: nagelfluh-jobs
+  name: ymerflow-jobs
 ---
 apiVersion: v1
 kind: Namespace

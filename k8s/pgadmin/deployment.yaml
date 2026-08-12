@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: pgadmin
-  namespace: nagelfluh
+  namespace: ymerflow
 spec:
   replicas: 1
   selector:
@@ -37,12 +37,12 @@ spec:
         - name: PGADMIN_DEFAULT_EMAIL
           valueFrom:
             secretKeyRef:
-              name: nagelfluh-admin-secret
+              name: ymerflow-admin-secret
               key: pgadmin-email
         - name: PGADMIN_DEFAULT_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: nagelfluh-admin-secret
+              name: ymerflow-admin-secret
               key: admin-password
         - name: PGADMIN_CONFIG_SERVER_MODE
           value: "True"

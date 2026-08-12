@@ -30,7 +30,7 @@ The fix is NOT a best-effort guess at whatever kubeconfig happens to be ambient 
 using the cluster axis's OWN `bootstrap()`/`connect()`, the definitively-correct-for-this-
 cluster-type way to reach an already-provisioned instance (Minikube: starts/finds the local VM
 and reads back its real kubeconfig; a future cloud provider: its own stored credential), to read
-back whatever `<AXIS>_CONFIG_JSON` a previous run already deployed into `nagelfluh-backend-secret`
+back whatever `<AXIS>_CONFIG_JSON` a previous run already deployed into `ymerflow-backend-secret`
 — then merge that in as defaults (config.env's own values still win where both specify the same
 key) before calling registry/storage's `bootstrap()`. A secret/namespace that genuinely doesn't
 exist yet (a first-ever deploy) is the normal, expected case — treated as "nothing to reuse", not
@@ -47,7 +47,7 @@ point in the sequence — see prod/runall-production.sh's Step 5 comment).
 Emits a single JSON object to stdout containing whichever of "registry"/"storage"/"cluster" keys
 were actually present (each holding that axis's {"protocol": ..., "config": ...}), or `{}` if no
 axis was configured. ONLY this JSON goes to stdout — all diagnostics and errors go to stderr, same
-"clean stdout" discipline as nagelfluh-registry-push, since a later caller is meant to capture and
+"clean stdout" discipline as ymerflow-registry-push, since a later caller is meant to capture and
 parse this script's stdout.
 """
 import asyncio
@@ -75,14 +75,14 @@ _AXES = [
     ("storage", "STORAGE_PROTOCOL", "STORAGE_CONFIG_JSON", get_protocol_handler),
 ]
 
-# Namespace/name nagelfluh-backend-secret is created under — see prod/runall-production.sh Step 6.
-_APP_NAMESPACE = "nagelfluh"
-_APP_SECRET_NAME = "nagelfluh-backend-secret"
+# Namespace/name ymerflow-backend-secret is created under — see prod/runall-production.sh Step 6.
+_APP_NAMESPACE = "ymerflow"
+_APP_SECRET_NAME = "ymerflow-backend-secret"
 
 
 async def _read_deployed_axis_configs(cluster_provider, cluster_config: dict) -> dict:
     """Read back whichever `<AXIS>_CONFIG_JSON` values a previous run already deployed into
-    nagelfluh-backend-secret, via cluster_provider's own connect() — returns
+    ymerflow-backend-secret, via cluster_provider's own connect() — returns
     {config_var_name: parsed_config_dict}, or {} if the Secret/namespace doesn't exist yet (a
     first-ever deploy — normal, not an error) or holds no valid JSON for a given key."""
     k8s_client = cluster_provider.connect(cluster_config, _APP_NAMESPACE)
@@ -129,7 +129,7 @@ def main():
         enriched_cluster_config = cluster_provider.bootstrap(cluster_config)
         result["cluster"] = {"protocol": cluster_protocol, "config": enriched_cluster_config}
 
-        print("Checking for a previously-deployed nagelfluh-backend-secret to reuse "
+        print("Checking for a previously-deployed ymerflow-backend-secret to reuse "
               "registry/storage credentials from...", file=sys.stderr)
         deployed_axis_configs = asyncio.run(
             _read_deployed_axis_configs(cluster_provider, enriched_cluster_config))
