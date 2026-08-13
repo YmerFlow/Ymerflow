@@ -1,0 +1,44 @@
+ChannelName            | Units | Label                                                                                                                         
+
+line                   | -        | line    
+flight                 | -        | flight number
+date                   | yyyymmdd | flight date
+fid                    | s        | fiducial  
+time_ssm               | s        | universal time (seconds since midnight)
+easting_WGS84          | m        | helicopter easting WGS84 UTM zone 11N
+northing_WGS84         | m        | helicopter northing WGS84 UTM zone 11N
+easting_tx_WGS84       | m        | transmitter easting WGS84 UTM zone 11N 
+northing_tx_WGS84      | m        | transmitter northing WGS84 UTM zone 11N                    
+latitude_WGS84         | deg      | helicopter latitude in WGS84           
+longitude_WGS84        | deg      | helicopter longitude in WGS84 
+latitude_tx_WGS84      | deg      | transmitter latitude in WGS84 
+longitude_tx_WGS84     | deg      | transmitter longitude in WGS84
+radar                  | m        | helicopter height above terrain from the radar altimeter
+laser                  | m        | transmitter height above terrain from the laser altimeter
+height_tx              | m        | calculated transmitter height above terrain from the radar altimeter     
+gpsz                   | m        | helicopter (tail) GPS height above mean sea level 
+gpsz_tx                | m        | transmitter GPS height above mean sea level
+dtm                    | m        | digital elevation model             
+diurnal                | nT       | diurnal correction                           
+mag_lag                | nT       | total magnetic field corrected for lag            
+igrf                   | nT       | International Geomagnetic Reference Field           
+mag_rmi                | nT       | final residual magnetic intensity            
+mag_tmi                | nT       | final total magnetic intensity            
+pitch_tx               | degrees  | pitch angle of loop (+ve nose up) 
+roll_tx                | degrees  | roll angle of loop (+ve left up)      
+yaw_tx                 | degrees  | yaw angle of loop (forward azimuth)
+tx_current             | A        | peak transmitter current 
+powerline              | -        | powerline monitor 
+emz_db_prelim_pfr      | nT/s     | db/dt z component channels 1-25 (primary field removed)
+emx_db_final           | nT/s     | final db/dt x component channels 1-25    
+emy_db_final           | nT/s     | final db/dt y component channels 1-25    
+emz_db_final           | nT/s     | final db/dt z component channels 1-25
+emx_bf_final           | nT/s     | final B field x component channels 1-25    
+emy_bf_final           | nT/s     | final B field y component channels 1-25    
+emz_bf_final           | nT/s     | final B field z component channels 1-25
+emx_db_ff              | nT/s/m   | Fraser filtered dB/dt X Component Channels 1 - 25
+tcon_db_z              | us       | time constant dB/dt Z maximum detectable
+tcon_bf_z              | us       | time constant B field Z maximum detectable
+chn_conductivity_db_z  | mS/m     | apparent conductivity of dB/dt Z
+dcon_db_z_500m_by5m    | mS/m     | differential conductivity depth section dB/dt Z, 5 m slicing to 500m
+dcon_db_z_depth        | m        | depth of differential conductivity       

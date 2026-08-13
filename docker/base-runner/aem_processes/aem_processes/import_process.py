@@ -110,7 +110,7 @@ class LibaarhusXYZImporter:
 
             # TODO: if the uploaded file is a CSV (comma-separated, no
             # /- prefixed headers), auto-convert it to Aarhus XYZ format
-            # before passing to libaarhusxyz. See pending_tools/aem_csv_to_xyz.py
+            # before passing to libaarhusxyz. See pending_tools/csv_to_xyz/aem_csv_to_xyz.py
             # (data_csv_to_xyz function) for the conversion logic. Detection:
             # check whether the first line of the file starts with '/' or
             # contains commas with no whitespace.

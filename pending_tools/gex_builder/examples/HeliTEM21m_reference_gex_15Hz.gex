@@ -1,0 +1,79 @@
+[General]
+Description=Xcalibur HeliTEM 21m Setup
+GPSPosition1          = 0.00 0.00 0.00
+AltimeterPosition1    = 0.00 0.00 0.00
+InclinometerPosition1 = 0.00 0.00 0.00
+RxCoilPosition1       = 0.00 0.00 0.00
+
+FrontGateDelay=0.00
+RxCoilLPFilter1=1.00  61E+03
+
+LoopType=7
+TxLoopSides=18.61 18.61
+
+CalculateRawDataSTD=0
+
+WaveformPoint01 = -1.157227e-02  0.000000e+00
+WaveformPoint02 = -1.110026e-02  9.412818e-01
+WaveformPoint03 = -8.748372e-03  9.609545e-01
+WaveformPoint04 = -7.495117e-03  9.695364e-01
+WaveformPoint05 = -6.274414e-03  9.767818e-01
+WaveformPoint06 = -5.029297e-03  9.831545e-01
+WaveformPoint07 = -3.702799e-03  9.889364e-01
+WaveformPoint08 = -2.132161e-03  9.946136e-01
+WaveformPoint09 = -5.045573e-04  9.993500e-01
+WaveformPoint10 = -4.964193e-04  9.994091e-01
+WaveformPoint11 = -4.801432e-04  9.996636e-01
+WaveformPoint12 = -4.720052e-04  1.000000e+00
+WaveformPoint13 = -4.638672e-04  9.979091e-01
+WaveformPoint14 = -4.557292e-04  9.894591e-01
+WaveformPoint15 = -4.150391e-04  9.239364e-01
+WaveformPoint16 = -3.580729e-04  8.198727e-01
+WaveformPoint17 = -3.011068e-04  7.040591e-01
+WaveformPoint18 = -1.790365e-04  4.248727e-01
+WaveformPoint19 = -1.627604e-05  1.624091e-02
+WaveformPoint20 = -8.138021e-06  3.481818e-03
+WaveformPoint21 =  0.000000e+00  0.000000e+00
+
+NumberOfTurns=4
+
+GateTime01 = 5.7000000e-05  4.8800000e-05  6.5100000e-05
+GateTime02 = 7.3200000e-05  6.5100000e-05  8.1400000e-05
+GateTime03 = 9.3600000e-05  8.1400000e-05  1.0580000e-04
+GateTime04 = 1.2210000e-04  1.0580000e-04  1.3830000e-04
+GateTime05 = 1.5870000e-04  1.3830000e-04  1.7900000e-04
+GateTime06 = 2.0350000e-04  1.7900000e-04  2.2790000e-04
+GateTime07 = 2.6040000e-04  2.2790000e-04  2.9300000e-04
+GateTime08 = 3.3370000e-04  2.9300000e-04  3.7430000e-04
+GateTime09 = 4.2320000e-04  3.7430000e-04  4.7200000e-04
+GateTime10 = 5.3710000e-04  4.7200000e-04  6.0220000e-04
+GateTime11 = 6.8360000e-04  6.0220000e-04  7.6500000e-04
+GateTime12 = 8.6670000e-04  7.6500000e-04  9.6840000e-04
+GateTime13 = 1.0986000e-03  9.6840000e-04  1.2288000e-03
+GateTime14 = 1.3957000e-03  1.2288000e-03  1.5625000e-03
+GateTime15 = 1.7741000e-03  1.5625000e-03  1.9857000e-03
+GateTime16 = 2.2542000e-03  1.9857000e-03  2.5228000e-03
+GateTime17 = 2.8646000e-03  2.5228000e-03  3.2064000e-03
+GateTime18 = 3.6377000e-03  3.2064000e-03  4.0690000e-03
+GateTime19 = 4.6183000e-03  4.0690000e-03  5.1676000e-03
+GateTime20 = 5.8634000e-03  5.1676000e-03  6.5592000e-03
+GateTime21 = 7.4463000e-03  6.5592000e-03  8.3333000e-03
+GateTime22 = 9.4564000e-03  8.3333000e-03  1.0579400e-02
+GateTime23 = 1.2007600e-02  1.0579400e-02  1.3435900e-02
+GateTime24 = 1.5250700e-02  1.3435900e-02  1.7065400e-02
+GateTime25 = 1.9368500e-02  1.7065400e-02  2.1671500e-02
+
+[Channel1]
+RxCoilNumber=1
+GateTimeShift=0.000E+00
+GateFactor=1.000E+00
+RemoveInitialGates=0
+RemoveGatesFrom=0
+PrimaryFieldDampingFactor=1.000E-01
+UniformDataSTD=0.04
+NoGates=25
+RepFreq=15
+TxApproximateCurrent=220.00
+ReceiverPolarizationXYZ=Z
+FrontGateTime=-1
+TiBLowPassFilter=-1.00 1.000E+00
