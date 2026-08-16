@@ -1,7 +1,9 @@
 """Generic, provider-agnostic cluster job-readiness provisioning.
 
 Makes a `Cluster` actually ready to run YmerFlow Jobs: creates the jobs namespace, installs the
-Kueue operator (if not already present) and waits for it to become fully ready, sizes and applies
+Kueue operator (if not already present, from the manifest bundle vendored under
+`kueue-manifests/` — refreshed by `scripts/update-kueue-manifest.sh`) and waits for it to become
+fully ready, sizes and applies
 a Kueue `ResourceFlavor`/`ClusterQueue`/`LocalQueue` from real node allocatable capacity, and
 applies the backend's `ymerflow-backend-jobs`/`ymerflow-backend-kueue-reader` RBAC.
 
@@ -29,8 +31,8 @@ ran. `kubernetes_asyncio.utils.create_from_dict()` is the one exception: it take
 import asyncio
 import logging
 import math
+import os
 
-import aiohttp
 import yaml
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client.exceptions import ApiException
@@ -41,7 +43,16 @@ from backend.services.k8s_client import API_REQUEST_TIMEOUT_SECONDS, _parse_cpu_
 logger = logging.getLogger(__name__)
 
 KUEUE_VERSION_TAG = "v0.16.4"
-KUEUE_MANIFEST_URL = f"https://github.com/kubernetes-sigs/kueue/releases/download/{KUEUE_VERSION_TAG}/manifests.yaml"
+# The Kueue release manifest bundle is vendored into the image (see
+# backend/services/kueue-manifests/, refreshed by scripts/update-kueue-manifest.sh) rather than
+# downloaded from GitHub at provisioning time. This provisioning runs inside an alembic migration
+# (see d1266f2f6e68_generic_seed_default_cluster.py), where a transient GitHub release-CDN
+# disconnect used to abort the whole `alembic upgrade` (ServerDisconnectedError, no retry). Reading
+# a bundled, version-pinned file removes that network dependency entirely — the version is already
+# pinned to KUEUE_VERSION_TAG, so there's nothing dynamic to fetch.
+KUEUE_MANIFEST_PATH = os.path.join(
+    os.path.dirname(__file__), "kueue-manifests", f"{KUEUE_VERSION_TAG}.yaml"
+)
 KUEUE_NAMESPACE = "kueue-system"
 KUEUE_DEPLOYMENT_NAME = "kueue-controller-manager"
 KUEUE_WEBHOOK_SERVICE_NAME = "kueue-webhook-service"
@@ -62,9 +73,6 @@ QUOTA_HEADROOM_CPU_CORES = 1.0
 QUOTA_HEADROOM_MEMORY_GB = 1.0
 QUOTA_MIN_CPU_CORES = 1.0
 QUOTA_MIN_MEMORY_GB = 1.0
-
-# Fetching the Kueue release manifest bundle is a large (multi-MB) one-shot download.
-MANIFEST_FETCH_TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 # Poll budgets mirror the shell script's loops:
 #   CRD registration:      `for i in {1..30}; sleep 2`  -> 30 * 2s  = 60s
@@ -203,7 +211,7 @@ async def _ensure_kueue_installed_and_ready(k8s_client) -> None:
     if await _kueue_controller_ready(apps_api):
         logger.info("Kueue already installed and running")
     else:
-        logger.info("Installing Kueue %s from %s", KUEUE_VERSION_TAG, KUEUE_MANIFEST_URL)
+        logger.info("Installing Kueue %s from %s", KUEUE_VERSION_TAG, KUEUE_MANIFEST_PATH)
         await _apply_kueue_manifests(k8s_client.core_api.api_client)
         await _wait_for_kueue_crd()
         await _wait_for_kueue_controller(apps_api)
@@ -215,10 +223,8 @@ async def _ensure_kueue_installed_and_ready(k8s_client) -> None:
 
 
 async def _apply_kueue_manifests(api_client) -> None:
-    async with aiohttp.ClientSession(timeout=MANIFEST_FETCH_TIMEOUT) as session:
-        async with session.get(KUEUE_MANIFEST_URL) as resp:
-            resp.raise_for_status()
-            manifest_text = await resp.text()
+    with open(KUEUE_MANIFEST_PATH, encoding="utf-8") as f:
+        manifest_text = f.read()
 
     for doc in yaml.safe_load_all(manifest_text):
         if not doc:
