@@ -58,7 +58,7 @@ def main():
         # Connect to database
         # Try multiple possible locations
         default_db_path = None
-        for possible_path in ['ymerflow.db', 'backend/ymerflow.db', 'nagelfluh.db', 'backend/nagelfluh.db']:
+        for possible_path in ['ymerflow.db', 'backend/ymerflow.db']:
             full_path = project_root / possible_path
             if full_path.exists():
                 default_db_path = str(full_path)

@@ -67,7 +67,7 @@ The project uses Python's `importlib.metadata` entry points for plugin-like regi
 ```python
 # setup.py or pyproject.toml
 [entry_points]
-nagelfluh.process_types =
+ymerflow.process_types =
     import = aem_processes.aem_processes.import_process:Import
     processing = aem_processes.aem_processes.processing_process:Processing
     inversion = aem_processes.aem_processes.inversion_process:Inversion
@@ -94,10 +94,10 @@ mag_pipeline.filters =
     noise_qc = AirMagTools.magfilters:noise_qc
     ...
 
-nagelfluh.mag_equiv_source_systems =
+ymerflow.mag_equiv_source_systems =
     MagEquivalentSourceSystem = mag_inversion.equivalent_source:MagEquivalentSourceSystem
 
-nagelfluh.mag_inversion_3d_systems =
+ymerflow.mag_inversion_3d_systems =
     MagInversion3DSystem = mag_inversion.full_3d:MagInversion3DSystem
 ```
 

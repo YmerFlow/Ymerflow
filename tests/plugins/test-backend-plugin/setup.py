@@ -38,7 +38,7 @@ def _build_frontend():
         raise RuntimeError(
             "ymerflow_plugin_build is required to build this plugin's frontend. Install it first:\n"
             "  pip install 'git+https://github.com/YmerFlow/Ymerflow-plugin-sdk.git'\n"
-            "(or set NAGELFLUH_SKIP_FRONTEND_BUILD=1 for a metadata-only install)."
+            "(or set YMERFLOW_SKIP_FRONTEND_BUILD=1 for a metadata-only install)."
         ) from e
 
     with open(os.path.join(FRONTEND_SRC, "package.json")) as f:
@@ -59,7 +59,7 @@ class BuildWithFrontend(build_py):
     def run(self):
         # Only build if a build toolchain (npm) is available; skip gracefully otherwise so that
         # metadata-only installs don't hard-fail in environments without node.
-        if os.environ.get("NAGELFLUH_SKIP_FRONTEND_BUILD") != "1":
+        if os.environ.get("YMERFLOW_SKIP_FRONTEND_BUILD") != "1":
             _build_frontend()
         super().run()
 

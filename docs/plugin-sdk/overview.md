@@ -78,7 +78,7 @@ change, so the compatibility reason for freezing no longer applies. The bridge n
   `build_frontend_plugin.py` reads that and passes it straight into
   `ymerflow_plugin_build.build_frontend()` as the `shared_versions=` keyword argument — an in-process
   Python call, not another env var the JS side reads.
-- `PLUGIN_NPM_SOURCE_DIR` / `/var/lib/nagelfluh/plugin-npm-source` — server-local npm source path
+- `PLUGIN_NPM_SOURCE_DIR` / `/var/lib/ymerflow/plugin-npm-source` — server-local npm source path
   (unrelated to the bridge-contract rename above; tracked separately).
 
 ## Releasing / pinning

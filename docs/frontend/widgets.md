@@ -42,7 +42,7 @@ function buildWidgets() {
   const map = Object.fromEntries(
     hooks.run.widgets().map(({ name, component }) => [name, component])
   );
-  window.__nagelfluh_widgets = map;
+  window.__ymerflow_widgets = map;
   return map;
 }
 ```

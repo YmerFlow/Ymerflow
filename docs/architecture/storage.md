@@ -34,7 +34,7 @@ YmerFlow uses a **per-project bucket** architecture with IAM-enforced security f
 Each project gets its own isolated bucket:
 
 ```
-s3://nagelfluh-project-{project-id}/
+s3://ymerflow-project-{project-id}/
 ├── uploads/
 │   └── {upload-id}/
 │       ├── metadata.json
@@ -78,7 +78,7 @@ s3://nagelfluh-project-{project-id}/
 ### Per-Project Isolation
 
 Each project has:
-1. **Dedicated bucket**: `nagelfluh-project-{project-id}`
+1. **Dedicated bucket**: `ymerflow-project-{project-id}`
 2. **Dedicated user/service account**: Scoped credentials
 3. **IAM policy**: Path-based access control
 
@@ -103,15 +103,15 @@ Process pods receive scoped credentials with:
       "Effect": "Allow",
       "Action": ["s3:GetObject", "s3:ListBucket"],
       "Resource": [
-        "arn:aws:s3:::nagelfluh-project-abc123",
-        "arn:aws:s3:::nagelfluh-project-abc123/*"
+        "arn:aws:s3:::ymerflow-project-abc123",
+        "arn:aws:s3:::ymerflow-project-abc123/*"
       ]
     },
     {
       "Effect": "Allow",
       "Action": ["s3:PutObject"],
       "Resource": [
-        "arn:aws:s3:::nagelfluh-project-abc123/processes/process-xyz/*"
+        "arn:aws:s3:::ymerflow-project-abc123/processes/process-xyz/*"
       ]
     }
   ]
@@ -139,7 +139,7 @@ Either strategy, the resulting credentials are delivered to the pod as a single
 ```yaml
 env:
   - name: STORAGE_BASE
-    value: s3://nagelfluh-project-{project_id}
+    value: s3://ymerflow-project-{project_id}
   - name: STORAGE_KWARGS_JSON
     value: '{"key": "...", "secret": "...", "client_kwargs": {"endpoint_url": "..."}}'
   - name: CREDENTIAL_STRATEGY
@@ -181,7 +181,7 @@ import fsspec
 import os
 
 # Get storage context from environment
-storage_base = os.environ['STORAGE_BASE']  # e.g., s3://nagelfluh-project-abc123
+storage_base = os.environ['STORAGE_BASE']  # e.g., s3://ymerflow-project-abc123
 storage_endpoint = os.environ.get('STORAGE_ENDPOINT')  # MinIO URL or None
 
 # Build fsspec kwargs
@@ -288,7 +288,7 @@ fs = fsspec.filesystem(
     client_kwargs={'endpoint_url': os.environ.get('STORAGE_ENDPOINT')}
 )
 
-process_path = f"nagelfluh-project-abc123/processes/process-xyz/datasets"
+process_path = f"ymerflow-project-abc123/processes/process-xyz/datasets"
 datasets = fs.ls(process_path)
 print(datasets)
 ```
@@ -307,7 +307,7 @@ Each dataset has metadata stored in the backend database:
     "process_name": "Inversion Analysis",
     "process_version": 1,
     "dataset_name": "resistivity_model",
-    "storage_path": "s3://nagelfluh-project-abc/processes/process-xyz/datasets/123/root.msgpack"
+    "storage_path": "s3://ymerflow-project-abc/processes/process-xyz/datasets/123/root.msgpack"
 }
 ```
 
@@ -368,7 +368,7 @@ through the admin storage-backends API instead (see "Choosing a Storage Backend"
 # .env file — used once, at install time, to seed the default StorageBackend row
 STORAGE_PROTOCOL=s3
 STORAGE_ENDPOINT=http://localhost:9000      # MinIO, or empty for cloud S3/GCS
-STORAGE_BUCKET_PREFIX=nagelfluh-project-
+STORAGE_BUCKET_PREFIX=ymerflow-project-
 ```
 
 ## Automatic Bucket Provisioning
@@ -471,14 +471,14 @@ Credentials are not a Kubernetes secret to inspect — they arrive in the pod as
 
 ```bash
 # Confirm the pod actually received storage kwargs, and which credential_strategy it's using
-kubectl exec -it {pod-name} -n nagelfluh-jobs -- printenv STORAGE_KWARGS_JSON CREDENTIAL_STRATEGY
+kubectl exec -it {pod-name} -n ymerflow-jobs -- printenv STORAGE_KWARGS_JSON CREDENTIAL_STRATEGY
 
 # Test the credentials from inside the pod
-kubectl exec -it {pod-name} -n nagelfluh-jobs -- python3 -c "
+kubectl exec -it {pod-name} -n ymerflow-jobs -- python3 -c "
 import fsspec, json, os
 kwargs = json.loads(os.environ['STORAGE_KWARGS_JSON'])
 fs = fsspec.filesystem(os.environ['STORAGE_BASE'].split('://')[0], **kwargs)
-print(fs.ls('nagelfluh-project-{project_id}'))
+print(fs.ls('ymerflow-project-{project_id}'))
 "
 
 # If credentials look wrong at the source, check the project's StorageBackend (as admin)
@@ -489,13 +489,13 @@ curl -H "Authorization: Bearer $TOKEN" https://localhost:8000/admin/storage-back
 
 ```bash
 # List bucket contents (MinIO)
-mc ls myminio/nagelfluh-project-{project_id}/
+mc ls myminio/ymerflow-project-{project_id}/
 
 # Check if bucket exists
-mc ls myminio/ | grep nagelfluh-project
+mc ls myminio/ | grep ymerflow-project
 
 # Verify path in logs
-kubectl logs {pod-name} -n nagelfluh-jobs | grep "storage_base"
+kubectl logs {pod-name} -n ymerflow-jobs | grep "storage_base"
 ```
 
 ### Connection Errors

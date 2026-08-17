@@ -10,7 +10,7 @@
 # the `from ymerflow_plugin_build import build_frontend` in setup.py would raise ImportError — forcing
 # callers to pass `--no-build-isolation` and rely on the ambient env happening to have it installed.
 #
-# Set NAGELFLUH_SKIP_FRONTEND_BUILD=1 for a metadata-only install that skips the frontend build (and
+# Set YMERFLOW_SKIP_FRONTEND_BUILD=1 for a metadata-only install that skips the frontend build (and
 # therefore does not need npm or this build dependency).
 [build-system]
 requires = [

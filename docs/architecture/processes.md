@@ -8,7 +8,7 @@ Process types are the core computational units in YmerFlow. They are implemented
 
 ## Entrypoint Group
 
-All process types must be registered in the **`nagelfluh.process_types`** entrypoint group.
+All process types must be registered in the **`ymerflow.process_types`** entrypoint group.
 
 ## Process Type Class Structure
 
@@ -87,7 +87,7 @@ def run(cls, storage_context=None, **kwargs):
         storage_context (dict): Storage configuration with keys:
             - process_id (str): Current process ID
             - project_id (str): Project ID
-            - storage_base (str): Storage base URL (e.g., s3://nagelfluh-project-abc)
+            - storage_base (str): Storage base URL (e.g., s3://ymerflow-project-abc)
             - storage_kwargs (dict): fsspec kwargs (e.g., endpoint_url for MinIO)
         **kwargs: Process parameters from JSON Schema
 
@@ -188,7 +188,7 @@ setup(
     version="0.1.0",
     packages=["mypackage"],
     entry_points={
-        "nagelfluh.process_types": [
+        "ymerflow.process_types": [
             "my_custom_process=mypackage.processes:my_custom_process",
         ],
     },
@@ -213,7 +213,7 @@ When the Docker image is built, all process type schemas are automatically colle
 - **Usage**: Backend reads this file to list available process types without executing process code
 
 The `get_schema.py` script:
-1. Uses `importlib.metadata.entry_points` to discover all entrypoints in `nagelfluh.process_types` (falling back to `pkg_resources` only on Python < 3.10, which doesn't apply to the runner image's `python:3.11-slim-trixie` base — the fallback exists purely for portability)
+1. Uses `importlib.metadata.entry_points` to discover all entrypoints in `ymerflow.process_types` (falling back to `pkg_resources` only on Python < 3.10, which doesn't apply to the runner image's `python:3.11-slim-trixie` base — the fallback exists purely for portability)
 2. Loads each class
 3. Calls `cls.schema()`
 4. Writes JSON file with all schemas
@@ -228,12 +228,12 @@ The real process type implementations live in three separately-installed package
   [Environment](environment.md#create_environment-process)), `compound_filter`,
   `build_frontend_plugin`
 - **`aem_processes`** (`docker/base-runner/aem_processes/`) - the AEM (airborne electromagnetic)
-  process family: `import_skytem`, `import_nagelfluh_aem`, `process_tem`, `invert_tem`,
+  process family: `import_skytem`, `import_ymerflow_aem`, `process_tem`, `invert_tem`,
   `forward_tem`, `grid_tem`
 - **`mag_processes`** (`docker/base-runner/mag_processes/`) - the magnetics process family:
   `import_mag`, `process_mag`, `equiv_source_mag`, `inversion_3d_mag`
 
-Each package's `setup.py` `entry_points["nagelfluh.process_types"]` list is the definitive
+Each package's `setup.py` `entry_points["ymerflow.process_types"]` list is the definitive
 source of truth for which process types it provides. See the actual class implementations in
 those packages for real-world examples of `schema()` and `run()`.
 
@@ -340,7 +340,7 @@ docker run --rm \
   -e PARAMETERS_JSON='{"threshold": 0.7}' \
   -e STORAGE_BASE=file:///tmp/storage \
   -e BACKEND_URL=http://localhost:8000 \
-  nagelfluh-base-runner:latest
+  ymerflow-base-runner:latest
 ```
 
 ## Advanced Topics

@@ -22,7 +22,7 @@ protocol it also ships — see [Storage Architecture](storage.md#development-sel
 `docs/plans/minikube-provisioning-plugin.md`. `DockerV2ProtocolHandler.bootstrap()`
 (`minikube_plugin/registry_protocol.py`) deploys it into the local Minikube:
 - Namespace `registry`, NodePort 30500, self-signed TLS, htpasswd basic auth
-  (`REGISTRY_USER`/`REGISTRY_PASSWORD` in `config.env`, both default to `nagelfluh`)
+  (`REGISTRY_USER`/`REGISTRY_PASSWORD` in `config.env`, both default to `ymerflow`)
 - Reachable at `<REGISTRY_PUBLIC_HOST>:30500` from every cluster (local or remote) — there is no
   per-cluster registry address, matching the "one global registry" model above
 
@@ -69,7 +69,7 @@ implementation.
 | `teardown(config)` | sync | Remove what `bootstrap()` created (default no-op) — see [Configuration](#configuration) below |
 
 Handlers are discovered via the `registry_protocol_handlers` fan-out hook (the same
-`nagelfluh.hooks` mechanism as `storage_protocol_handlers`/`cluster_provider_handlers`) — every
+`ymerflow.hooks` mechanism as `storage_protocol_handlers`/`cluster_provider_handlers`) — every
 protocol, including `docker-v2`, is plugin-provided through this exact channel, with no "core is
 special" path. See the plugin SDK's `docs/backend-hooks.md` for the full reference plugin authors
 use to add a new protocol.
@@ -88,7 +88,7 @@ backend/bin/yf-build-and-push <dockerfile> <build-context> <repository> <tag> [d
 which:
 1. `docker build`s the image on the host daemon,
 2. loads the active `RegistryBackend` row (or reads a pre-resolved one from
-   `NAGELFLUH_RESOLVED_REGISTRY_JSON`, for the production split where Postgres is only reachable
+   `YMERFLOW_RESOLVED_REGISTRY_JSON`, for the production split where Postgres is only reachable
    in-cluster),
 3. resolves its `RegistryProtocolHandler`,
 4. calls `handler.push_image(local_ref, config, repository, tag)` — which owns its own auth/TLS,
@@ -121,17 +121,17 @@ This works uniformly for every protocol: `docker-v2`'s static credential just me
 short-lived pull tokens returns a real expiry, though nothing currently re-mints mid-Job on
 expiry — `pull_credentials()` is only ever called once, at Job-creation time.
 
-There is no longer a static, namespace-wide `nagelfluh-registry-pull` Secret provisioned by
-`plugins/ymerflow-minikube`'s provision-nagelfluh-jobs.sh — that step was removed entirely.
+There is no longer a static, namespace-wide `ymerflow-registry-pull` Secret provisioned by
+`plugins/ymerflow-minikube`'s provision-ymerflow-jobs.sh — that step was removed entirely.
 
 ## Configuration
 
 ### `config.env`
 
 ```bash
-# Defaults are turnkey (nagelfluh/nagelfluh); change on any host exposed off a trusted LAN.
-REGISTRY_USER=nagelfluh
-REGISTRY_PASSWORD=nagelfluh
+# Defaults are turnkey (ymerflow/ymerflow); change on any host exposed off a trusted LAN.
+REGISTRY_USER=ymerflow
+REGISTRY_PASSWORD=ymerflow
 REGISTRY_PUBLIC_HOST=192.168.1.142   # required for remote-cluster registration; see below
 ```
 
@@ -170,9 +170,9 @@ already provisioned) and internally makes sure the local Minikube VM is up first
 first. In `prod/runall-production.sh`, since `yf-bootstrap-provision` needs the full backend
 Python environment plus control of the host's own Minikube/Docker, it's run host-side via a
 one-off `docker run` against the freshly built backend image — with the host's Docker socket,
-`~/.minikube`, `~/.kube`, and `NAGELFLUH_DATA_DIR` bind-mounted and `--network host` (see
+`~/.minikube`, `~/.kube`, and `YMERFLOW_DATA_DIR` bind-mounted and `--network host` (see
 `docs/plans/minikube-provisioning-plugin.md`, Design decision 2) — and its output is folded into
-the single `nagelfluh-backend-secret` Secret (see
+the single `ymerflow-backend-secret` Secret (see
 `docs/plans/generic-backend-config-passthrough.md`), which the in-cluster migration Job also
 receives via `envFrom`.
 

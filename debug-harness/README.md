@@ -46,7 +46,7 @@ cd debug-harness
 
 1. The script reads your `config.json`
 2. Starts a Docker container with:
-   - Your existing image (`nagelfluh-default:0.1`)
+   - Your existing image (`ymerflow-default:0.1`)
    - Debug wrapper mounted at `/app/debug_runner.py`
    - All environment variables set from config
 3. Runs the process
@@ -101,7 +101,7 @@ p self.uncert
 If `extract_config.py` can't find your database, set the DATABASE_URL:
 
 ```bash
-export DATABASE_URL="sqlite:///path/to/your/nagelfluh.db"
+export DATABASE_URL="sqlite:///path/to/your/ymerflow.db"
 python extract_config.py ...
 ```
 

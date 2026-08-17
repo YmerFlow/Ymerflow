@@ -131,7 +131,7 @@ def main() -> None:
     if cname.exists():
         shutil.copy(cname, OUT_DIR / "CNAME")
 
-    # Mirror frontend/public for images referenced from README (e.g. Nagelfluh.jpg)
+    # Mirror frontend/public for images referenced from README (e.g. YmerFlow.jpg)
     pub_dir = REPO_ROOT / "frontend" / "public"
     if pub_dir.exists():
         dest = OUT_DIR / "frontend" / "public"

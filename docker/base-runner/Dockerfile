@@ -24,10 +24,10 @@ COPY --from=kaniko /kaniko/executor /kaniko-executor
 
 RUN echo "Version 11"
 
-# Copy nagelfluh_runner package for utilities
-RUN mkdir -p /app/nagelfluh_runner
-COPY backend/utils/xyz_utils.py /app/nagelfluh_runner/xyz_utils.py
-RUN touch /app/nagelfluh_runner/__init__.py
+# Copy ymerflow_runner package for utilities
+RUN mkdir -p /app/ymerflow_runner
+COPY backend/utils/xyz_utils.py /app/ymerflow_runner/xyz_utils.py
+RUN touch /app/ymerflow_runner/__init__.py
 
 # Install the shared frontend-plugin build harness (used by build_frontend_plugin) from its own
 # repo (ymerflow-plugin-sdk) via git URL. Nothing is copied from the host tree — the image depends
@@ -39,7 +39,7 @@ RUN pip install --no-cache-dir "git+https://github.com/YmerFlow/Ymerflow-plugin-
 # Bake test plugins' npm SOURCE into the image so build_frontend_plugin can resolve them from the
 # server-local source dir with no PVC/volume. `npm pack` each source into PLUGIN_NPM_SOURCE_DIR;
 # the build routine resolves them by name@version (e.g. cluster-test-widget@1.0.0).
-ENV PLUGIN_NPM_SOURCE_DIR=/var/lib/nagelfluh/plugin-npm-source
+ENV PLUGIN_NPM_SOURCE_DIR=/var/lib/ymerflow/plugin-npm-source
 COPY docker/base-runner/plugin-npm-source /app/plugin-npm-source-src
 RUN mkdir -p "$PLUGIN_NPM_SOURCE_DIR" && \
     for d in /app/plugin-npm-source-src/*/; do \

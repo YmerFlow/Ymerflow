@@ -42,7 +42,7 @@ STORAGE_ENDPOINT=http://localhost:9000
 
 The config uses:
 - **Storage endpoint**: `http://localhost:9000`
-- **Bucket**: `s3://nagelfluh-project-65344a50-7e6a-4bb6-8961-6f77d93c8197`
+- **Bucket**: `s3://ymerflow-project-65344a50-7e6a-4bb6-8961-6f77d93c8197`
 
 **Docker networking note:**
 - On **Linux**: Use `http://localhost:9000` or add `--network=host` to docker run
@@ -50,7 +50,7 @@ The config uses:
 
 If your MinIO is running in K8s, you may need to port-forward:
 ```bash
-kubectl port-forward -n nagelfluh-jobs svc/minio-nagelfluh 9000:9000
+kubectl port-forward -n ymerflow-jobs svc/minio-ymerflow 9000:9000
 ```
 
 ## Running the Debug Harness

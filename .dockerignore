@@ -28,10 +28,10 @@ prod/
 __pycache__/
 **/__pycache__/
 *.pyc
-nagelfluh_backend.egg-info/
-nagelfluh.db
-nagelfluh.db-shm
-nagelfluh.db-wal
+ymerflow_backend.egg-info/
+ymerflow.db
+ymerflow.db-shm
+ymerflow.db-wal
 *~
 
 # Local secrets/config, not needed inside images

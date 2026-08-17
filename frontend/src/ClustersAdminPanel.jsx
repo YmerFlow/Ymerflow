@@ -10,7 +10,7 @@ import {
 
 const EMPTY_FORM = {
   name: '',
-  namespace: 'nagelfluh-jobs',
+  namespace: 'ymerflow-jobs',
   sortOrder: 0,
   maxRuntimeMinutes: '',
   unbounded: true,

@@ -43,10 +43,10 @@ http://localhost:3000
 
 The backend API is at `http://localhost:8000` (interactive docs at `/docs`).
 
-Services run in a `screen` session named `nagelfluh-dev`. To watch the logs:
+Services run in a `screen` session named `ymerflow-dev`. To watch the logs:
 
 ```bash
-screen -r nagelfluh-dev   # attach
+screen -r ymerflow-dev   # attach
 # Ctrl+A, N / P            switch windows (backend / frontend / monitor)
 # Ctrl+A, D                detach without stopping
 ```
