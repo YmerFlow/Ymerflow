@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 FRONTEND_SERVICE_NAME = "frontend"
 DEFAULT_FRONTEND_NODE_PORT = 30080
+DEFAULT_FRONTEND_TLS_NODE_PORT = 30443
 
 
 class NodePortAppDeploymentMixin:
@@ -51,13 +52,22 @@ class NodePortAppDeploymentMixin:
         await k8s_client._ensure_initialized()
         node_port = int(app_config.get("FRONTEND_NODE_PORT") or DEFAULT_FRONTEND_NODE_PORT)
 
+        ports = [client.V1ServicePort(port=80, target_port=80, node_port=node_port, name="http")]
+        # Public TLS on => also publish the frontend nginx's :443 TLS listener on its own NodePort,
+        # so the host's :443 forward can reach it (mirrors the :80/http port above). Gated on the
+        # same PUBLIC_TLS switch as the certbot sidecar/PVC in app_deployment.py — off => the
+        # Service stays http-only, exactly as today.
+        if app_config.get("PUBLIC_TLS") == "letsencrypt":
+            tls_node_port = int(app_config.get("FRONTEND_TLS_NODE_PORT") or DEFAULT_FRONTEND_TLS_NODE_PORT)
+            ports.append(client.V1ServicePort(port=443, target_port=443, node_port=tls_node_port, name="https"))
+
         service = client.V1Service(
             api_version="v1", kind="Service",
             metadata=client.V1ObjectMeta(name=FRONTEND_SERVICE_NAME, namespace=namespace),
             spec=client.V1ServiceSpec(
                 type="NodePort",
                 selector={"app": "frontend"},
-                ports=[client.V1ServicePort(port=80, target_port=80, node_port=node_port, name="http")],
+                ports=ports,
             ),
         )
         try:

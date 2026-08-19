@@ -274,11 +274,15 @@ export REGISTRY_AUTH=$(printf '%s:%s' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" 
 export DATABASE_URL="postgresql+asyncpg://ymerflow:ymerflowpass@postgres.ymerflow.svc.cluster.local:5432/ymerflow"
 
 # BACKEND_BASE_URL must use the public host:port because that is the address clients' browsers
-# follow when fetching dataset URLs. REGISTRY_PUBLIC_HOST/REGISTRY_URL/STORAGE_ENDPOINT/
-# STORAGE_BUCKET_PREFIX below are also script-computed rather than raw config.env text — see
-# ymerflow-render-backend-secret-env's module docstring for why each one must win over a stray
-# config.env value (STORAGE_ENDPOINT in particular: an operator's dev-host STORAGE_ENDPOINT must
-# NEVER leak into production, which always talks to MinIO via its in-cluster Service DNS name).
+# follow when fetching dataset URLs.
+#
+# STORAGE_ENDPOINT / STORAGE_BUCKET_PREFIX: CONFIG WINS. A value explicitly set in config.env
+# is preserved (the `:-` defaults below only supply a value when config.env left it unset).
+# This matters for any deployment where MinIO is NOT the in-cluster minikube Service — a
+# remote/other cluster, an external S3-compatible endpoint, a different namespace — where the
+# old unconditional `export STORAGE_ENDPOINT=...svc.cluster.local` silently clobbered the
+# operator's address and broke storage. The default remains the in-cluster MinIO Service, so
+# the stock local minikube deployment is unchanged.
 #
 # STORAGE_PROTOCOL/MINIO_ROOT_USER are deliberately NOT set here (verified genuinely dead, per
 # docs/plans/generic-deployment-orchestration.md Phase 5): the seed migration chain's later,
@@ -292,8 +296,8 @@ export DATABASE_URL="postgresql+asyncpg://ymerflow:ymerflowpass@postgres.ymerflo
 # (`a6b7c8d9e0f1_seed_default_storage_backend.py`, which reads `settings.storage_endpoint`), and
 # `MinioProtocolHandler.fsspec_kwargs()`/`test_connection()` read `backend.endpoint` directly at
 # runtime — it stays here as the one genuinely load-bearing key.
-export STORAGE_ENDPOINT="https://minio.minio.svc.cluster.local:9000"
-export STORAGE_BUCKET_PREFIX="ymerflow-project-"
+export STORAGE_ENDPOINT="${STORAGE_ENDPOINT:-https://minio.minio.svc.cluster.local:9000}"
+export STORAGE_BUCKET_PREFIX="${STORAGE_BUCKET_PREFIX:-ymerflow-project-}"
 export BACKEND_BASE_URL="${BACKEND_BASE_URL}"
 export SERVER_URL="${SERVER_URL}"
 
