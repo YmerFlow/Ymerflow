@@ -1,5 +1,5 @@
 import React from 'react';
-import logo from './assets/Logo-OnDark.svg';
+import logo from './assets/YmerIcon.svg';
 
 // App-level toolbar logo, injected into the generic MenuBar via the menu registry
 // (see App.jsx) so no YmerFlow branding is hardcoded inside flexout/.

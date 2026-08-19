@@ -4,7 +4,7 @@ import Markdown from 'markdown-to-jsx';
 import { AuthContext } from './AuthContext';
 import { useLogin, useSignup, useForgotPassword, usePublicConfig, useTos, useAcceptTos } from './datamodel/useAuthQueries';
 import { setAuthToken } from './datamodel/api';
-import logo from './assets/Logo-OnWhite.svg';
+import logo from './assets/YmerIcon.svg';
 
 export default function LandingPage() {
   return (
