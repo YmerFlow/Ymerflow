@@ -62,8 +62,8 @@ const ProcessNode = React.memo(({ data }) => {
         paddingRight: '5px',
         paddingTop: '5px',
         paddingBottom: '5px',
-        border: isSelected ? '3px solid #0d6efd' : undefined,
-        boxShadow: isSelected ? '0 0 10px rgba(13, 110, 253, 0.3)' : undefined
+        border: isSelected ? '3px solid #2269A7' : undefined,
+        boxShadow: isSelected ? '0 0 10px rgba(34, 105, 167, 0.3)' : undefined
       }}
       onClick={handleClick}
     >

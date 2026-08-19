@@ -15,6 +15,7 @@ import ProjectDropdown from "./ProjectDropdown";
 import AutoCreateProjectDialog from "./AutoCreateProjectDialog";
 import UserMenu from "./UserMenu";
 import WorkspaceMenu from "./WorkspaceMenu";
+import BrandLogo from "./BrandLogo";
 import LandingPage from "./LandingPage";
 import AccountPage from "./AccountPage";
 import AdminPage from "./AdminPage";
@@ -136,6 +137,7 @@ var initial_layout = {
 };
 
 function MenuBarWithComponents() {
+  useRegisterMenuComponent(["_brandLogo"], BrandLogo, 0);
   useRegisterMenuComponent(["_projectDropdown"], ProjectDropdown, -2);
   useRegisterMenuComponent(["_workspaceMenu"], WorkspaceMenu, 2);
   useRegisterMenuComponent(["_processSelector"], ProcessSelector, -1);

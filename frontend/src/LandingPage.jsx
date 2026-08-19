@@ -4,6 +4,7 @@ import Markdown from 'markdown-to-jsx';
 import { AuthContext } from './AuthContext';
 import { useLogin, useSignup, useForgotPassword, usePublicConfig, useTos, useAcceptTos } from './datamodel/useAuthQueries';
 import { setAuthToken } from './datamodel/api';
+import logo from './assets/Logo-OnWhite.svg';
 
 export default function LandingPage() {
   return (
@@ -11,7 +12,7 @@ export default function LandingPage() {
       <div className="w-100">
         <div className="d-flex align-items-center flex-wrap mb-5 gap-4">
           <img
-            src="/YmerFlow.jpg"
+            src={logo}
             alt="YmerFlow"
             style={{ maxWidth: '200px', width: '100%', height: 'auto', flexShrink: 0 }}
           />

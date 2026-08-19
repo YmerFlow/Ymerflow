@@ -330,3 +330,41 @@ registry.
    show swatches for sign-off (§4).
 2. Whether to apply the brand gradient behind the landing-page cards or keep a
    white body (§5).
+
+## Resolution (implementation, 2026-08-19)
+
+Both open items were resolved with the user via a swatch page:
+
+1. **Warning color = `#A99366` (muted tan).** The user chose to keep warning in the
+   muted-semantics family rather than escaping to a saturated gold, accepting that
+   it sits close to `$brown-300` — a deliberate trade of alarm-level distinctness
+   for palette cohesion. It passes WCAG AA with Bootstrap's default dark button
+   text (6.7:1). Final semantics: `$success #4E6B54`, `$danger #8A5A57`,
+   `$warning #A99366`, `$info $blue-400`.
+2. **Landing background = brand white `#F6F6F6`** (the `$body-bg`), not pure white
+   and not the gradient. The gradient stays a toolbar-only signature.
+
+Also implemented as specified: Sofia Sans via `@fontsource/sofia-sans` (400/600/700),
+Bootstrap re-theme with the brand palette, navbar gradient via app-level
+`styling.scss` (no `flexout/` edits), `BrandLogo` registered at menu position 0,
+landing page swapped to `Logo-OnWhite.svg`, favicon/PWA icons + `apple-touch-icon`
+regenerated from `LogoIcon-500x500.png`, `index.html` theme-color and
+`manifest.json` metadata updated, and the bespoke `styling.scss` rules de-hardcoded
+to theme variables.
+
+**Chrome hex sweep (§7):** fixed `InUseEditor.jsx` (active toggle) and
+`FlowView/ProcessNode.jsx` (selection outline) `#0d6efd → #2269A7`.
+
+`flexout/components/TabSet.jsx` tab drag-drop indicator (`#0d6efd`): rather than
+hardcode a brand color in the generic layout engine, the component now toggles a
+`.tab-drop-target` class with no color literal, and the accent is themed from
+app-level `styling.scss` via a `--flexout-drop-indicator` CSS variable (generic
+fallback `currentColor`). This keeps `flexout/` brand-free while making the color
+overrideable. (`flexout/LayoutContext.jsx`'s `#999` Empty-placeholder text is left
+as a legitimate neutral default, not branding.)
+
+Left deliberately: the `AEMModelSimulator/*` dialogs + `FlowView/TagSelector.jsx`
+`TAG_COLORS` — these are a self-contained widget with its own consistent inline
+`#007bff/#28a745/#dc3545` palette (and a categorical tag-color encoding); piecemeal
+recoloring would break their internal consistency, so they are left for a separate
+focused pass if desired.

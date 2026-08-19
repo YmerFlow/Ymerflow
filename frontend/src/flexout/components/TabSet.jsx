@@ -75,8 +75,7 @@ function TabHeader({ tab, index, isActive, onActivate, onInsertBefore, onRemoveT
   return (
     <li
       ref={drop}
-      className="nav-item"
-      style={{ borderLeft: isOver ? '2px solid #0d6efd' : '2px solid transparent' }}
+      className={`nav-item${isOver ? ' tab-drop-target' : ''}`}
     >
       <button
         ref={drag}

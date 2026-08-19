@@ -73,7 +73,7 @@ export default function InUseEditor() {
   }
 
   const btnBase = { padding: '4px 12px', border: '1px solid #aaa', borderRadius: 4, cursor: 'pointer', fontSize: 13 };
-  const activeBtn = { ...btnBase, background: '#0d6efd', color: '#fff', borderColor: '#0d6efd' };
+  const activeBtn = { ...btnBase, background: '#2269A7', color: '#fff', borderColor: '#2269A7' };
   const inactiveBtn = { ...btnBase, background: '#f8f9fa', color: '#333' };
 
   return (

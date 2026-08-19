@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@fontsource/sofia-sans": "^5.3.0",
     "@fortawesome/fontawesome-free": "^7.1.0",
     "@module-federation/runtime": "^2.6.0",
     "@rjsf/core": "^6.2.5",
