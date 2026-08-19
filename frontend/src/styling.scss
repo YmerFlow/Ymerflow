@@ -74,6 +74,34 @@ $headings-font-weight:   600;   // Semibold headings
   background: $brand-gradient !important;   // overrides Bootstrap .bg-dark
 }
 
+// ── Landing page (non-logged-in front page) ─────────────────────────────────
+.landing-page {
+  // Full-bleed dark gradient background; override Bootstrap Container max-width
+  // so the gradient covers the whole viewport, then re-constrain the content.
+  &.container { max-width: 100%; }
+  background: $brand-gradient;
+  min-height: 100vh;
+
+  > .w-100 {
+    max-width: 1140px;
+    margin: 0 auto;
+  }
+
+  // Intro text above the cards reads light against the dark gradient.
+  .landing-intro {
+    color: $brand-white;
+
+    p {
+      font-size: 1.15rem;
+    }
+  }
+
+  // Cards keep their white background but get a blue outline.
+  .card {
+    border-color: $blue-500;
+  }
+}
+
 // ── flexout tab drag-drop indicator ──────────────────────────────────────────
 // flexout/ toggles the .tab-drop-target class but hardcodes no color; the accent
 // comes from --flexout-drop-indicator, themed here (generic fallback: currentColor).

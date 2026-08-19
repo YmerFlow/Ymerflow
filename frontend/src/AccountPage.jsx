@@ -77,7 +77,7 @@ function McpConfigCard({ apiKeys }) {
       <div className="d-flex align-items-start gap-2 mb-4">
         <pre
           className="flex-grow-1 rounded px-3 py-2 mb-0"
-          style={{ background: '#f6f8fa', fontSize: 12, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
+          style={{ background: '#050914', color: '#F6F6F6', fontSize: 12, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
         >
           {cliCommand}
         </pre>
@@ -97,7 +97,7 @@ function McpConfigCard({ apiKeys }) {
       <div className="d-flex align-items-start gap-2">
         <pre
           className="flex-grow-1 rounded p-3 mb-0"
-          style={{ background: '#f6f8fa', fontSize: 12, overflowX: 'auto' }}
+          style={{ background: '#050914', color: '#F6F6F6', fontSize: 12, overflowX: 'auto' }}
         >
           {mcpJson}
         </pre>
@@ -440,7 +440,7 @@ export default function AccountPage() {
           </p>
           <pre
             className="rounded p-3 mb-2"
-            style={{ background: '#f6f8fa', fontSize: 12, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
+            style={{ background: '#050914', color: '#F6F6F6', fontSize: 12, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
           >
             {fullConfig}
           </pre>

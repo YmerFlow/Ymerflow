@@ -8,7 +8,7 @@ import logo from './assets/YmerIcon.svg';
 
 export default function LandingPage() {
   return (
-    <Container className="d-flex align-items-center justify-content-center min-vh-100">
+    <Container className="landing-page d-flex align-items-center justify-content-center min-vh-100">
       <div className="w-100">
         <div className="d-flex align-items-center flex-wrap mb-5 gap-4">
           <img
@@ -16,7 +16,7 @@ export default function LandingPage() {
             alt="YmerFlow"
             style={{ maxWidth: '200px', width: '100%', height: 'auto', flexShrink: 0 }}
           />
-          <div style={{ flex: '1 1 300px' }}>
+          <div className="landing-intro" style={{ flex: '1 1 300px' }}>
             <h1>YmerFlow - Cloud-native geophysics</h1>
             <p>
               Browser-based AEM and magnetic survey processing, inversion, and pipeline
@@ -159,7 +159,7 @@ function SignInCard({ initialMode = 'signin', allowBackToSignIn = true }) {
                 required
               />
             </Form.Group>
-            <Button type="submit" variant="primary" className="w-100">
+            <Button type="submit" variant="secondary" className="w-100">
               Sign In
             </Button>
             <div className="mt-2 text-center">
@@ -289,7 +289,7 @@ function PricingCard() {
         {publicConfig?.hosted_version_text && (
           <Markdown>{publicConfig.hosted_version_text}</Markdown>
         )}
-        <Button variant="success" className="w-100" onClick={() => setShowSignup(true)}>
+        <Button variant="primary" className="w-100" onClick={() => setShowSignup(true)}>
           Sign Up Now
         </Button>
       </Card.Body>
