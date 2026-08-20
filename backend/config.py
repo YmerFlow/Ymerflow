@@ -74,6 +74,13 @@ class Settings(BaseSettings):
     # which needs to fetch the registry's live TLS cert and bake host:port into the script. See
     # docs/plans/done/remote-cluster-provisioning-and-registry.md.
     registry_public_host: Optional[str] = None
+    # Port the registry is addressed on (config.env REGISTRY_PUBLIC_PORT). Defaults to the
+    # self-hosted docker-v2 NodePort (30500) so an unset config.env is byte-for-byte today's
+    # behaviour. Overridable so a registry reached on a different port — a remapped NodePort,
+    # or a reverse proxy (e.g. behind the public-TLS nginx edge on 443) — is addressable by
+    # config alone instead of the port being hard-locked in code. An explicit "port" in
+    # REGISTRY_CONFIG_JSON still wins over this (per-backend config beats the global default).
+    registry_public_port: int = 30500
 
     # Plugin frontend build configuration
     # The build resolves a plugin's npm source from a server-local directory and/or the npm

@@ -45,7 +45,7 @@ def _default_protocol_and_config():
         "user": user,
         "password": password,
         "host": settings.registry_public_host,
-        "port": DEFAULT_PORT,
+        "port": settings.registry_public_port,
     }
 
 

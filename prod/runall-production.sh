@@ -32,6 +32,43 @@ echo "  Backend URL:    ${BACKEND_BASE_URL}"
 echo ""
 echo "  Clients will reach the app at: ${SERVER_URL}"
 
+# ── Step 0: Python environment ────────────────────────────────────────────────
+# This script drives ALL its host-side orchestration through env/bin/python (the image-tag
+# resolver just below, bootstrap-provision, kubeconfig materialization, image build/push, the
+# migration entrypoint). Create and populate that venv here so runall.sh is fully
+# self-provisioning on a fresh box — mirrors dev/runall.sh's Step 1. Idempotent: an existing
+# env/ is reused and the installs are cheap no-ops once satisfied. The venv is ACTIVATED (not
+# just referenced by path) so scripts/install-backend-plugins.sh's bare `pip` resolves to it,
+# exactly as under dev/runall.sh.
+if [ ! -d "${PROJECT_ROOT}/env" ]; then
+    echo "Creating Python virtual environment (env/)..."
+    # The backend package requires Python >=3.11 (matches the python:3.11-slim runtime image),
+    # so prefer an explicit python3.11 when present and fall back to the host default python3.
+    # Use the stdlib venv; fall back to virtualenv when the chosen python lacks ensurepip (no
+    # python3.x-venv system package — a bare `python3 -m venv` then builds a pip-less, unusable
+    # env). virtualenv bundles pip and needs no such package. A failed venv attempt leaves a
+    # broken dir, so wipe it before the fallback.
+    PYTHON_BIN="$(command -v python3.11 || command -v python3)"
+    "${PYTHON_BIN}" -m venv "${PROJECT_ROOT}/env" 2>/dev/null || {
+        rm -rf "${PROJECT_ROOT}/env"
+        virtualenv -p "${PYTHON_BIN}" "${PROJECT_ROOT}/env"
+    }
+fi
+# shellcheck source=/dev/null
+source "${PROJECT_ROOT}/env/bin/activate"
+echo "Installing backend package + plugins into env/ ..."
+pip install -q --upgrade pip
+pip install -q -e "${PROJECT_ROOT}"
+# YMERFLOW_SKIP_FRONTEND_BUILD=1: this host venv only runs the orchestration entrypoints
+# (bootstrap-provision, image build/push, kubeconfig, secret render) which import each plugin's
+# Python handler classes — it never serves the plugins' browser frontends (those are built into
+# the backend/frontend Docker images, which carry nodejs/npm). Skipping the npm frontend build
+# here is the plugins' own documented "metadata-only install", so the host needs no Node
+# toolchain. The mc binary download is left ENABLED in case a plugin's host-side bootstrap()
+# shells out to it.
+YMERFLOW_SKIP_FRONTEND_BUILD=1 BACKEND_PLUGINS="${BACKEND_PLUGINS:-}" \
+    bash "${PROJECT_ROOT}/scripts/install-backend-plugins.sh"
+
 # ── Step 1: Base configuration ────────────────────────────────────────────────
 
 # LAN IP added to the apiserver cert SAN so a remote kubeconfig connecting via this IP
@@ -274,11 +311,15 @@ export REGISTRY_AUTH=$(printf '%s:%s' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" 
 export DATABASE_URL="postgresql+asyncpg://ymerflow:ymerflowpass@postgres.ymerflow.svc.cluster.local:5432/ymerflow"
 
 # BACKEND_BASE_URL must use the public host:port because that is the address clients' browsers
-# follow when fetching dataset URLs. REGISTRY_PUBLIC_HOST/REGISTRY_URL/STORAGE_ENDPOINT/
-# STORAGE_BUCKET_PREFIX below are also script-computed rather than raw config.env text — see
-# ymerflow-render-backend-secret-env's module docstring for why each one must win over a stray
-# config.env value (STORAGE_ENDPOINT in particular: an operator's dev-host STORAGE_ENDPOINT must
-# NEVER leak into production, which always talks to MinIO via its in-cluster Service DNS name).
+# follow when fetching dataset URLs.
+#
+# STORAGE_ENDPOINT / STORAGE_BUCKET_PREFIX: CONFIG WINS. A value explicitly set in config.env
+# is preserved (the `:-` defaults below only supply a value when config.env left it unset).
+# This matters for any deployment where MinIO is NOT the in-cluster minikube Service — a
+# remote/other cluster, an external S3-compatible endpoint, a different namespace — where the
+# old unconditional `export STORAGE_ENDPOINT=...svc.cluster.local` silently clobbered the
+# operator's address and broke storage. The default remains the in-cluster MinIO Service, so
+# the stock local minikube deployment is unchanged.
 #
 # STORAGE_PROTOCOL/MINIO_ROOT_USER are deliberately NOT set here (verified genuinely dead, per
 # docs/plans/generic-deployment-orchestration.md Phase 5): the seed migration chain's later,
@@ -292,8 +333,8 @@ export DATABASE_URL="postgresql+asyncpg://ymerflow:ymerflowpass@postgres.ymerflo
 # (`a6b7c8d9e0f1_seed_default_storage_backend.py`, which reads `settings.storage_endpoint`), and
 # `MinioProtocolHandler.fsspec_kwargs()`/`test_connection()` read `backend.endpoint` directly at
 # runtime — it stays here as the one genuinely load-bearing key.
-export STORAGE_ENDPOINT="https://minio.minio.svc.cluster.local:9000"
-export STORAGE_BUCKET_PREFIX="ymerflow-project-"
+export STORAGE_ENDPOINT="${STORAGE_ENDPOINT:-https://minio.minio.svc.cluster.local:9000}"
+export STORAGE_BUCKET_PREFIX="${STORAGE_BUCKET_PREFIX:-ymerflow-project-}"
 export BACKEND_BASE_URL="${BACKEND_BASE_URL}"
 export SERVER_URL="${SERVER_URL}"
 

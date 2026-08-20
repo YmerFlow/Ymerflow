@@ -98,7 +98,8 @@ def _resolve_registry():
         user, _, password = decoded.partition(":")
 
     host = os.getenv("REGISTRY_PUBLIC_HOST")
-    return "docker-v2", {"user": user, "password": password, "host": host, "port": 30500}
+    port = int(os.getenv("REGISTRY_PUBLIC_PORT") or 30500)
+    return "docker-v2", {"user": user, "password": password, "host": host, "port": port}
 
 
 async def main():
