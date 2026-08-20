@@ -301,12 +301,21 @@ FILE_MIME_TYPES = {
 
 # Fetched programmatically by the frontend (plot and map views), so they must not be
 # handed to the browser as a download. Everything else gets Content-Disposition: attachment.
+# Types the frontend fetches programmatically. Content-Disposition is ignored by
+# fetch()/XHR — browsers act on it only for navigations — so this list is not what
+# makes those loads work. It is what keeps a click from downloading a file whose
+# only audience is the plot or the map.
+#
+# application/json is deliberately absent. JsonDataset does fetch it, and fetch()
+# ignores the header, so marking it an attachment is safe. A QC report is a
+# deliverable someone hands to a client; rendering it inline makes the one output
+# most likely to be wanted as a file the one output that cannot be clicked into
+# existence.
 INLINE_MIME_TYPES = {
     "application/x-aarhusxyz-msgpack",
     "application/x-magdata-msgpack",
     "application/x-webxtile",
     "application/geo+json",
-    "application/json",
 }
 
 TEXT_MIME_TYPES = {"application/geo+json", "application/json", "text/csv", "text/plain"}
