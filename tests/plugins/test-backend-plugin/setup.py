@@ -37,7 +37,7 @@ def _build_frontend():
     except ImportError as e:
         raise RuntimeError(
             "ymerflow_plugin_build is required to build this plugin's frontend. Install it first:\n"
-            "  pip install 'git+https://github.com/YmerFlow/Ymerflow-plugin-sdk.git'\n"
+            "  pip install 'git+https://github.com/YmerFlow/Ymerflow-plugin-sdk.git@nagelfluh'\n"
             "(or set NAGELFLUH_SKIP_FRONTEND_BUILD=1 for a metadata-only install)."
         ) from e
 

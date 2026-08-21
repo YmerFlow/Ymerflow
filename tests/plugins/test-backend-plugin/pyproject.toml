@@ -16,6 +16,6 @@
 requires = [
     "setuptools>=61",
     "wheel",
-    "ymerflow-plugin-build @ git+https://github.com/YmerFlow/Ymerflow-plugin-sdk.git",
+    "ymerflow-plugin-build @ git+https://github.com/YmerFlow/Ymerflow-plugin-sdk.git@nagelfluh",
 ]
 build-backend = "setuptools.build_meta"

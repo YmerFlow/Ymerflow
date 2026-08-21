@@ -34,7 +34,7 @@ RUN touch /app/nagelfluh_runner/__init__.py
 # only on the published repo. The repo is public, so https needs no build credentials; for a PRIVATE
 # repo you would instead use a BuildKit ssh mount (`RUN --mount=type=ssh ... git+ssh://...`) or a
 # token. Pin a tag/commit here once the SDK starts cutting releases.
-RUN pip install --no-cache-dir "git+https://github.com/YmerFlow/Ymerflow-plugin-sdk.git"
+RUN pip install --no-cache-dir "git+https://github.com/YmerFlow/Ymerflow-plugin-sdk.git@nagelfluh"
 
 # Bake test plugins' npm SOURCE into the image so build_frontend_plugin can resolve them from the
 # server-local source dir with no PVC/volume. `npm pack` each source into PLUGIN_NPM_SOURCE_DIR;

@@ -46,7 +46,7 @@ setup(
         # (HOST_SHARED_VERSIONS) and run in-pod by the build_frontend_plugin process type. A
         # backend library dependency, NOT a hook plugin (those install from BACKEND_PLUGINS via
         # scripts/install-backend-plugins.sh).
-        'ymerflow-plugin-build @ git+https://github.com/YmerFlow/Ymerflow-plugin-sdk.git',
+        'ymerflow-plugin-build @ git+https://github.com/YmerFlow/Ymerflow-plugin-sdk.git@nagelfluh',
     ],
     entry_points={
         # Core registers itself in the same groups plugins use, so downstream discovery treats
