@@ -9,7 +9,7 @@ setup(
     packages=find_packages(),
     install_requires=[
         "AirMagTools @ git+https://github.com/SagebrushGeoTools/AirMagTools.git",
-        "mag-inversion @ git+https://github.com/SagebrushGeoTools/simplemag.git",
+        "mag-inversion @ git+https://github.com/SagebrushGeoTools/simplemag.git@nagelfluh",
         "fsspec",
         "s3fs",
         "gcsfs",
