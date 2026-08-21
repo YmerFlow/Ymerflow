@@ -82,6 +82,24 @@ class Settings(BaseSettings):
     # REGISTRY_CONFIG_JSON still wins over this (per-backend config beats the global default).
     registry_public_port: int = 30500
 
+    # ── Direct (bootstrap-only) registry address ──────────────────────────────────────────────
+    # The self-signed node-IP:NodePort the docker-v2 registry is actually bootstrapped on. Used
+    # for (a) every host-side image PUSH, and (b) the pull references of the bootstrap-only
+    # containers that must be pulled BEFORE the public nginx TLS edge exists: the frontend/nginx
+    # Deployment (it cannot pull its own image through itself), the transient yf-deploy-app
+    # deployer Job, and the transient migration / db-update Jobs. Everything pulled AFTER the edge
+    # is live (the backend Deployment, the runner / Environment.docker_image) uses the PUBLIC
+    # address (registry_public_host/port). See docs/plans/registry-public-vs-direct-address.md.
+    #
+    # Defaulting rule (robustness requirement 1): when registry_public_host is unset, the PUBLIC
+    # address falls back to this DIRECT address (see DockerV2ProtocolHandler.bootstrap()), so
+    # public == direct and every public/direct split collapses to a single address — byte-for-byte
+    # today's behaviour. registry_direct_host defaults to None here and is resolved to the host's
+    # primary LAN IP by the runall scripts (REGISTRY_DIRECT_HOST, same `hostname -I` default
+    # REGISTRY_PUBLIC_HOST used to have).
+    registry_direct_host: Optional[str] = None
+    registry_direct_port: int = 30500
+
     # Plugin frontend build configuration
     # The build resolves a plugin's npm source from a server-local directory and/or the npm
     # registry, controlled by `plugin_npm_source_mode`:

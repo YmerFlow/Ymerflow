@@ -43,9 +43,11 @@ class NodePortAppDeploymentMixin:
         app_config = dict(app_config)
         image_pull_credentials = app_config.pop("_image_pull_credentials", None)
         replicas = app_config.pop("_replicas", None)
+        registry_reachable = app_config.pop("_registry_reachable", None)
         await app_deployment.apply_app_workloads(
             k8s_client, namespace, images, app_config, secrets,
             image_pull_credentials=image_pull_credentials, replicas=replicas,
+            registry_reachable=registry_reachable,
         )
 
     async def expose_app(self, k8s_client, provider_config, namespace, app_config):

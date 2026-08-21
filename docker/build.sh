@@ -118,7 +118,7 @@ import json, os
 from backend.services.registry_protocols import get_registry_protocol_handler
 protocol = os.environ["REGISTRY_PROTOCOL"]
 config = json.loads(os.environ["REGISTRY_CONFIG_JSON"])
-print(get_registry_protocol_handler(protocol).image_url(config, "ymerflow-backend", os.environ["APP_IMAGE_VERSION"]))
+print(get_registry_protocol_handler(protocol).direct_image_url(config, "ymerflow-backend", os.environ["APP_IMAGE_VERSION"]))
 ')
 
         kubectl delete configmap "runner-schemas-${ENV_TAG}" -n ymerflow --ignore-not-found=true 2>/dev/null
