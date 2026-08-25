@@ -425,14 +425,14 @@ export async function getDatasetGeography(datasetId, partPath = "all", projectId
   return response.data;
 }
 
-// Upload a file
+// Upload a file. Sends the raw File as the request body so the backend can stream it
+// straight to object storage (flat memory regardless of size). The filename travels as
+// a query param and the content type as the Content-Type header.
 export async function uploadFile(file, onProgress, projectId) {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const response = await apiClient.post(`/projects/${projectId}/upload`, formData, {
+  const response = await apiClient.post(`/projects/${projectId}/upload`, file, {
+    params: { filename: file.name },
     headers: {
-      'Content-Type': 'multipart/form-data',
+      'Content-Type': file.type || 'application/octet-stream',
     },
     onUploadProgress: (progressEvent) => {
       if (onProgress && progressEvent.lengthComputable) {

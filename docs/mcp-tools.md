@@ -345,12 +345,15 @@ Upload a raw input file (e.g. AEM survey data, CSV) that is not the output of an
 
 Supports two body formats, auto-detected from `Content-Type`:
 
-**Multipart/form-data** (any file size):
+**Raw body** (any file size; streamed straight to storage):
 ```bash
-curl -F "file=@data.xyz" "https://host/projects/{project_id}/upload"
+curl -X POST "https://host/projects/{project_id}/upload?filename=data.xyz" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @data.xyz
 ```
+The filename travels as the URL-encoded `filename` query parameter and the content type as the `Content-Type` request header. The body is streamed to object storage in bounded chunks, so backend memory stays flat regardless of file size.
 
-**JSON + base64** (MCP-friendly, up to ~20 MB):
+**JSON + base64** (MCP-friendly, up to ~25 MB):
 ```json
 {
   "filename": "data.xyz",
@@ -358,12 +361,14 @@ curl -F "file=@data.xyz" "https://host/projects/{project_id}/upload"
   "content_type": "application/x-aarhusxyz-msgpack"
 }
 ```
+The MCP `upload_file` tool uses this JSON+base64 path and is unchanged; only the large-file curl path switched from multipart to a raw body.
 
-For files larger than ~20 MB, use `request_upload_token` to get a short-lived token, then upload via curl (the token already encodes the project it was requested for, but `project_id` in the path must still match it):
+For files larger than ~25 MB, use `request_upload_token` to get a short-lived token, then upload via curl (the token already encodes the project it was requested for, but `project_id` in the path must still match it):
 ```bash
-curl -X POST "https://host/projects/{project_id}/upload" \
+curl -X POST "https://host/projects/{project_id}/upload?filename=survey.xyz" \
   -H "Authorization: Bearer upt_..." \
-  -F "file=@survey.xyz"
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @survey.xyz
 ```
 
 | Parameter | Type | Required | Description |
