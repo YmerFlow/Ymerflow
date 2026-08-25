@@ -52,6 +52,16 @@ async def available_clusters(
     return out
 
 
+def _workload_owner_job(wl: dict) -> Optional[str]:
+    """The owning batch/Job name from a raw Kueue Workload (== ProcessVersion.k8s_job_name),
+    used to match the workload to its pod before classify_workload. Mirrors the ownerReferences
+    lookup classify_workload does internally."""
+    for ref in wl.get("metadata", {}).get("ownerReferences", []):
+        if ref.get("kind") == "Job":
+            return ref.get("name")
+    return None
+
+
 def _foreign_resource_requests(pod_resources: dict) -> dict:
     """Format classify_workload's numeric pod_resources (cpu cores, memory GiB) back into
     k8s quantity strings so member and non-member entries share one frontend parser."""
@@ -98,16 +108,36 @@ async def cluster_queues(
         }
 
         try:
-            workloads = await k8s_clients.get(cluster).list_workloads()
+            client = k8s_clients.get(cluster)
+            workloads = await client.list_workloads()
+            pods = await client.list_pods()
         except Exception as e:
             # Per-cluster graceful degradation (Decision 4): a not-yet-repatched cluster
-            # (403 on workloads) surfaces the error instead of failing the whole request.
-            logger.warning(f"Could not list workloads for cluster {cluster.id}: {e}")
+            # (403 on workloads/pods) surfaces the error instead of failing the whole request.
+            logger.warning(f"Could not list workloads/pods for cluster {cluster.id}: {e}")
             entry["queue_error"] = str(e)
             out.append(entry)
             continue
 
-        classified = [classify_workload(wl) for wl in workloads]
+        # Index pods by their owning Job (the `job-name` label the Job controller stamps on
+        # every pod it creates == ProcessVersion.k8s_job_name), so each workload's live state
+        # is derived from its own pod.
+        pod_by_job = {}
+        for pod in pods:
+            labels = (getattr(pod.metadata, "labels", None) or {}) if getattr(pod, "metadata", None) else {}
+            job_name = labels.get("job-name")
+            if job_name:
+                pod_by_job[job_name] = pod
+
+        # Classify each workload against its pod (matched by the workload's owning Job name),
+        # then drop terminal (done/failed) rows — a Finished/errored Workload holds no quota
+        # and is out of Kueue's live queue (fixes the "finished shows as running" bug).
+        # Remaining rows carry state ∈ {queued, starting, running}.
+        classified = []
+        for wl in workloads:
+            owner_job = _workload_owner_job(wl)
+            classified.append(classify_workload(wl, pod_by_job.get(owner_job)))
+        classified = [c for c in classified if c["state"] not in ("done", "failed")]
 
         # One DB query enriching by owner job name (Decision 2), eager-loading process→project
         # and tags so serialization touches no lazy relationships.
@@ -139,7 +169,9 @@ async def cluster_queues(
         for position, c in enumerate(classified):
             pv = pv_by_job.get(c["owner_job_name"])
             member = pv is not None and pv.process.project_id in member_ids
-            state = "running" if c["admitted"] else "waiting"
+            # Badge state is the pod-derived lifecycle state (queued/starting/running), identical
+            # to the monitor's DB transitions. Admission drives ORDER (sort_key), not the badge.
+            state = c["state"]
 
             if member:
                 # Full entry — build a fresh dict with detail keys (never build-then-delete).

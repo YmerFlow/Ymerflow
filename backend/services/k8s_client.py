@@ -40,11 +40,74 @@ def _parse_memory_gb(value: str) -> float:
     return float(value) / (1024.0 ** 3)
 
 
-def classify_workload(wl: dict) -> dict:
-    """Derive the queue-relevant facts from a raw Kueue Workload dict.
+# Container waiting reasons that mean the pod has hit a terminal image/config error, not a
+# transient "coming up" state. Mirrors get_pod_error_status so the widget's derived state and
+# the monitor's DB transitions agree by construction.
+_POD_ERROR_WAITING_REASONS = (
+    'ImagePullBackOff', 'ErrImagePull', 'CrashLoopBackOff',
+    'CreateContainerConfigError', 'InvalidImageName', 'CreateContainerError',
+)
+
+
+def _pod_lifecycle_state(pod) -> str:
+    """Compute the ProcessState name (lowercase) for a workload from its live pod.
+
+    Mirrors the monitor's transitions (wait_for_pod / is_pod_container_running /
+    get_pod_error_status in backend/models/process.py) so the widget's per-row state is
+    identical to the DB state by construction. Returns one of
+    queued / starting / running / done / failed.
+
+    Returned as a literal string (not ProcessState.value) to avoid a circular import between
+    backend.services.k8s_client and backend.models.process.
+    """
+    if pod is None:
+        # No pod: Job suspended / not admitted / pod not yet created (or a Finished Workload
+        # whose pod is already gone). Not yet coming up → queued. The caller drops terminal rows.
+        return "queued"
+
+    status = getattr(pod, "status", None)
+    phase = getattr(status, "phase", None) if status is not None else None
+
+    if phase == "Succeeded":
+        return "done"
+    if phase == "Failed":
+        return "failed"
+
+    container_statuses = getattr(status, "container_statuses", None) if status is not None else None
+    if container_statuses:
+        # Any container terminated non-zero or stuck in an image/config error → failed.
+        for cs in container_statuses:
+            state = getattr(cs, "state", None)
+            terminated = getattr(state, "terminated", None) if state is not None else None
+            if terminated is not None and getattr(terminated, "exit_code", 0) not in (0, None):
+                return "failed"
+            waiting = getattr(state, "waiting", None) if state is not None else None
+            if waiting is not None and getattr(waiting, "reason", None) in _POD_ERROR_WAITING_REASONS:
+                return "failed"
+        # A running container → running.
+        for cs in container_statuses:
+            state = getattr(cs, "state", None)
+            if state is not None and getattr(state, "running", None):
+                return "running"
+
+    # Pod exists (Pending / ContainerCreating / image pull) but no container running yet.
+    return "starting"
+
+
+def classify_workload(wl: dict, pod=None) -> dict:
+    """Derive the queue-relevant facts from a raw Kueue Workload dict and its live pod.
+
+    Args:
+      wl   - raw Kueue Workload dict (from list_workloads).
+      pod  - the matching pod (V1Pod, matched by job-name label), or None if none exists yet.
 
     Returns:
-      admitted        - True once Kueue has admitted the workload (running), else False (pending).
+      state           - lifecycle state derived from the live pod, mirroring the monitor's DB
+                        transitions: queued / starting / running / done / failed. The caller
+                        drops terminal (done/failed) rows — they hold no quota and are out of
+                        Kueue's live queue (fixes the "finished shows as running" bug).
+      admitted        - True once Kueue has admitted the workload, else False (pending). Used
+                        for ORDERING only (admitted-first); the badge comes from `state`.
       owner_job_name  - the owning batch/Job's name (== ProcessVersion.k8s_job_name), or None.
       created_at      - metadata.creationTimestamp string (Kueue's pending FIFO tie-break).
       priority        - spec.priority int (higher runs first); 0 when unset.
@@ -83,6 +146,7 @@ def classify_workload(wl: dict) -> dict:
                     pod_resources["memory"] = pod_resources.get("memory", 0.0) + _parse_memory_gb(str(res_val)) * count
 
     return {
+        "state": _pod_lifecycle_state(pod),
         "admitted": admitted,
         "owner_job_name": owner_job_name,
         "created_at": meta.get("creationTimestamp"),
@@ -413,6 +477,23 @@ class K8sClient:
             _request_timeout=API_REQUEST_TIMEOUT_SECONDS,
         )
         return resp.get("items", [])
+
+    async def list_pods(self) -> list:
+        """List all pods in this client's jobs namespace (raw V1Pod objects).
+
+        Used by the cluster-queues endpoint to derive each workload's live lifecycle state
+        from its pod (indexed by the pod's `job-name` label). Pods are already granted to the
+        backend Role (pods [get,list,watch]) — no new RBAC.
+
+        Does NOT swallow errors (CLAUDE.md rule 8) — the caller handles per-cluster
+        degradation (same as list_workloads).
+        """
+        await self._ensure_initialized()
+        resp = await self.core_api.list_namespaced_pod(
+            self.namespace,
+            _request_timeout=API_REQUEST_TIMEOUT_SECONDS,
+        )
+        return resp.items
 
     async def watch_job(self, job_name, timeout_seconds=None):
         """Watch a job for status changes using Kubernetes Watch API.

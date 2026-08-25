@@ -355,7 +355,7 @@ async def cancel_process_version(
         raise HTTPException(status_code=404, detail="Process version not found")
 
     from backend.models import ProcessState
-    if version_obj.state not in (ProcessState.QUEUED, ProcessState.RUNNING):
+    if version_obj.state not in (ProcessState.QUEUED, ProcessState.STARTING, ProcessState.RUNNING):
         raise HTTPException(status_code=409, detail=f"Process version is already in terminal state: {version_obj.state.value}")
 
     if version_obj.k8s_job_name:

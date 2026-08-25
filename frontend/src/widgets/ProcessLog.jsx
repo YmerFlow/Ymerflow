@@ -65,7 +65,7 @@ function ProcessLog() {
     setLogs({});
 
     // Determine if we should stream logs via WebSocket
-    const shouldStream = versionObj.state === 'running' || versionObj.state === 'queued';
+    const shouldStream = versionObj.state === 'running' || versionObj.state === 'starting' || versionObj.state === 'queued';
     setShouldStreamLogs(shouldStream);
 
     // If not streaming, fetch logs via REST API
@@ -153,7 +153,7 @@ function ProcessLog() {
       >
         {!logs || Object.keys(logs).length === 0 ? (
           <div className="text-muted text-center">
-            {state === 'queued' ? 'Waiting for process to start...' : 'No logs available'}
+            {state === 'queued' || state === 'starting' ? 'Waiting for process to start...' : 'No logs available'}
           </div>
         ) : (
           Object.values(logs)

@@ -133,7 +133,7 @@ function ProcessProgress() {
     setPlotData([]);
     lastDomainKeyRef.current = null;
 
-    const shouldStream = versionObj.state === 'running' || versionObj.state === 'queued';
+    const shouldStream = versionObj.state === 'running' || versionObj.state === 'starting' || versionObj.state === 'queued';
     setShouldStreamLogs(shouldStream);
 
     if (!shouldStream) {
@@ -253,7 +253,7 @@ function ProcessProgress() {
             className="d-flex align-items-center justify-content-center text-muted"
             style={{ position: 'absolute', inset: 0, background: '#f8f9fa' }}
           >
-            {state === 'queued' ? 'Waiting for process to start…' : 'No progress data yet'}
+            {state === 'queued' || state === 'starting' ? 'Waiting for process to start…' : 'No progress data yet'}
           </div>
         )}
       </div>

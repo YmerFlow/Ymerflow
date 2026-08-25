@@ -211,7 +211,7 @@ export default function ProcessEditor() {
                 Create new
               </Button>
             )}
-            {isExisting && (versionObj.state === 'queued' || versionObj.state === 'running') && (
+            {isExisting && (versionObj.state === 'queued' || versionObj.state === 'starting' || versionObj.state === 'running') && (
               <Button
                 variant="outline-danger" size="sm"
                 disabled={cancelProcessMutation.isPending}

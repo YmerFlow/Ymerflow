@@ -12,6 +12,7 @@ from backend.database import Base
 
 class ProcessState(str, enum.Enum):
     QUEUED = "queued"
+    STARTING = "starting"
     RUNNING = "running"
     DONE = "done"
     FAILED = "failed"
@@ -492,9 +493,10 @@ class ProcessVersion(Base):
                     )
                     return
 
-                # Wait for pod if still queued
-                if process_version.state == ProcessState.QUEUED:
-                    logger.info(f"Job is queued, waiting for pod to start")
+                # Wait for pod if still queued or starting (STARTING = pod coming up, e.g. on
+                # backend restart mid-startup — resume waiting for the container to run).
+                if process_version.state in [ProcessState.QUEUED, ProcessState.STARTING]:
+                    logger.info(f"Job is queued/starting, waiting for pod to start")
                     pod_name = await ProcessVersion._wait_for_pod(
                         process_version, process, job_name, db, logger, log_manager, k8s_client
                     )
@@ -503,7 +505,7 @@ class ProcessVersion(Base):
                     await db.refresh(process_version)
 
                     # Check if job completed during wait
-                    if process_version.state == ProcessState.QUEUED:
+                    if process_version.state in [ProcessState.QUEUED, ProcessState.STARTING]:
                         final_status = await get_job_status(job_name, k8s_client)
                         if final_status in ["succeeded", "failed"]:
                             logger.info(f"Job completed during wait with status: {final_status}")
@@ -638,6 +640,15 @@ class ProcessVersion(Base):
 
                     await process_version.update_state(db, ProcessState.FAILED, process.project_id)
                     return None
+
+                # Pod exists with no pod-level error: it's coming up (scheduled / pulling image /
+                # ContainerCreating) but its container isn't running yet. Move to STARTING and start
+                # the billing clock here (from when the pod started coming up, not from submission).
+                # Guarded so a re-observation doesn't reset the timestamp.
+                if process_version.state == ProcessState.QUEUED:
+                    if not process_version.started_at:
+                        process_version.started_at = datetime.utcnow()
+                    await process_version.update_state(db, ProcessState.STARTING, process.project_id)
 
                 # Check if container is running
                 if await k8s_client.is_pod_container_running(pod_name):
@@ -915,7 +926,10 @@ class ProcessVersion(Base):
                     await process_version.update_state(db, ProcessState.FAILED, process.project_id)
                     return
 
-                process_version.started_at = datetime.utcnow()
+                # NOTE: started_at (the billing clock) is set at the STARTING transition in
+                # _wait_for_pod — when the pod starts coming up — NOT here at submission, so
+                # queue-wait time is not billed. A job that fails before any pod exists keeps
+                # started_at=None → runtime_seconds=0 (see _handle_job_completion).
                 job_name = await create_job(
                     docker_image=environment.docker_image,
                     process_id=process_version.process_id,
