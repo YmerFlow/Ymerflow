@@ -196,6 +196,7 @@ export function ProcessProvider({ children }) {
   const [inUseDiffState, dispatchInUseDiff] = useReducer(inUseDiffReducer, { diffs: {}, history: {} });
   const [inUseAction, setInUseAction] = useState('enable'); // 'enable' | 'disable' | 'clear'
   const [newProcessToken, setNewProcessToken] = useState(0);
+  const [newProcessDefaults, setNewProcessDefaults] = useState(null);
   const createProcess = useCreateProcess();
 
   // Handle query errors
@@ -512,7 +513,8 @@ export function ProcessProvider({ children }) {
       activeProcess,
       setActiveProcess,
       newProcessToken,
-      startNewProcess: () => { setActiveProcess(null); setNewProcessToken(t => t + 1); },
+      newProcessDefaults,
+      startNewProcess: (defaults = null) => { setNewProcessDefaults(defaults); setActiveProcess(null); setNewProcessToken(t => t + 1); },
       currentPart,
       setCurrentPart,
       selectedEnvironment,
@@ -553,6 +555,8 @@ export function ProcessProvider({ children }) {
       refetch,
       activeProcess,
       setActiveProcess,
+      newProcessToken,
+      newProcessDefaults,
       currentPart,
       setCurrentPart,
       selectedEnvironment,

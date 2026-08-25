@@ -13,6 +13,7 @@ import MenuBar from "./flexout/MenuBar";
 import ProcessSelector from "./ProcessSelector";
 import ProjectDropdown from "./ProjectDropdown";
 import AutoCreateProjectDialog from "./AutoCreateProjectDialog";
+import AutoOpenProcessEditor from "./AutoOpenProcessEditor";
 import UserMenu from "./UserMenu";
 import WorkspaceMenu from "./WorkspaceMenu";
 import BrandLogo from "./BrandLogo";
@@ -229,6 +230,7 @@ function AppWithContext({ widgets }) {
                 <MainLayout />
               </div>
               <AutoCreateProjectDialog />
+              <AutoOpenProcessEditor />
             </div>
           } />
           {hooks.run.pages().map(({ path, component: C }) => (

@@ -37,7 +37,7 @@ export default function ProcessEditor() {
   const {
     processes, activeProcess, setActiveProcess, invalidateProject,
     selectedEnvironment, environments, environmentsLoading, currentProject,
-    newProcessToken
+    newProcessToken, newProcessDefaults
   } = useContext(ProcessContext);
   const activateProcessLog = useActivateProcessLog();
 
@@ -94,8 +94,13 @@ export default function ProcessEditor() {
   useEffect(() => {
     if (newProcessToken === 0) return;
     setProcessName("");
-    setLocalEnvironment(selectedEnvironment || null);
-    setLocalType(null);
+    if (newProcessDefaults) {
+      setLocalEnvironment(newProcessDefaults.environmentId ?? null);
+      setLocalType(newProcessDefaults.type ?? null);   // e.g. 'import_skytem'
+    } else {
+      setLocalEnvironment(selectedEnvironment || null);
+      setLocalType(null);
+    }
     setFormData({});
     setSelectedTags([]);
     setCpuCores(1);

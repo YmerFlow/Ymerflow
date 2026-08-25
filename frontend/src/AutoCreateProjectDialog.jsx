@@ -4,7 +4,7 @@ import { hooks } from './plugins/hooks';
 import ProjectModal from './ProjectModal';
 
 function AutoCreateProjectDialog() {
-  const { projects, projectsLoading, setCurrentProject } = useContext(ProcessContext);
+  const { projects, projectsLoading, currentProject, setCurrentProject } = useContext(ProcessContext);
   const [show, setShow] = useState(false);
   const checkedRef = useRef(false);
   const projectsRef = useRef(projects);
@@ -14,6 +14,7 @@ function AutoCreateProjectDialog() {
     if (checkedRef.current || projectsLoading) return;
     checkedRef.current = true;
 
+    if (currentProject) return;        // URL already names a project/publication — don't interrupt
     if (projects.length !== 0) return;
 
     (async () => {
