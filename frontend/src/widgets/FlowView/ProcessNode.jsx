@@ -2,6 +2,7 @@ import React, { useMemo, useCallback, useContext } from 'react';
 import { Handle, Position } from 'reactflow';
 import { ProcessContext } from '../../ProcessContext';
 import TagSelector from './TagSelector';
+import StateBadge from './StateBadge';
 
 const ProcessNode = React.memo(({ data }) => {
   const { process, selectedVersion, onVersionChange, onClick, activeProcess, visibleVersionsForProcess } = data;
@@ -152,9 +153,7 @@ const ProcessNode = React.memo(({ data }) => {
             }
           </select>
           &nbsp;
-          {versionObj?.state === "queued" && <span className="badge bg-warning">Queued</span>}
-          {versionObj?.state === "running" && <span className="badge bg-primary">Running</span>}
-          {versionObj?.state === "done" && <span className="badge bg-success">Done</span>}
+          <StateBadge state={versionObj?.state} />
         </strong>
         <div className="text-muted small">
           {process.type}

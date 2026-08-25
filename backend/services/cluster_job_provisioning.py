@@ -470,6 +470,7 @@ async def _apply_backend_rbac(namespace: str) -> None:
             client.V1PolicyRule(api_groups=[""], resources=["pods/log"], verbs=["get"]),
             client.V1PolicyRule(api_groups=[""], resources=["events"], verbs=["get", "list", "watch"]),
             client.V1PolicyRule(api_groups=[""], resources=["secrets"], verbs=["create", "get", "update"]),
+            client.V1PolicyRule(api_groups=[KUEUE_GROUP], resources=["workloads"], verbs=["get", "list"]),
         ],
     )
     await _create_or_patch(

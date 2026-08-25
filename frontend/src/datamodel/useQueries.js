@@ -18,6 +18,7 @@ import {
   getProjectImport,
   getAvailableClusters,
   getAvailableStorageBackends,
+  getClusterQueues,
   getProjectMembers,
   getProjectInvites,
   createProjectInvite,
@@ -64,6 +65,7 @@ export const queryKeys = {
   processOutputDatasets: (processId, version) => ['processOutputDatasets', processId, version],
   availableClusters: (projectId, resourceRequests) => ['availableClusters', projectId, resourceRequests?.cpu, resourceRequests?.memory],
   availableStorageBackends: ['availableStorageBackends'],
+  clusterQueues: ['clusterQueues'],
   projectExport: (projectId, exportId) => ['projectExport', projectId, exportId],
   projectImport: (importId) => ['projectImport', importId],
   projectMembers: (projectId) => ['projectMembers', projectId],
@@ -153,6 +155,18 @@ export function useAvailableStorageBackends() {
     queryKey: queryKeys.availableStorageBackends,
     queryFn: getAvailableStorageBackends,
     staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+// Hook to fetch the live per-cluster Kueue queue view. Manual reload only (Decision 6):
+// no refetchInterval / WebSocket, staleTime Infinity — the widget calls refetch() on demand.
+export function useClusterQueues() {
+  const { isAuthenticated } = useContext(AuthContext);
+  return useQuery({
+    queryKey: queryKeys.clusterQueues,
+    queryFn: getClusterQueues,
+    enabled: isAuthenticated,
+    staleTime: Infinity,
   });
 }
 

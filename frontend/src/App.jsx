@@ -32,6 +32,7 @@ import ProcessInfo from "./widgets/ProcessInfo";
 import AEMModelSimulator from "./widgets/AEMModelSimulator";
 import InUseEditor from "./widgets/InUseEditor";
 import PluginManager from "./widgets/PluginManager";
+import ClusterQueueView from "./widgets/ClusterQueueView";
 
 import { registerHook, hooks } from './plugins/hooks';
 import { buildDatasetRegistry } from './datamodel/datasetRegistry';
@@ -71,6 +72,7 @@ registerHook('widgets', () => [
   { name: 'AEMModelSimulator', component: AEMModelSimulator },
   { name: 'InUseEditor',       component: InUseEditor },
   { name: 'PluginManager',     component: PluginManager },
+  { name: 'ClusterQueueView',  component: ClusterQueueView },
 ]);
 
 // ── Register built-in cluster connection provider forms ──────────────────────

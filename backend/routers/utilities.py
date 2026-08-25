@@ -1,14 +1,18 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Optional
 import logging
 import projnames
 
 from backend.database import get_db
-from backend.services.k8s_client import k8s_clients
+from backend.services.k8s_client import k8s_clients, classify_workload
 from backend.services.auth_service import get_current_user, AuthContext, resolve_project_for_read, ProjectReadAccess
 from backend.models.cluster import get_allowed_clusters
 from backend.models.storage_backend import get_allowed_storage_backends
+from backend.models.process import ProcessVersion, Process
+from backend.models.project import ProjectMember
 
 router = APIRouter(tags=["Utilities"])
 
@@ -45,6 +49,139 @@ async def available_clusters(
             "max_cpu_cores": limits["max_cpu_cores"],
             "max_memory_gb": limits["max_memory_gb"],
         })
+    return out
+
+
+def _foreign_resource_requests(pod_resources: dict) -> dict:
+    """Format classify_workload's numeric pod_resources (cpu cores, memory GiB) back into
+    k8s quantity strings so member and non-member entries share one frontend parser."""
+    out = {}
+    if "cpu" in pod_resources:
+        out["cpu"] = f"{int(round(pod_resources['cpu'] * 1000))}m"
+    if "memory" in pod_resources:
+        out["memory"] = f"{pod_resources['memory']:g}Gi"
+    return out
+
+
+@router.get("/utilities/cluster-queues")
+async def cluster_queues(
+    include_limits: bool = True,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> List[dict]:
+    """Live per-cluster Kueue queue view across all clusters the current user may access.
+
+    For each accessible cluster, lists Kueue Workload objects and returns them in Kueue's
+    actual (future) execution order — admitted/running first, then pending by priority then
+    creation-time FIFO. Visibility is by project membership, exactly like FlowView: full
+    details for processes in the user's member projects, resource/position/state only for
+    everything else. Redaction is server-side (see the plan's Security invariant): non-member
+    entries never carry identity fields in the JSON at all.
+
+    This is a cross-project per-user view; anonymous/publication access is intentionally
+    excluded (get_current_user, not resolve_project_for_read).
+    """
+    member_ids = set(
+        await db.scalars(
+            select(ProjectMember.project_id).where(ProjectMember.user_id == auth.user.id)
+        )
+    )
+    clusters = await get_allowed_clusters(db, auth.user, None)
+
+    out = []
+    for cluster in clusters:
+        entry = {
+            **cluster.to_dict(),
+            "limits": None,
+            "queue_error": None,
+            "queue": [],
+        }
+
+        try:
+            workloads = await k8s_clients.get(cluster).list_workloads()
+        except Exception as e:
+            # Per-cluster graceful degradation (Decision 4): a not-yet-repatched cluster
+            # (403 on workloads) surfaces the error instead of failing the whole request.
+            logger.warning(f"Could not list workloads for cluster {cluster.id}: {e}")
+            entry["queue_error"] = str(e)
+            out.append(entry)
+            continue
+
+        classified = [classify_workload(wl) for wl in workloads]
+
+        # One DB query enriching by owner job name (Decision 2), eager-loading process→project
+        # and tags so serialization touches no lazy relationships.
+        job_names = [c["owner_job_name"] for c in classified if c["owner_job_name"]]
+        pv_by_job = {}
+        if job_names:
+            rows = await db.scalars(
+                select(ProcessVersion)
+                .where(ProcessVersion.k8s_job_name.in_(job_names))
+                .options(
+                    selectinload(ProcessVersion.process).selectinload(Process.project),
+                    selectinload(ProcessVersion.tags),
+                )
+            )
+            pv_by_job = {pv.k8s_job_name: pv for pv in rows}
+
+        # Order: admitted first (tie-break started_at/creation asc), then pending by
+        # (−priority, workload creationTimestamp asc). Sort keys are strings/ints only.
+        def sort_key(c):
+            pv = pv_by_job.get(c["owner_job_name"])
+            if c["admitted"]:
+                started = pv.started_at.isoformat() if (pv and pv.started_at) else (c["created_at"] or "")
+                return (0, 0, started)
+            return (1, -c["priority"], c["created_at"] or "")
+
+        classified.sort(key=sort_key)
+
+        queue = []
+        for position, c in enumerate(classified):
+            pv = pv_by_job.get(c["owner_job_name"])
+            member = pv is not None and pv.process.project_id in member_ids
+            state = "running" if c["admitted"] else "waiting"
+
+            if member:
+                # Full entry — build a fresh dict with detail keys (never build-then-delete).
+                queue.append({
+                    "position": position,
+                    "state": state,
+                    "member": True,
+                    "resource_requests": pv.resource_requests,
+                    "deadline_seconds": pv.deadline_seconds,
+                    "project_name": pv.process.project.name if pv.process.project else None,
+                    "process_id": pv.process_id,
+                    "process_name": pv.process.name,
+                    "version": pv.version,
+                    "process_type": pv.process.type,
+                    "tags": [t.to_dict() for t in pv.tags],
+                })
+            else:
+                # Redacted entry — the authorization boundary. No identity key is ever added,
+                # so nothing to leak. Resources from the ProcessVersion if we have one (a
+                # non-member process the user still can't see), else from the workload podSets.
+                if pv is not None:
+                    resource_requests = pv.resource_requests
+                    deadline_seconds = pv.deadline_seconds
+                else:
+                    resource_requests = _foreign_resource_requests(c["pod_resources"])
+                    deadline_seconds = None
+                queue.append({
+                    "position": position,
+                    "state": state,
+                    "member": False,
+                    "resource_requests": resource_requests,
+                    "deadline_seconds": deadline_seconds,
+                })
+
+        entry["queue"] = queue
+
+        if include_limits:
+            limits = await k8s_clients.get(cluster).get_cluster_queue_limits()
+            entry["limits"] = limits if limits is not None else DEFAULT_QUEUE_LIMITS
+
+        out.append(entry)
+
     return out
 
 

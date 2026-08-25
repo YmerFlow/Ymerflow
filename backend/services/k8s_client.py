@@ -40,6 +40,57 @@ def _parse_memory_gb(value: str) -> float:
     return float(value) / (1024.0 ** 3)
 
 
+def classify_workload(wl: dict) -> dict:
+    """Derive the queue-relevant facts from a raw Kueue Workload dict.
+
+    Returns:
+      admitted        - True once Kueue has admitted the workload (running), else False (pending).
+      owner_job_name  - the owning batch/Job's name (== ProcessVersion.k8s_job_name), or None.
+      created_at      - metadata.creationTimestamp string (Kueue's pending FIFO tie-break).
+      priority        - spec.priority int (higher runs first); 0 when unset.
+      pod_resources   - merged {cpu, memory, ...} requests summed across podSets, for foreign
+                        (non-member, no matching ProcessVersion) workloads.
+    """
+    meta = wl.get("metadata", {})
+    status = wl.get("status", {})
+    spec = wl.get("spec", {})
+
+    admitted = "admission" in status and status.get("admission") is not None
+    if not admitted:
+        for cond in status.get("conditions", []):
+            if cond.get("type") in ("Admitted", "QuotaReserved") and cond.get("status") == "True":
+                admitted = True
+                break
+
+    owner_job_name = None
+    for ref in meta.get("ownerReferences", []):
+        if ref.get("kind") == "Job":
+            owner_job_name = ref.get("name")
+            break
+
+    pod_resources = {}
+    for pod_set in spec.get("podSets", []):
+        count = pod_set.get("count", 1) or 1
+        containers = (
+            pod_set.get("template", {}).get("spec", {}).get("containers", [])
+        )
+        for container in containers:
+            requests = container.get("resources", {}).get("requests", {})
+            for res_name, res_val in requests.items():
+                if res_name == "cpu":
+                    pod_resources["cpu"] = pod_resources.get("cpu", 0.0) + _parse_cpu_cores(str(res_val)) * count
+                elif res_name == "memory":
+                    pod_resources["memory"] = pod_resources.get("memory", 0.0) + _parse_memory_gb(str(res_val)) * count
+
+    return {
+        "admitted": admitted,
+        "owner_job_name": owner_job_name,
+        "created_at": meta.get("creationTimestamp"),
+        "priority": spec.get("priority") or 0,
+        "pod_resources": pod_resources,
+    }
+
+
 class K8sClient:
     def __init__(self, namespace=None, kubeconfig=None):
         self.namespace = namespace or os.getenv('K8S_NAMESPACE', 'ymerflow-jobs')
@@ -344,6 +395,24 @@ class K8sClient:
         except Exception as e:
             logger.warning(f"Could not read ClusterQueue {queue_name}: {e}")
         return None
+
+    async def list_workloads(self) -> list:
+        """List Kueue Workload objects in this client's jobs namespace (raw dicts).
+
+        Does NOT swallow errors (CLAUDE.md rule 8) — the caller decides per-cluster
+        degradation (a 403 on a not-yet-repatched cluster must surface as queue_error,
+        not fail the whole cross-cluster request).
+        """
+        await self._ensure_initialized()
+        custom_api = client.CustomObjectsApi()
+        resp = await custom_api.list_namespaced_custom_object(
+            group="kueue.x-k8s.io",
+            version="v1beta2",
+            namespace=self.namespace,
+            plural="workloads",
+            _request_timeout=API_REQUEST_TIMEOUT_SECONDS,
+        )
+        return resp.get("items", [])
 
     async def watch_job(self, job_name, timeout_seconds=None):
         """Watch a job for status changes using Kubernetes Watch API.

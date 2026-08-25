@@ -272,6 +272,11 @@ export async function getAvailableStorageBackends() {
   return response.data;
 }
 
+export async function getClusterQueues() {
+  const response = await apiClient.get('/utilities/cluster-queues');
+  return response.data;
+}
+
 export async function createProject(name, storageBackendId) {
   const response = await apiClient.post('/projects', { name, storage_backend_id: storageBackendId });
   return response.data;
