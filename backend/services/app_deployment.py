@@ -54,6 +54,8 @@ MIGRATION_JOB_NAME = "ymerflow-app-migrate"
 MIGRATION_JOB_TIMEOUT_SECONDS = 300
 MIGRATION_JOB_POLL_INTERVAL_SECONDS = 3
 STALE_JOB_DELETE_TIMEOUT_SECONDS = 60
+REGISTRY_EDGE_WAIT_TIMEOUT_SECONDS = 300
+REGISTRY_EDGE_WAIT_POLL_INTERVAL_SECONDS = 5
 
 # Matches job_orchestrator.py's hardcoded BACKEND_URL ("http://backend-service:8000") and
 # k8s/backend/service.yaml's ExternalName Service in the ymerflow-jobs namespace, which points
@@ -82,8 +84,8 @@ PUBLIC_TLS_HOST_KEYS = (
 
 
 async def apply_app_workloads(k8s_client, namespace: str, images: dict, app_config: dict,
-                               secrets: dict, image_pull_credentials: dict | None = None,
-                               replicas: dict | None = None) -> None:
+                               secrets: dict, image_pull_credentials=None,
+                               replicas: dict | None = None, registry_reachable=None) -> None:
     """Apply every workload-level resource the YmerFlow app itself needs, in `namespace`, on
     whatever cluster `k8s_client` points at. Idempotent — safe to call repeatedly (e.g. on every
     redeploy): every object is created-or-patched, never assumed absent.
@@ -108,7 +110,10 @@ async def apply_app_workloads(k8s_client, namespace: str, images: dict, app_conf
             config.env JWT_SECRET_KEY precedence); if omitted, an existing Secret's
             JWT_SECRET_KEY is reused, and only a brand-new deployment generates one (Design
             decision 5).
-        image_pull_credentials: optional `{"registry_server", "username", "password"}` — when
+        image_pull_credentials: optional pull credential(s) — a single
+            `{"registry_server", "username", "password"}` dict OR a list of them (one per distinct
+            registry server the app pods pull from; see
+            docs/plans/registry-public-vs-direct-address.md). When
             given, a shared `kubernetes.io/dockerconfigjson` Secret is applied and attached to
             every pod here as imagePullSecrets. `None` means the cluster can pull `images`
             without credentials (e.g. a fully public registry).
@@ -129,11 +134,68 @@ async def apply_app_workloads(k8s_client, namespace: str, images: dict, app_conf
         await _apply_image_pull_secret(k8s_client, namespace, IMAGE_PULL_SECRET_NAME, image_pull_credentials)
         pull_secret_names.append(IMAGE_PULL_SECRET_NAME)
 
-    await _run_migration_job(k8s_client, namespace, images["backend"], pull_secret_names)
+    # Migration Job first: a transient bootstrap container, so it pulls from the DIRECT address
+    # (images["migration"]; falls back to images["backend"] for a managed registry that passes no
+    # separate migration ref). Independent of the public edge.
+    await _run_migration_job(k8s_client, namespace, images.get("migration", images["backend"]),
+                             pull_secret_names)
 
-    await _apply_backend(k8s_client, namespace, images["backend"], pull_secret_names, replicas.get("backend", 1))
+    # Backend ClusterIP Service BEFORE the frontend: the frontend nginx has a static
+    # `proxy_pass http://backend-service:8000` upstream (no `resolver`), so nginx fails to start if
+    # that name doesn't resolve yet. A Service's DNS record exists as soon as the Service object
+    # does (endpoints/pods irrelevant), so create it now — the backend Deployment itself comes after
+    # the edge-reachability wait below.
+    await _apply_backend_service(k8s_client, namespace)
+
+    # Frontend/nginx next (DIRECT address — it cannot pull its own image through itself). Bringing
+    # it up is what makes the public registry edge (registry.<domain>:443, terminated by this very
+    # nginx) go live. See docs/plans/registry-public-vs-direct-address.md.
     await _apply_frontend(k8s_client, namespace, images["frontend"], pull_secret_names,
                           replicas.get("frontend", 1), app_config)
+
+    # Then wait until the PUBLIC registry address actually answers before applying the backend
+    # Deployment, whose image ref is that public address. Bounded + self-healing (see
+    # _wait_for_registry_reachable). Returns immediately when public == direct, when TLS is
+    # terminated externally, or for a managed registry (is_reachable() is True).
+    await _wait_for_registry_reachable(registry_reachable)
+
+    await _apply_backend_deployment(k8s_client, namespace, images["backend"], pull_secret_names,
+                                    replicas.get("backend", 1))
+
+
+# ── Public-registry-edge reachability gate ───────────────────────────────────────────────────
+
+
+async def _wait_for_registry_reachable(registry_reachable) -> None:
+    """Block until the PUBLIC registry address answers, so the backend Deployment (whose image ref
+    is that public address) isn't applied before its pull address is live. `registry_reachable` is
+    an optional zero-arg callable returning an awaitable bool — yf-deploy-app binds it to the active
+    RegistryProtocolHandler.is_reachable(config). None => skip the wait (caller opted out).
+
+    Bounded and SELF-HEALING: on timeout we return normally and let the caller apply the backend
+    anyway — the kubelet's ImagePullBackOff retry converges once the edge (and, on a first boot, the
+    ACME cert) comes up — so a slow first-boot issuance degrades to "noisy but eventually
+    converges", never a hard failure. A probe that raises is treated as "not reachable yet" and
+    LOGGED (never silently swallowed), then retried. See
+    docs/plans/registry-public-vs-direct-address.md."""
+    if registry_reachable is None:
+        return
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + REGISTRY_EDGE_WAIT_TIMEOUT_SECONDS
+    while True:
+        try:
+            if await registry_reachable():
+                logger.info("Public registry address is reachable; applying backend Deployment")
+                return
+        except Exception as e:  # noqa: BLE001 — logged, then retried; this is a liveness probe
+            logger.info("Registry reachability probe not passing yet: %s", e)
+        if loop.time() >= deadline:
+            logger.warning(
+                "Public registry address still not reachable after %ss; applying backend anyway "
+                "(kubelet ImagePullBackOff will retry until the edge is up)",
+                REGISTRY_EDGE_WAIT_TIMEOUT_SECONDS)
+            return
+        await asyncio.sleep(REGISTRY_EDGE_WAIT_POLL_INTERVAL_SECONDS)
 
 
 # ── Create-or-patch helper ───────────────────────────────────────────────────────────────────
@@ -179,18 +241,24 @@ async def _apply_image_pull_secret(k8s_client, namespace, name, credentials) -> 
     pods are long-lived Deployments, not one-off Jobs, so there's no "as old as the Job itself"
     property to preserve. Re-applying (patching) this Secret on every `apply_app_workloads()`
     call keeps it fresh if credentials rotate."""
-    server = credentials["registry_server"]
-    username = credentials.get("username") or ""
-    password = credentials.get("password") or ""
-    dockerconfigjson = json.dumps({
-        "auths": {
-            server: {
-                "username": username,
-                "password": password,
-                "auth": base64.b64encode(f"{username}:{password}".encode()).decode(),
-            }
+    # `credentials` is a single {registry_server,username,password} dict OR a list of them —
+    # multiple distinct registry servers the app pods pull from (e.g. the PUBLIC backend address
+    # plus the DIRECT frontend/migration address; see
+    # docs/plans/registry-public-vs-direct-address.md). Each becomes its own `auths` entry so the
+    # kubelet can match whichever server a given image ref embeds.
+    if isinstance(credentials, dict):
+        credentials = [credentials]
+    auths = {}
+    for cred in credentials:
+        server = cred["registry_server"]
+        username = cred.get("username") or ""
+        password = cred.get("password") or ""
+        auths[server] = {
+            "username": username,
+            "password": password,
+            "auth": base64.b64encode(f"{username}:{password}".encode()).decode(),
         }
-    })
+    dockerconfigjson = json.dumps({"auths": auths})
     secret = client.V1Secret(
         api_version="v1", kind="Secret",
         metadata=client.V1ObjectMeta(name=name, namespace=namespace),
@@ -349,7 +417,7 @@ async def _apply_deployment(k8s_client, namespace, deployment, name) -> None:
     )
 
 
-async def _apply_backend(k8s_client, namespace, image, pull_secret_names, replicas) -> None:
+async def _apply_backend_deployment(k8s_client, namespace, image, pull_secret_names, replicas) -> None:
     container = client.V1Container(
         name="backend",
         image=image,
@@ -379,9 +447,13 @@ async def _apply_backend(k8s_client, namespace, image, pull_secret_names, replic
     )
     await _apply_deployment(k8s_client, namespace, deployment, BACKEND_DEPLOYMENT_NAME)
 
+
+async def _apply_backend_service(k8s_client, namespace) -> None:
     # ClusterIP Service, needed internally regardless of provider (frontend nginx proxies /api to
     # it; the separate ymerflow-jobs ExternalName Service DNS-points at it too) — not
-    # provider-specific exposure, so it lives here rather than in expose_app().
+    # provider-specific exposure, so it lives here rather than in expose_app(). Applied BEFORE the
+    # frontend (see apply_app_workloads) so nginx's static backend-service upstream resolves at
+    # startup, even though the backend Deployment itself is applied later.
     service = client.V1Service(
         api_version="v1", kind="Service",
         metadata=client.V1ObjectMeta(name=BACKEND_SERVICE_NAME, namespace=namespace),
