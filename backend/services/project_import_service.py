@@ -156,7 +156,13 @@ async def _do_import(db, import_row: ProjectImport, manifest: dict, zf: zipfile.
 
     # --- Pass 1: create Process/ProcessVersion/Dataset rows with placeholder ids, compute
     # final blob destinations (pure string work, no I/O yet) ---
-    dataset_id_map = {}
+    # (old_process_id, old_version, dataset_name) -> new_dataset_id. Dependencies are stored/exported
+    # in the *resolved* shape (source_process_id/source_process_version/source_dataset_name, see
+    # Dataset.resolve_dependencies), which carries no dataset id — so pass 2 remaps them via this key.
+    resolved_dep_map = {}
+    # new_dataset_id -> (new_process_id, version, dataset_name), so pass 2 can write dependencies
+    # back in the resolved shape the frontend FlowView and Dataset.resolve_dependencies both expect.
+    new_dataset_info = {}
     dataset_url_map = {}  # new_dataset_id -> new HTTP url
     file_copy_jobs = []  # (zip_path, dest_storage_url)
     pending_versions = []  # (ProcessVersion row, src_dependencies, src_parameters_http)
@@ -208,7 +214,8 @@ async def _do_import(db, import_row: ProjectImport, manifest: dict, zf: zipfile.
 
             for ds in version.get("datasets", []):
                 new_dataset_id = str(uuid.uuid4())
-                dataset_id_map[ds["id"]] = new_dataset_id
+                resolved_dep_map[(proc["id"], version["version"], ds["dataset_name"])] = new_dataset_id
+                new_dataset_info[new_dataset_id] = (new_process.id, version["version"], ds["dataset_name"])
 
                 def _rewrite(node):
                     if isinstance(node, dict):
@@ -244,14 +251,25 @@ async def _do_import(db, import_row: ProjectImport, manifest: dict, zf: zipfile.
         params = copy.deepcopy(src_parameters)
         new_dependencies = []
         for dep in src_dependencies:
-            new_dataset_id = dataset_id_map.get(dep["source_dataset_id"])
+            # Dependencies are stored/exported in the resolved shape (see Dataset.resolve_dependencies):
+            # {source_process_id, source_process_version, source_dataset_name, target_param_name}.
+            new_dataset_id = resolved_dep_map.get((
+                dep.get("source_process_id"),
+                dep.get("source_process_version"),
+                dep.get("source_dataset_name"),
+            ))
             if new_dataset_id is None:
                 continue  # dataset wasn't part of the export (shouldn't happen)
             new_url = dataset_url_map.get(new_dataset_id)
             if new_url is not None:
                 _set_path_value(params, dep["target_param_name"], new_url)
+            # Store in the resolved shape (matches Dataset.resolve_dependencies and what the frontend
+            # FlowView reads to draw process-graph edges) rather than the raw source_dataset_id shape.
+            new_process_id, new_version, new_dataset_name = new_dataset_info[new_dataset_id]
             new_dependencies.append({
-                "source_dataset_id": new_dataset_id,
+                "source_process_id": new_process_id,
+                "source_process_version": new_version,
+                "source_dataset_name": new_dataset_name,
                 "target_param_name": dep["target_param_name"],
             })
         version_row.dependencies = new_dependencies

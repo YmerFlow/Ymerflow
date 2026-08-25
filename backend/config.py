@@ -2,7 +2,7 @@ import os
 import secrets
 import logging
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -49,11 +49,20 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: List[str] = ["http://localhost:3000"]
 
+    # Public URL clients use to reach the app — the frontend origin (config.env SERVER_URL).
+    # In production the deploy pipeline injects this; in dev it defaults to the local frontend.
+    # frontend_base_url derives from this when not set explicitly.
+    server_url: str = "http://localhost:3000"
+
     # Backend API base URL
     backend_base_url: str = "http://localhost:8000"
 
-    # Frontend base URL (used for invite links)
-    frontend_base_url: str = "http://localhost:3000"
+    # Frontend base URL, used for invite links (billing + core project invites + invite emails).
+    # Defaults to server_url — the public app origin — so invite links point at the real deployment
+    # with no extra config. Set FRONTEND_BASE_URL in config.env only to override, e.g. when the
+    # frontend is served on a different host than SERVER_URL. (None here => resolved to server_url
+    # by the validator below; it is always a real string at runtime.)
+    frontend_base_url: Optional[str] = None
 
     # Site admin bootstrap
     admin_username: Optional[str] = None   # ADMIN_USERNAME in config.env
@@ -129,6 +138,16 @@ class Settings(BaseSettings):
         if v is None:
             return v
         return v.replace('\\n', '\n')
+
+    @model_validator(mode='after')
+    def default_frontend_base_url(self):
+        # Invite links (billing /billing/invite, core /invite, and invite emails) all read
+        # frontend_base_url. When FRONTEND_BASE_URL isn't set explicitly, fall back to the public
+        # app origin (server_url) rather than a hardcoded localhost — otherwise every production
+        # deploy silently emits http://localhost:3000 invite links.
+        if not self.frontend_base_url:
+            self.frontend_base_url = self.server_url
+        return self
 
 
 settings = Settings()
