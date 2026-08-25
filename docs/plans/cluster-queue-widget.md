@@ -3,7 +3,7 @@
 ## Context
 
 Users currently have no way to see the live scheduling picture of a cluster: which
-processes are running, which are waiting, and where their own jobs sit in line. Jobs are
+processes are running, which are waiting, and where the jobs from their projects sit in line. Jobs are
 submitted as Kueue-admitted, suspended Kubernetes Jobs (`job_orchestrator.create_job_manifest`,
 label `kueue.x-k8s.io/queue-name: ymerflow-queue`, `spec.suspend=True`), and Kueue decides
 admission order. Today the backend never reads Kueue's own queue state — running/waiting is
@@ -11,18 +11,21 @@ inferred from the app DB (`ProcessState`), and no endpoint spans users/projects 
 
 This plan adds a **Cluster Queue** frontend widget that, for each cluster the user can access,
 shows the current queue — running processes plus waiting ones — **in Kueue's actual (future)
-execution order, first-to-run first**. Other users' jobs are shown with resource requirements
-only (CPU, RAM, max run length) plus queue position and state; the user's own jobs additionally
-show project name, process name/version, type, and tags. Styling reuses the FlowView process card.
+execution order, first-to-run first**. Jobs from projects the user is **not** a member of are shown
+with resource requirements only (CPU, RAM, max run length) plus queue position and state; jobs from
+**any project the user is a member of** additionally show project name, process name/version, type,
+and tags — the **same access-control model as FlowView** and every other process view (visibility is
+by project membership, never by who created/started the process). Styling reuses the FlowView process card.
 
 ### Decisions settled with the user
 - **Execution order source: live Kueue `Workload` objects** (true admission state), not a DB
   creation-time approximation. Requires a new K8s read (list workloads) + one RBAC verb.
 - **Refresh: a manual reload button.** No polling, no WebSocket subscription.
-- **Other-user rows: resources + position + state.** CPU / RAM / max-run-length, a queue
+- **Rows from non-member projects: resources + position + state.** CPU / RAM / max-run-length, a queue
   position number, and a Running/Waiting badge. No identity, no project/name/type/tags. The
   process-name slot shows a greyed-out placeholder title `Process` so the card keeps the same
-  shape as owned cards without leaking anything.
+  shape as full (member-project) cards without leaking anything. "Member-project" here means the
+  same membership check FlowView uses — not "started by this user".
 - **Capacity line on by default** (`include_limits=true`) — each cluster shows its Kueue max
   CPU / RAM. The extra live read per cluster only happens on a manual reload.
 - **One cluster at a time, selected via tabs** — the widget shows a `nav nav-tabs` bar (one tab per
@@ -72,6 +75,17 @@ show project name, process name/version, type, and tags. Styling reuses the Flow
 
 ## Design decisions
 
+### Security invariant — redaction is server-side, non-negotiable
+**The API MUST NOT send details of a process to a client that is not entitled to see them.** Redaction
+happens **on the backend, before serialization**: for any process whose project the requesting user is
+not a member of, the response omits every identifying/detail field (`project_name`, `process_id`,
+`process_name`, `version`, `process_type`, `tags`) — these fields are **never present in the JSON**,
+not nulled, not sent-and-hidden. This is a hard authorization boundary enforced by the endpoint
+(Decision 3), **not** a frontend concern: the frontend renders whatever it receives and has no
+filtering responsibility, so a bug or malicious client inspecting the raw HTTP response can never
+recover hidden details because they were never transmitted. Any implementation or test that relies on
+the client to hide fields is wrong.
+
 ### Decision 1 — Order comes from live Kueue `Workload` objects — **chosen**
 Per cluster, the backend lists `workloads.kueue.x-k8s.io` in the cluster's jobs namespace and derives
 order from Kueue's own state:
@@ -92,14 +106,21 @@ Each Kueue `Workload` for a Job carries `metadata.ownerReferences[] {kind: Job, 
 job names from the workload list and does **one** DB query
 (`ProcessVersion ... where k8s_job_name in (...)`, eager-loading `process→project` + `tags`) to
 enrich each entry. Workloads with no matching row (foreign jobs) are still shown as redacted rows
-using resources read from the workload `podSets` (`owned:false`, no deadline).
+using resources read from the workload `podSets` (`member:false`, no deadline).
 
-### Decision 3 — Redact server-side by project membership — **chosen**
-`owned = pv.process.project_id in member_ids`, where `member_ids` comes from
-`select(ProjectMember.project_id).where(ProjectMember.user_id == auth.user.id)`. Redacted entries
-serialize **only** `position`, `state`, `owned:false`, `resource_requests` (cpu/memory),
-`deadline_seconds`. Full entries add `project_name`, `process_id`, `process_name`, `version`,
-`process_type`, `tags`. Redacted fields are never serialized (not nulled) so no identity leaks.
+### Decision 3 — Redact server-side by project membership (same model as FlowView) — **chosen**
+Visibility is decided **purely by project membership**, exactly as FlowView and every other process
+view: a user sees full details for a process iff they are a member of that process's project —
+**regardless of who created or started it**. `member = pv.process.project_id in member_ids`, where
+`member_ids` comes from `select(ProjectMember.project_id).where(ProjectMember.user_id == auth.user.id)`.
+The response field is named `member` (not `owned`) to avoid implying creator-ownership. Redacted
+entries (`member:false`) serialize **only** `position`, `state`, `member:false`, `resource_requests`
+(cpu/memory), `deadline_seconds`. Full entries (`member:true`) add `project_name`, `process_id`,
+`process_name`, `version`, `process_type`, `tags`. Redacted fields are never serialized (not nulled)
+so no identity leaks — see the **Security invariant** above: this redaction is the authorization
+boundary and lives entirely in the endpoint; the frontend never receives, and therefore cannot leak,
+hidden details. The two branches build **different dicts** (the redacted branch simply never adds the
+detail keys) — do not build a full dict and delete keys, which risks a field slipping through.
 
 ### Decision 4 — Add `workloads` list to the namespaced Role — **chosen**
 Add one rule to the backend's namespaced `Role` (not the ClusterRole — workloads are namespaced and
@@ -190,7 +211,10 @@ Assembly:
 5. One DB query enriching by job name (eager-load `process→project`, `tags`), keyed by `k8s_job_name`.
 6. **Order:** admitted first (tie-break `started_at`/admission time asc), then pending by
    `(−priority, workload creationTimestamp asc)`. Assign `position` after sorting.
-7. Build each entry: full dict if `owned`, else redacted dict (Decision 3). `state` =
+7. Build each entry: full dict if `member`, else redacted dict (Decision 3) — the redacted branch
+   constructs a fresh dict without the detail keys (never a full dict with keys deleted). This step
+   is the authorization boundary (see **Security invariant**); no detail field for a non-member
+   process may reach the response. `state` =
    `"running"` if admitted else `"waiting"`. Resource/deadline from the matched `ProcessVersion`
    when present, else from the workload `podSets` (deadline omitted when no match).
 8. `limits`: if `include_limits`, `await ...get_cluster_queue_limits()` per cluster with
@@ -207,13 +231,13 @@ Response shape:
     "limits": { "max_cpu_cores": 8.0, "max_memory_gb": 32.0 },   // null if include_limits=false
     "queue_error": null,                                          // or a string if the k8s read failed
     "queue": [
-      { "position": 0, "state": "running", "owned": true,
+      { "position": 0, "state": "running", "member": true,
         "resource_requests": {"cpu":"1000m","memory":"2Gi","ephemeral-storage":"10Gi"},
         "deadline_seconds": 3600, "project_name": "My Survey",
         "process_id": "proc-uuid", "process_name": "invert_aem", "version": 3,
         "process_type": "aem_inversion",
         "tags": [ {"id":"...","name":"prod","color":"#28a745"} ] },
-      { "position": 1, "state": "waiting", "owned": false,
+      { "position": 1, "state": "waiting", "member": false,
         "resource_requests": {"cpu":"4000m","memory":"16Gi"}, "deadline_seconds": 7200 }
     ]
   }
@@ -252,10 +276,10 @@ Response shape:
   - Static `title = 'Cluster Queue'`.
 - **`frontend/src/widgets/ClusterQueueView/QueueCard.jsx`** (new) — reproduces ProcessNode's `card`
   styling. Always shows position, `StateBadge`, and a resource line (CPU cores / RAM / max run
-  length from `deadline_seconds`). When `entry.owned`: also `<strong>{process_name}</strong>`,
+  length from `deadline_seconds`). When `entry.member`: also `<strong>{process_name}</strong>`,
   `v{version}` (plain text), project name line, `process_type` as `text-muted small`, and tags via
-  read-only `TagBadge`. When not owned: the name slot shows a greyed-out placeholder
-  `<strong className="text-muted">Process</strong>` (so card height/shape matches owned cards),
+  read-only `TagBadge`. When not a member: the name slot shows a greyed-out placeholder
+  `<strong className="text-muted">Process</strong>` (so card height/shape matches full cards),
   and the body is just position + state + resources — no version, project, type, or tags.
 - **`frontend/src/App.jsx`** — import and register `ClusterQueueView` in the `widgets` object.
 
@@ -282,14 +306,21 @@ Response shape:
 
 - **Backend unit test** (seed DB + a faked `list_workloads`): two users, two projects, several
   `ProcessVersion` rows (QUEUED/RUNNING) across two clusters, with a stub returning admitted +
-  pending workloads. Assert: (a) admitted-before-pending, pending by creation-time asc, correct
-  `position`; (b) `state` reflects admission; (c) owned entries carry full fields, non-owned carry
-  only `position`/`state`/`resource_requests`/`deadline_seconds` and no `process_id`/identity;
+  pending workloads. Include a process **created by user B but in a project user A is also a member
+  of**, and assert user A sees it in **full** (proving membership — not creator — drives visibility).
+  Assert: (a) admitted-before-pending, pending by creation-time asc, correct
+  `position`; (b) `state` reflects admission; (c) member-project entries carry full fields,
+  non-member entries carry only `position`/`state`/`resource_requests`/`deadline_seconds` and no
+  `process_id`/identity — assert this on the **serialized response body** (e.g. the detail keys are
+  absent from the dict / JSON payload the endpoint returns), proving redaction happened server-side
+  and not via a frontend filter;
   (d) clusters outside `get_allowed_clusters` excluded; (e) a cluster whose `list_workloads` raises
   yields `queue_error` + empty `queue` and does not fail the request; (f) no forbidden RBAC verb.
 - **Manual (real cluster, servers already running):** re-provision a cluster so the workloads verb
-  applies. Submit jobs as user A and user B on the same cluster; open the widget as A. Confirm A's
-  cards show project/name/version/type/tags, B's show only position/state/CPU/RAM/max-run-length, and
+  applies. Submit jobs as user A and user B on the same cluster; open the widget as A. Confirm cards
+  for processes in A's **member projects** (including any B started in a project A also belongs to)
+  show project/name/version/type/tags, jobs from projects A is **not** a member of show only
+  position/state/CPU/RAM/max-run-length, and
   order matches Kueue admission (running on top). Click reload after a job transitions
   QUEUED→RUNNING→DONE and confirm the list updates (DONE drops off). Confirm badge styling matches
   FlowView.
