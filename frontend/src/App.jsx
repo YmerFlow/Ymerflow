@@ -18,7 +18,7 @@ import AutoOpenProcessEditor from "./AutoOpenProcessEditor";
 import UserMenu from "./UserMenu";
 import WorkspaceMenu from "./WorkspaceMenu";
 import BrandLogo from "./BrandLogo";
-import LandingPage from "./LandingPage";
+import { LandingChrome, LandingContent } from "./LandingPage";
 import AccountPage from "./AccountPage";
 import AdminPage from "./AdminPage";
 import InviteAcceptPage from "./InviteAcceptPage";
@@ -243,7 +243,7 @@ function AppWithContext({ widgets }) {
             <Route key={path} path={`/app/plugin/${path}`} element={<C />} />
           ))}
           {hooks.run_jsx.app_routes().map(({ path, element }) => (
-            <Route key={path} path={path} element={element} />
+            <Route key={path} path={path} element={<PageChrome>{element}</PageChrome>} />
           ))}
           <Route path="/" element={<Navigate to="/app" replace />} />
           <Route path="*" element={<Navigate to="/app" replace />} />
@@ -359,12 +359,14 @@ function AuthenticatedApp() {
         );
       }
       return (
-        <Routes>
-          {hooks.run_jsx.logged_out_routes().map(({ path, element }) => (
-            <Route key={path} path={path} element={element} />
-          ))}
-          <Route path="*" element={<LandingPage />} />
-        </Routes>
+        <LandingChrome>
+          <Routes>
+            {hooks.run_jsx.logged_out_routes().map(({ path, element }) => (
+              <Route key={path} path={path} element={element} />
+            ))}
+            <Route path="*" element={<LandingContent />} />
+          </Routes>
+        </LandingChrome>
       );
     }
     // Falls through: valid anonymous-allowed publication link — render /app/* read-only.
