@@ -1,4 +1,5 @@
 import React, { useContext } from 'react';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { ProcessContext } from '../ProcessContext';
 
 const URL_PATTERN = /https?:\/\/[^\s"'<>]+/g;
@@ -59,6 +60,7 @@ function renderYamlWithLinks(yamlText) {
 }
 
 export default function ProcessInfo() {
+  const isMobile = useIsMobile();
   const { activeProcess, processes } = useContext(ProcessContext);
 
   if (!activeProcess) {
@@ -94,7 +96,7 @@ export default function ProcessInfo() {
   }).join('\n');
 
   return (
-    <div className="p-3 h-100 overflow-auto">
+    <div className={isMobile ? 'p-3' : 'p-3 h-100 overflow-auto'}>
       <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
         {renderYamlWithLinks(yamlText)}
       </pre>

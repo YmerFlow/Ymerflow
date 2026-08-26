@@ -10,6 +10,7 @@ import { MessageProvider } from './MessageContext';
 import MessageDisplay from './MessageDisplay';
 import { MenuProvider, useRegisterMenuComponent } from "./flexout/MenuContext";
 import MenuBar from "./flexout/MenuBar";
+import { useIsMobile } from "./hooks/useIsMobile";
 import ProcessSelector from "./ProcessSelector";
 import ProjectDropdown from "./ProjectDropdown";
 import AutoCreateProjectDialog from "./AutoCreateProjectDialog";
@@ -175,6 +176,7 @@ function RequireAdmin({ children }) {
 function AppWithContext({ widgets }) {
   const processContext = useContext(ProcessContext);
   const location = useLocation();
+  const isMobile = useIsMobile();
   const [layoutToUse, setLayoutToUse] = useState(initial_layout);
   const [layoutLoaded, setLayoutLoaded] = useState(false);
 
@@ -230,7 +232,7 @@ function AppWithContext({ widgets }) {
             <div className="d-flex flex-column h-100">
               <MessageDisplay />
               <MenuBarWithComponents />
-              <div className="flex-grow-1 overflow-hidden">
+              <div className={`flex-grow-1 ${isMobile ? 'overflow-auto' : 'overflow-hidden'}`}>
                 <MainLayout />
               </div>
               <AutoCreateProjectDialog />

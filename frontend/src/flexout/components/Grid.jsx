@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Pane from './Pane';
 import { v4 as uuidv4 } from 'uuid';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 const MIN_FRAC = 0.05;
 
@@ -23,6 +24,7 @@ function normalizeFractions(fracs, n) {
 }
 
 export default function Grid({ parentUpdate, ...node }) {
+  const isMobile = useIsMobile();
   const rows = node.rows || 3;
   const cols = node.cols || 3;
   const totalCells = rows * cols;
@@ -145,6 +147,17 @@ export default function Grid({ parentUpdate, ...node }) {
         style={{ gridRow: 2 * r + 2, gridColumn: '1 / -1', zIndex: 1 }}
         onMouseDown={(e) => handleDividerMouseDown('row', r, e)}
       />
+    );
+  }
+
+  if (isMobile) {
+    const realChildren = children.filter(c => c && c.widget !== 'Empty');
+    return (
+      <div className="grid-stack-mobile">
+        {realChildren.map(child => (
+          <Pane key={child.id} parentUpdate={handleChildUpdate} {...child} />
+        ))}
+      </div>
     );
   }
 

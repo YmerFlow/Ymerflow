@@ -1,9 +1,11 @@
 import React, { useContext, useEffect, useRef, useState } from 'react';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { ProcessContext } from '../ProcessContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { WS_API, getProcessLogs } from '../datamodel/api';
 
 function ProcessLog() {
+  const isMobile = useIsMobile();
   const { activeProcess, processes, currentProject } = useContext(ProcessContext);
   const [logs, setLogs] = useState({}); // Changed to object keyed by timestamp
   const [state, setState] = useState(null);
@@ -136,7 +138,8 @@ function ProcessLog() {
   };
 
   return (
-    <div className="d-flex flex-column h-100">
+    <div className={isMobile ? 'd-flex flex-column' : 'd-flex flex-column h-100'}
+         style={isMobile ? { height: '60vh' } : undefined}>
       <div className="p-2 border-bottom d-flex justify-content-between align-items-center">
         <small className="text-muted">Process Logs</small>
         {getStateBadge()}

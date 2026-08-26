@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Pane from './Pane';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 export default function Split({ parentUpdate, ...node}) {
+  const isMobile = useIsMobile();
   const [dragging, setDragging] = useState(false);
   const [dragPos, setDragPos] = useState(null);
   const containerRef = useRef(null);
@@ -54,6 +56,15 @@ export default function Split({ parentUpdate, ...node}) {
       document.removeEventListener('mouseup', onMouseUp);
     };
   }, [dragging, dragPos, splitType, size, node, parentUpdate]);
+
+  if (isMobile) {
+    return (
+      <div className="split-stack-mobile">
+        <Pane parentUpdate={handleChildUpdate} {...node.children[0]} />
+        <Pane parentUpdate={handleChildUpdate} {...node.children[1]} />
+      </div>
+    );
+  }
 
   return (
     <div ref={containerRef} className={`split-container split-${splitType}`}>

@@ -5,6 +5,7 @@ import { PlotGroupContext } from '../../PlotGroupContext';
 import { registerQuantityKinds } from './quantityKinds';
 import { loadDataset } from '../../datamodel/dataset';
 import { getKeys, resolveDataPath } from './colorUtils.js';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import './elements/index.js';
 
 // Register quantity kinds once at module load
@@ -13,6 +14,7 @@ registerQuantityKinds();
 const PLOT_MARGIN = { top: 50, right: 80, bottom: 60, left: 80 };
 
 export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...rest }) {
+  const isMobile = useIsMobile();
   const { fetchedData, datasetsLoading, dataLoading, currentSounding, setCurrentSounding, datasetCollection, processes,
     inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject } = useContext(ProcessContext);
 
@@ -313,7 +315,8 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
   }, [config, fetchedData, datasetCollection, currentSounding, datasetsLoading, dataLoading, lazilyLoadedData, inMemoryDiffs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="h-100 d-flex flex-column">
+    <div className={isMobile ? 'd-flex flex-column' : 'h-100 d-flex flex-column'}
+         style={isMobile ? { height: '70vh' } : undefined}>
       <div className="flex-grow-1" style={{ position: 'relative', minHeight: 0 }}>
         <div
           ref={containerRef}

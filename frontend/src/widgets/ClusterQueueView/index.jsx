@@ -1,4 +1,5 @@
 import React from 'react';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { useClusterQueues } from '../../datamodel/useQueries';
 import QueueCard from './QueueCard';
 
@@ -6,6 +7,7 @@ import QueueCard from './QueueCard';
 // via a nav-tabs bar; the active cluster is persisted on this widget's own layout node
 // (Decision 7) so it survives reload / workspace save. Manual reload only (Decision 6).
 export default function ClusterQueueView({ parentUpdate, id, activeClusterId, ...nodeProps }) {
+  const isMobile = useIsMobile();
   const { data: clusters = [], isLoading, isError, error, isFetching, refetch } = useClusterQueues();
 
   // Resolve the active cluster: saved id if still accessible, else the first cluster.
@@ -17,7 +19,7 @@ export default function ClusterQueueView({ parentUpdate, id, activeClusterId, ..
   };
 
   return (
-    <div style={{ padding: '10px', height: '100%', overflow: 'auto' }}>
+    <div style={isMobile ? { padding: '10px' } : { padding: '10px', height: '100%', overflow: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
         <button
           type="button"

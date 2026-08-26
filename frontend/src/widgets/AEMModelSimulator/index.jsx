@@ -7,6 +7,7 @@ import ModelCanvas from './ModelCanvas';
 import BrushControls from './BrushControls';
 import { packBinary } from 'msgpack-numpy-js';
 import { XYZ } from '../../datamodel/libaarhusxyz';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 /**
  * Convert XYZ object to format expected by ModelCanvas
@@ -147,6 +148,7 @@ function applyCanvasUpdatesToXYZ(xyz, updates) {
 }
 
 function AEMModelSimulator() {
+  const isMobile = useIsMobile();
   // Store array of XYZ objects (one per flightline)
   const [flightlines, setFlightlines] = useState([]); // Array of XYZ objects
   const [currentFlightlineIndex, setCurrentFlightlineIndex] = useState(0);
@@ -235,7 +237,7 @@ function AEMModelSimulator() {
   return (
     <div style={{
       width: '100%',
-      height: '100%',
+      height: isMobile ? '80vh' : '100%',
       display: 'flex',
       flexDirection: 'column',
       backgroundColor: '#ffffff'

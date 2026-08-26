@@ -9,6 +9,7 @@ import ProcessNode from './ProcessNode';
 import TagFilterBar from './TagFilterBar';
 import { getLatestVersion, getProcessVersion, updateProcessPosition } from '../../datamodel/api';
 import { useProjectTags } from '../../datamodel/useQueries';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 // ---- Pure helper functions ----
 
@@ -169,6 +170,7 @@ function initialise(processes, visibleVersions, activeProcess) {
 // ---- Component ----
 
 export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilterTagIds = [], ...nodeProps }) {
+  const isMobile = useIsMobile();
   const {
     processes, setProcesses, activeProcess, setActiveProcess, startNewProcess, currentProject, isLoading
   } = useContext(ProcessContext);
@@ -420,7 +422,7 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
   }, [processes, visibleProcessIds, visibleVersions, selectedVersions, calculateDepths, handleVersionChange, handleNodeClick, activeProcess, setNodes, setEdges, getProcessStructure]);
 
   return (
-    <div style={{ width: "100%", height: "100%", position: "relative", display: "flex", flexDirection: "column" }}>
+    <div style={{ width: "100%", height: isMobile ? "70vh" : "100%", position: "relative", display: "flex", flexDirection: "column" }}>
       <TagFilterBar
         projectTags={projectTags}
         selectedTagIds={selectedFilterTagIds}

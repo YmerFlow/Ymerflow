@@ -1,4 +1,5 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { Plot, DataGroup, LayerType, registerLayerType, registerAxisQuantityKind } from 'gladly-plot';
 import { ProcessContext } from '../ProcessContext';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -77,6 +78,7 @@ function extractStatusEntry(logEntry) {
 }
 
 function ProcessProgress() {
+  const isMobile = useIsMobile();
   const { activeProcess, processes, currentProject } = useContext(ProcessContext);
   const [plotData, setPlotData]                 = useState([]);
   const [state, setState]                       = useState(null);
@@ -225,7 +227,8 @@ function ProcessProgress() {
   }[state];
 
   return (
-    <div className="d-flex flex-column h-100">
+    <div className={isMobile ? 'd-flex flex-column' : 'd-flex flex-column h-100'}
+         style={isMobile ? { height: '60vh' } : undefined}>
       <div className="p-2 border-bottom d-flex justify-content-between align-items-center">
         <small className="text-muted">Process Progress</small>
         {stateBadge}

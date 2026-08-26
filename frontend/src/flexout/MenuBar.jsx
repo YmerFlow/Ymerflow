@@ -1,7 +1,9 @@
 import React from "react";
 import { useMenu } from "./MenuContext";
+import { useIsMobile } from "../hooks/useIsMobile";
+import MobileMenu from "./MobileMenu";
 
-function sortMenuEntries(entries) {
+export function sortMenuEntries(entries) {
   return entries.sort((a, b) => {
     const [labelA, nodeA] = a;
     const [labelB, nodeB] = b;
@@ -67,10 +69,13 @@ function renderMenuItems(tree, depth = 0) {
 
 export default function MenuBar({}) {
   const { menuTree } = useMenu();
+  const isMobile = useIsMobile();
 
   const sortedEntries = sortMenuEntries(Object.entries(menuTree));
   const leftItems = sortedEntries.filter(([_, node]) => (node.position ?? 1) >= 0);
   const rightItems = sortedEntries.filter(([_, node]) => (node.position ?? 1) < 0);
+
+  if (isMobile) return <MobileMenu leftItems={leftItems} rightItems={rightItems} />;
 
   const renderTopLevelItem = ([label, node]) => {
     // If this top-level node has a component, render it directly

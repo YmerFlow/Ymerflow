@@ -399,3 +399,78 @@ $headings-font-weight:   600;   // Semibold headings
     text-decoration: underline;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Mobile-only layout classes. These are emitted only by the mobile render
+// branches (gated on useIsMobile()), so they never appear in the desktop DOM
+// and their rules are never applied on a >= 576px viewport.
+// ---------------------------------------------------------------------------
+
+// Flexout containers stack their children into a single scrolling column.
+.split-stack-mobile,
+.grid-stack-mobile {
+  display: block;
+  width: 100%;
+}
+
+// Collapsed menu: a sticky top bar carrying a centred drag handle; the open
+// panel is an inline accordion tree rendered below it.
+.mobile-menu-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1030;
+  background-color: $dark;
+  color: $white;
+}
+
+.mobile-menu-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem 0;
+  cursor: grab;
+  touch-action: none;   // let pointer drag drive open/close, not page scroll
+  user-select: none;
+}
+
+.mobile-menu-grip {
+  display: block;
+  width: 2.5rem;
+  height: 0.28rem;
+  border-radius: 0.28rem;
+  background-color: rgba($white, 0.7);
+}
+
+.mobile-menu-panel {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid rgba($white, 0.15);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.mobile-menu-node {
+  color: inherit;
+}
+
+.mobile-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+  padding-right: 1rem;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba($white, 0.08);
+  color: inherit;
+  text-align: left;
+  font-size: 1rem;
+
+  &.active { font-weight: 600; }
+}
+
+.mobile-menu-toggle-row {
+  cursor: pointer;
+}
