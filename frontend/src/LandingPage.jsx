@@ -4,9 +4,32 @@ import Markdown from 'markdown-to-jsx';
 import { AuthContext } from './AuthContext';
 import { useLogin, useSignup, useForgotPassword, usePublicConfig, useTos, useAcceptTos } from './datamodel/useAuthQueries';
 import { setAuthToken } from './datamodel/api';
+import { MenuProvider, useMenu } from './flexout/MenuContext';
+import MenuBar from './flexout/MenuBar';
+import { hooks } from './plugins/hooks';
 import logo from './assets/YmerIcon.svg';
 
+// The logged-out menu bar reuses the exact same MenuBar/MenuContext machinery as the
+// authenticated app. It is hidden entirely when no plugin contributes entries, so a
+// vanilla install (no public plugin) looks exactly as it did before — no empty navbar.
+function LandingMenuBar() {
+  const { menuTree } = useMenu();
+  if (Object.keys(menuTree).length === 0) return null;  // no contributor → no bar
+  return <MenuBar />;
+}
+
 export default function LandingPage() {
+  return (
+    <MenuProvider>
+      {/* Always mounted so the menu tree can fill asynchronously from fetched data. */}
+      {hooks.run_jsx.menu_registrars({ context: 'out' })}
+      <LandingMenuBar />
+      <LandingContent />
+    </MenuProvider>
+  );
+}
+
+function LandingContent() {
   return (
     <Container className="landing-page d-flex align-items-center justify-content-center min-vh-100">
       <div className="w-100">

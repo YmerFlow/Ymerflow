@@ -35,7 +35,7 @@ import InUseEditor from "./widgets/InUseEditor";
 import PluginManager from "./widgets/PluginManager";
 import ClusterQueueView from "./widgets/ClusterQueueView";
 
-import { registerHook, hooks } from './plugins/hooks';
+import { registerHook, resetHooks, hooks } from './plugins/hooks';
 import { buildDatasetRegistry } from './datamodel/datasetRegistry';
 import { buildLayerTypeRegistry, buildQuantityKindRegistry } from './plugins/registries';
 import { loadPlugins } from './plugins/loadPlugin';
@@ -145,7 +145,11 @@ function MenuBarWithComponents() {
   useRegisterMenuComponent(["_workspaceMenu"], WorkspaceMenu, 2);
   useRegisterMenuComponent(["_processSelector"], ProcessSelector, -1);
 
-  return <><UserMenu /><MenuBar /></>;
+  return <>
+    {hooks.run_jsx.menu_registrars({ context: 'in' })}
+    <UserMenu />
+    <MenuBar />
+  </>;
 }
 
 function PageChrome({ children }) {
@@ -283,21 +287,19 @@ function AuthenticatedApp() {
 
   const anonymousViewingAllowed = !isAuthenticated && publicationCheck.status === 'done' && publicationCheck.allowed;
 
-  // Load plugins from GET /plugins/me before rendering the main app. Anonymous publication
-  // viewers have no session to load user plugins with, so they get the built-in registries
-  // only. After plugins load, build all registries so plugin contributions are included.
+  // Load plugins from GET /plugins/me before rendering the main app. This runs on every
+  // auth transition (the effect keys on [isAuthenticated, token]): an anonymous visitor
+  // loads the public bundle set, an authenticated visitor loads the full set. Because the
+  // frontend hook registry is append-only, we resetHooks() back to the host built-ins
+  // before each reload so hooks don't double-register and a logged-in user's private
+  // plugin hooks don't leak after logout. After plugins load, all derived registries are
+  // rebuilt so plugin contributions are included.
   useEffect(() => {
-    if (!isAuthenticated && !anonymousViewingAllowed) {
-      setPluginsReady(false);
-      setWidgets(null);
-      return;
-    }
-    const pluginsPromise = isAuthenticated
-      ? fetch(`${API}/plugins/me`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-          .then(r => r.ok ? r.json() : [])
-          .catch(() => [])
-      : Promise.resolve([]);
-    pluginsPromise
+    setPluginsReady(false);
+    resetHooks();
+    fetch(`${API}/plugins/me`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => r.ok ? r.json() : [])
+      .catch(() => [])
       .then(plugins => loadPlugins(plugins))
       .catch(() => {})
       .finally(() => {
@@ -307,7 +309,7 @@ function AuthenticatedApp() {
         setWidgets(buildWidgets());
         setPluginsReady(true);
       });
-  }, [isAuthenticated, token, anonymousViewingAllowed]);
+  }, [isAuthenticated, token]);
 
   // When not logged in on a special URL, persist path/token for post-login redirect
   useEffect(() => {
@@ -324,10 +326,7 @@ function AuthenticatedApp() {
   }, [location.pathname, isAuthenticated]);
 
   if (!isAuthenticated) {
-    if (!publicationIdFromUrl) {
-      return <LandingPage />;
-    }
-    if (publicationCheck.status !== 'done') {
+    if (publicationIdFromUrl && publicationCheck.status !== 'done') {
       // Still resolving the publication link — avoid a login-page flash while we check.
       return (
         <div className="d-flex align-items-center justify-content-center h-100">
@@ -338,7 +337,27 @@ function AuthenticatedApp() {
       );
     }
     if (!anonymousViewingAllowed) {
-      return <LandingPage />;
+      // Not an anonymous-viewable publication link. Render the logged-out plugin routes
+      // registered by public plugins if the URL matches one; otherwise the landing page.
+      // Wait for public plugins to load first so their logged_out_routes are registered
+      // before we try to match the current URL.
+      if (!pluginsReady) {
+        return (
+          <div className="d-flex align-items-center justify-content-center h-100">
+            <div className="spinner-border" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </div>
+          </div>
+        );
+      }
+      return (
+        <Routes>
+          {hooks.run_jsx.logged_out_routes().map(({ path, element }) => (
+            <Route key={path} path={path} element={element} />
+          ))}
+          <Route path="*" element={<LandingPage />} />
+        </Routes>
+      );
     }
     // Falls through: valid anonymous-allowed publication link — render /app/* read-only.
   }

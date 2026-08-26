@@ -3,9 +3,33 @@ import HookBoundary from './HookBoundary'
 
 const registry = new Map()  // name -> [fn, ...]
 
+// Snapshot of the registry containing only the host's own built-in registrations,
+// captured the first time resetHooks() runs (before any plugin has loaded). Used to
+// drop all plugin-contributed hooks on an auth transition without also losing the
+// host built-ins. See resetHooks().
+let hostSnapshot = null
+
 export function registerHook(name, fn) {
   if (!registry.has(name)) registry.set(name, [])
   registry.get(name).push(fn)
+}
+
+// Reset the hook registry back to the host's built-in registrations, dropping every
+// plugin-contributed hook. Called before (re)loading plugins on each login/logout
+// transition, so the append-only registry doesn't double-register hooks or leak a
+// logged-in user's private plugin hooks after logout.
+//
+// The first call snapshots the current registry (which is host-only, since plugins
+// only ever register via loadPlugins() from inside the auth effect) and returns
+// without mutating it. Subsequent calls restore that snapshot.
+export function resetHooks() {
+  if (hostSnapshot === null) {
+    hostSnapshot = new Map()
+    for (const [name, fns] of registry) hostSnapshot.set(name, [...fns])
+    return
+  }
+  registry.clear()
+  for (const [name, fns] of hostSnapshot) registry.set(name, [...fns])
 }
 
 // Expose for plugins to call without needing an SDK package
