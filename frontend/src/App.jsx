@@ -254,7 +254,7 @@ function AppWithContext({ widgets }) {
 }
 
 function AuthenticatedApp() {
-  const { isAuthenticated, token } = useContext(AuthContext);
+  const { isAuthenticated, token, authReady } = useContext(AuthContext);
   const location = useLocation();
   const [pluginsReady, setPluginsReady] = useState(false);
   const [widgets, setWidgets] = useState(null);
@@ -289,14 +289,16 @@ function AuthenticatedApp() {
 
   const anonymousViewingAllowed = !isAuthenticated && publicationCheck.status === 'done' && publicationCheck.allowed;
 
-  // Load plugins from GET /plugins/me before rendering the main app. This runs on every
-  // auth transition (the effect keys on [isAuthenticated, token]): an anonymous visitor
-  // loads the public bundle set, an authenticated visitor loads the full set. Because the
-  // frontend hook registry is append-only, we resetHooks() back to the host built-ins
-  // before each reload so hooks don't double-register and a logged-in user's private
-  // plugin hooks don't leak after logout. After plugins load, all derived registries are
-  // rebuilt so plugin contributions are included.
+  // Load plugins from GET /plugins/me before rendering the main app. Gated on authReady so
+  // it never runs against the transient pre-hydration anonymous render: the effect only fires
+  // once AuthContext has decided the logged-in-or-out question. It re-fires on real in-session
+  // auth transitions (the key includes isAuthenticated): an anonymous visitor loads the public
+  // bundle set, an authenticated visitor loads the full set. Because the frontend hook registry
+  // is append-only, we resetHooks() back to the host built-ins before each reload so hooks don't
+  // double-register and a logged-in user's private plugin hooks don't leak after logout. After
+  // plugins load, all derived registries are rebuilt so plugin contributions are included.
   useEffect(() => {
+    if (!authReady) return;  // don't load against unknown auth state
     setPluginsReady(false);
     resetHooks();
     fetch(`${API}/plugins/me`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
@@ -311,7 +313,11 @@ function AuthenticatedApp() {
         setWidgets(buildWidgets());
         setPluginsReady(true);
       });
-  }, [isAuthenticated, token]);
+    // token is read inside for the Authorization header but is intentionally not a trigger —
+    // isAuthenticated already gates every transition that changes it; keying on token too would
+    // re-fire on same-auth token refreshes for no benefit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, isAuthenticated]);
 
   // When not logged in on a special URL, persist path/token for post-login redirect
   useEffect(() => {

@@ -13,6 +13,11 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);  // { username, balance }
   const [token, setToken] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // Becomes true exactly once, after the mount hydration effect has decided the
+  // logged-in-or-out question. Distinguishes "localStorage not checked yet" from
+  // "checked, genuinely logged out" so plugin loading never runs against the
+  // transient pre-hydration anonymous render.
+  const [authReady, setAuthReady] = useState(false);
 
   // One-shot signal: true only after an explicit login()/signup() in THIS tab,
   // never after a localStorage session-restore. Held in a ref so consuming it
@@ -33,6 +38,7 @@ export const AuthProvider = ({ children }) => {
       // Set token in API client
       setAuthToken(storedToken);
     }
+    setAuthReady(true);
   }, []);
 
   const login = useCallback((userData, authToken) => {
@@ -74,12 +80,13 @@ export const AuthProvider = ({ children }) => {
       user,
       token,
       isAuthenticated,
+      authReady,
       login,
       logout,
       updateUser,
       consumeJustAuthenticated
     }),
-    [user, token, isAuthenticated, login, logout, updateUser, consumeJustAuthenticated]
+    [user, token, isAuthenticated, authReady, login, logout, updateUser, consumeJustAuthenticated]
   );
 
   return (
