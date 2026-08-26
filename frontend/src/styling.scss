@@ -413,21 +413,40 @@ $headings-font-weight:   600;   // Semibold headings
   width: 100%;
 }
 
-// Collapsed menu: a sticky top bar carrying a centred drag handle; the open
-// panel is an inline accordion tree rendered below it.
+// Collapsed menu: a sticky top strip reserving just the drag-handle height. The drawer
+// (accordion panel + handle) is an absolute overlay so opening it floats over the page
+// content instead of pushing it down. The handle is the last child of the drawer, so it
+// rides the bottom edge of the panel and moves down as the panel grows.
+$mobile-handle-height: 1.5rem;
+
 .mobile-menu-bar {
-  position: sticky;
+  position: sticky;   // establishes the containing block for the absolute drawer below
   top: 0;
   z-index: 1030;
+  height: $mobile-handle-height;   // in-flow footprint is only the grip strip
   background-color: $dark;
   color: $white;
+}
+
+.mobile-menu-drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1030;
+  display: flex;
+  flex-direction: column;
+  background-color: $dark;
+  box-shadow: 0 0.35rem 0.75rem rgba(0, 0, 0, 0.35);
 }
 
 .mobile-menu-handle {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.4rem 0;
+  flex: 0 0 $mobile-handle-height;
+  height: $mobile-handle-height;
+  border-top: 1px solid rgba($white, 0.15);
   cursor: grab;
   touch-action: none;   // let pointer drag drive open/close, not page scroll
   user-select: none;
@@ -444,9 +463,7 @@ $headings-font-weight:   600;   // Semibold headings
 .mobile-menu-panel {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid rgba($white, 0.15);
-  max-height: 80vh;
-  overflow-y: auto;
+  // height / max-height / overflow are set inline by MobileMenu (they track the drag).
 }
 
 .mobile-menu-node {
