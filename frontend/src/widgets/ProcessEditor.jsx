@@ -6,6 +6,7 @@ import { ProcessContext } from '../ProcessContext';
 import { useEnvironmentProcessTypes, useCreateProcess, useAvailableClusters, useCancelProcess, useAddVersionTag } from "../datamodel/useQueries";
 import { getProcessVersion, getLatestVersion } from '../datamodel/api';
 import { LayoutContext } from '../flexout/LayoutContext';
+import { AuthContext } from '../AuthContext';
 import TagSelector from './FlowView/TagSelector';
 import { hooks } from '../plugins/hooks';
 
@@ -39,6 +40,7 @@ export default function ProcessEditor() {
     selectedEnvironment, environments, environmentsLoading, currentProject,
     newProcessToken, newProcessDefaults
   } = useContext(ProcessContext);
+  const { user } = useContext(AuthContext);
   const activateProcessLog = useActivateProcessLog();
 
   const process = activeProcess ? processes.find(p => p.id === activeProcess.processId) : null;
@@ -281,7 +283,10 @@ export default function ProcessEditor() {
             </Card.Body>
             {CostDisplay && (
               <Card.Footer className="text-muted">
-                <CostDisplay cpuCores={cpuCores} memoryGb={memoryGb} deadlineMinutes={deadlineMinutes} />
+                <CostDisplay
+                  cpuCores={cpuCores} memoryGb={memoryGb} deadlineMinutes={deadlineMinutes}
+                  accountData={user} variant="summary"
+                />
               </Card.Footer>
             )}
           </Card>
@@ -334,7 +339,10 @@ export default function ProcessEditor() {
           </div>
           {CostDisplay && (
             <div className="alert alert-info">
-              <CostDisplay cpuCores={cpuCores} memoryGb={memoryGb} deadlineMinutes={deadlineMinutes} />
+              <CostDisplay
+                cpuCores={cpuCores} memoryGb={memoryGb} deadlineMinutes={deadlineMinutes}
+                accountData={user} variant="detailed"
+              />
             </div>
           )}
         </Modal.Body>
