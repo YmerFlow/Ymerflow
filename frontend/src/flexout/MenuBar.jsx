@@ -88,6 +88,22 @@ export default function MenuBar({}) {
       );
     }
 
+    const hasChildren = Object.keys(node.__children).length > 0;
+
+    // A top-level actionable leaf (no children) is directly clickable, not a dead dropdown.
+    if (!hasChildren) {
+      return (
+        <li className="nav-item" key={label}>
+          <button
+            className={`nav-link${node.active ? ' active' : ''}`}
+            onClick={node.action}
+          >
+            {label}
+          </button>
+        </li>
+      );
+    }
+
     // Otherwise render as a dropdown menu
     return (
       <li className="nav-item dropdown" key={label}>
