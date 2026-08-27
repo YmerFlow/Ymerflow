@@ -49,6 +49,30 @@ _POD_ERROR_WAITING_REASONS = (
 )
 
 
+def _workload_finished_state(wl: dict):
+    """Terminal state of a Kueue Workload from its own `Finished` condition, or None.
+
+    Kueue stamps a `Finished` condition (status True) on the Workload as soon as the
+    underlying Job completes or fails, and this is authoritative regardless of whether the
+    Job's pod still exists. The pod is often garbage-collected shortly after a job finishes
+    (job TTL, failed-pod cleanup, node pressure) — especially on a busy prod cluster — so a
+    pod-only view sees no pod and wrongly falls back to "queued". Reading the Workload
+    condition instead means a finished workload is recognized as terminal (and dropped by the
+    caller) even when its pod is already gone.
+
+    Returns "done" / "failed" when the workload has finished, else None (still live).
+    """
+    status = wl.get("status", {}) or {}
+    for cond in status.get("conditions", []) or []:
+        if cond.get("type") == "Finished" and cond.get("status") == "True":
+            reason = (cond.get("reason") or "")
+            message = (cond.get("message") or "")
+            if "fail" in reason.lower() or "fail" in message.lower():
+                return "failed"
+            return "done"
+    return None
+
+
 def _pod_lifecycle_state(pod) -> str:
     """Compute the ProcessState name (lowercase) for a workload from its live pod.
 
@@ -145,8 +169,14 @@ def classify_workload(wl: dict, pod=None) -> dict:
                 elif res_name == "memory":
                     pod_resources["memory"] = pod_resources.get("memory", 0.0) + _parse_memory_gb(str(res_val)) * count
 
+    # A workload Kueue has marked Finished is terminal regardless of whether its pod still
+    # exists — the pod is routinely garbage-collected once a job finishes, which would
+    # otherwise make _pod_lifecycle_state(None) report a finished job as "queued" (the bug
+    # where failed tasks lingered in the queue widget). The caller drops terminal rows.
+    state = _workload_finished_state(wl) or _pod_lifecycle_state(pod)
+
     return {
-        "state": _pod_lifecycle_state(pod),
+        "state": state,
         "admitted": admitted,
         "owner_job_name": owner_job_name,
         "created_at": meta.get("creationTimestamp"),

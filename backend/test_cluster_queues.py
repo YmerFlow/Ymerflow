@@ -31,9 +31,20 @@ from backend.models.process import process_version_tags_table
 from backend.routers import utilities
 
 
-def _workload(job_name, *, admitted, created, priority=0, pod_requests=None):
-    """Build a raw Kueue Workload dict as list_workloads would return."""
+def _workload(job_name, *, admitted, created, priority=0, pod_requests=None, finished=None):
+    """Build a raw Kueue Workload dict as list_workloads would return.
+
+    finished: None (live) | "done" | "failed" — adds a Kueue `Finished` condition (status True)
+    with a Succeeded/Failed reason, exactly as Kueue stamps it once the job terminates.
+    """
     status = {"admission": {"clusterQueue": "ymerflow-cluster-queue"}} if admitted else {}
+    if finished is not None:
+        status["conditions"] = [{
+            "type": "Finished",
+            "status": "True",
+            "reason": "Failed" if finished == "failed" else "Succeeded",
+            "message": "Job finished",
+        }]
     pod_sets = []
     if pod_requests is not None:
         pod_sets = [{
@@ -141,7 +152,12 @@ async def _seed_and_run():
         #            (this is bug #1: finished jobs used to render as running).
         proc_done = Process(id="proc_done", name="old_run", type="aem_inversion",
                             environment_id="env1", project_id="p1")
-        db.add_all([proc1, proc2, proc3, proc_done])
+        # proc_failgone: in P1 (MEMBER), Workload marked Finished/Failed but its pod is already
+        #               gone (garbage-collected on prod). Must DROP OUT — without the workload
+        #               Finished check this rendered as "queued" forever (the reported bug).
+        proc_failgone = Process(id="proc_failgone", name="crashed_run", type="aem_inversion",
+                                environment_id="env1", project_id="p1")
+        db.add_all([proc1, proc2, proc3, proc_done, proc_failgone])
         await db.flush()
 
         from datetime import datetime
@@ -161,7 +177,11 @@ async def _seed_and_run():
                                  state=ProcessState.DONE, k8s_job_name="process-done-v1",
                                  k8s_cluster_id="c1", resource_requests={"cpu": "1000m", "memory": "2Gi"},
                                  deadline_seconds=3600)
-        db.add_all([pv1, pv2, pv3, pv_done])
+        pv_failgone = ProcessVersion(process_id="proc_failgone", version=1, parameters={},
+                                     state=ProcessState.FAILED, k8s_job_name="process-failgone-v1",
+                                     k8s_cluster_id="c1", resource_requests={"cpu": "1000m", "memory": "2Gi"},
+                                     deadline_seconds=3600)
+        db.add_all([pv1, pv2, pv3, pv_done, pv_failgone])
         await db.flush()
 
         # tag proc1 v1
@@ -182,6 +202,11 @@ async def _seed_and_run():
             # foreign workload whose pod FAILED → dropped (terminal, out of the live queue).
             _workload("process-failghost-v1", admitted=False, created="2026-01-01T00:03:00Z",
                       pod_requests={"cpu": "1000m", "memory": "4Gi"}),
+            # member workload marked Finished/Failed by Kueue, but its pod is ALREADY GONE
+            # (garbage-collected). Must DROP via the workload's Finished condition — the pod-only
+            # path would see no pod and report "queued" (the reported prod bug).
+            _workload("process-failgone-v1", admitted=True, created="2026-01-01T00:00:20Z",
+                      finished="failed"),
         ]
         c1_pods = [
             _pod("process-proc1-v1", phase="Running", running=True),      # → running
@@ -238,12 +263,17 @@ def test_cluster_queues():
     assert c1["limits"] == {"max_cpu_cores": 8.0, "max_memory_gb": 32.0}
     queue = c1["queue"]
 
-    # (f) terminal workloads (Succeeded/Failed pods) are DROPPED — fixes bug #1. 6 workloads in,
-    # 2 terminal → 4 rows out. No entry carries a terminal state.
+    # (f) terminal workloads are DROPPED — fixes bug #1. 7 workloads in, 3 terminal → 4 rows out:
+    #   - process-done-v1 (member, Succeeded pod)
+    #   - process-failghost-v1 (foreign, Failed pod)
+    #   - process-failgone-v1 (member, Workload Finished/Failed but pod already GONE)
+    # No entry carries a terminal state.
     assert len(queue) == 4
     assert all(q["state"] in ("queued", "starting", "running") for q in queue)
     # the finished member job is gone entirely (not just re-labelled).
     assert all(q.get("process_id") != "proc_done" for q in queue)
+    # a Finished/Failed workload whose pod is gone must NOT linger as "queued" (the prod bug).
+    assert all(q.get("process_id") != "proc_failgone" for q in queue)
 
     # (a) ordering: admitted first, then pending by creation-time asc; positions assigned in order.
     # After drops: admitted proc1 (0); pending proc2 (00:00) < proc3 (00:01) < ghost (00:02).
