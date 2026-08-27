@@ -31,6 +31,7 @@ import ProcessLog from "./widgets/ProcessLog";
 import ProcessProgress from "./widgets/ProcessProgress";
 import Export from "./widgets/Export";
 import ProcessInfo from "./widgets/ProcessInfo";
+import ProcessComparison from "./widgets/ProcessComparison";
 import AEMModelSimulator from "./widgets/AEMModelSimulator";
 import InUseEditor from "./widgets/InUseEditor";
 import PluginManager from "./widgets/PluginManager";
@@ -71,6 +72,7 @@ registerHook('widgets', () => [
   { name: 'ProcessProgress',   component: ProcessProgress },
   { name: 'Export',            component: Export },
   { name: 'ProcessInfo',       component: ProcessInfo },
+  { name: 'ProcessComparison', component: ProcessComparison },
   { name: 'AEMModelSimulator', component: AEMModelSimulator },
   { name: 'InUseEditor',       component: InUseEditor },
   { name: 'PluginManager',     component: PluginManager },

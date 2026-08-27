@@ -30,7 +30,15 @@ export default function DatasetColumnCombobox({ value, onChange, mode }) {
     const lower = filter.toLowerCase();
     const opts = [];
 
-    if (mode === 'dataset') {
+    if (mode === 'process') {
+      if (!filter || 'current'.includes(lower)) opts.push('current');
+      for (const proc of (processes || [])) {
+        for (const ver of (proc.versions || [])) {
+          const path = `${proc.name}.${ver.version}`;
+          if (!filter || path.toLowerCase().includes(lower)) opts.push(path);
+        }
+      }
+    } else if (mode === 'dataset') {
       for (const dsName of Object.keys(fetchedData || {})) {
         const path = `current.${dsName}`;
         if (!filter || path.toLowerCase().includes(lower)) opts.push(path);

@@ -2,12 +2,15 @@ import React, { useContext, useState, useEffect } from 'react';
 import { ProcessContext } from '../ProcessContext';
 import { Collapse } from 'react-bootstrap';
 import { getDataset } from '../datamodel/api';
+import { resolveProcessRef } from '../datamodel/processRef';
 
-export default function Export() {
+export default function Export({ processRef }) {
   const { activeProcess, processes, currentProject } = useContext(ProcessContext);
   const [expandedNodes, setExpandedNodes] = useState({});
   const [datasets, setDatasets] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  const ref = resolveProcessRef(processRef, activeProcess, processes);
 
   const toggleNode = (nodeId) => {
     setExpandedNodes(prev => ({
@@ -19,12 +22,12 @@ export default function Export() {
   // Fetch datasets from process.versions[x].outputs
   useEffect(() => {
     const fetchDatasets = async () => {
-      if (!activeProcess || !processes || processes.length === 0) return;
+      if (!processes || processes.length === 0) return;
 
-      const process = processes.find(p => p.id === activeProcess.processId);
-      if (!process) return;
+      const resolved = resolveProcessRef(processRef, activeProcess, processes);
+      if (!resolved) return;
 
-      const versionObj = process.versions?.find(v => v.version === activeProcess.version);
+      const versionObj = resolved.versionObj;
       if (!versionObj?.outputs) {
         setDatasets([]);
         return;
@@ -55,9 +58,9 @@ export default function Export() {
     };
 
     fetchDatasets();
-  }, [activeProcess, processes, currentProject]);
+  }, [processRef, activeProcess, processes, currentProject]);
 
-  if (!activeProcess) {
+  if (!ref) {
     return (
       <div className="p-3">
         <p className="text-muted">No process selected. Select a process to view its datasets.</p>
@@ -65,7 +68,7 @@ export default function Export() {
     );
   }
 
-  const process = activeProcess ? processes.find(p => p.id === activeProcess.processId) : null;
+  const process = ref.process;
 
   if (!process) {
     return (
@@ -78,7 +81,7 @@ export default function Export() {
   if (loading) {
     return (
       <div className="p-3">
-        <h5>{process.name} (v{activeProcess.version})</h5>
+        <h5>{process.name} (v{ref.version})</h5>
         <p className="text-muted">Loading datasets...</p>
       </div>
     );
@@ -87,7 +90,7 @@ export default function Export() {
   if (!datasets || datasets.length === 0) {
     return (
       <div className="p-3">
-        <h5>{process.name} (v{activeProcess.version})</h5>
+        <h5>{process.name} (v{ref.version})</h5>
         <p className="text-muted">No datasets available for this process.</p>
       </div>
     );
@@ -95,7 +98,7 @@ export default function Export() {
 
   return (
     <div className="p-3">
-      <h5>{process.name} (v{activeProcess.version})</h5>
+      <h5>{process.name} (v{ref.version})</h5>
       <div className="mt-3">
         {datasets.map(dataset => (
           <DatasetNode
@@ -245,3 +248,15 @@ function FileNode({ mimeType, url }) {
 }
 
 Export.title = "Export";
+
+Export.get_default = () => ({ processRef: 'current' });
+
+Export.get_schema = () => ({
+  type: 'object',
+  properties: {
+    id:         { type: 'string', title: 'ID', readOnly: true },
+    widget:     { type: 'string', title: 'Widget Type', readOnly: true },
+    processRef: { type: 'string', title: 'Process / version',
+                  'x-format': 'processVersion', default: 'current' },
+  },
+});

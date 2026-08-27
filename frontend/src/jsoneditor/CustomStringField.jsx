@@ -2,10 +2,22 @@ import React from 'react';
 import { getDefaultRegistry } from '@rjsf/core';
 import DatasetSelector from './DatasetSelector';
 import DatasetPathField from './DatasetPathField';
+import ProcessVersionField from './ProcessVersionField';
 import FileUploadField from './FileUploadField';
 
 export default function CustomStringField(props) {
   const { schema } = props;
+
+  // Check if this field should use the ProcessVersionField (process/version reference)
+  if (schema['x-format'] === 'processVersion') {
+    return (
+      <ProcessVersionField
+        formData={props.formData}
+        onChange={props.onChange}
+        fieldPathId={props.fieldPathId}
+      />
+    );
+  }
 
   // Check if this field should use the DatasetPathField (process-scoped path)
   if (schema['x-format'] === 'datasetPath') {

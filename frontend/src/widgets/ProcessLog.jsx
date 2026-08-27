@@ -3,8 +3,9 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { ProcessContext } from '../ProcessContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { WS_API, getProcessLogs } from '../datamodel/api';
+import { resolveProcessRef } from '../datamodel/processRef';
 
-function ProcessLog() {
+function ProcessLog({ processRef }) {
   const isMobile = useIsMobile();
   const { activeProcess, processes, currentProject } = useContext(ProcessContext);
   const [logs, setLogs] = useState({}); // Changed to object keyed by timestamp
@@ -12,9 +13,10 @@ function ProcessLog() {
   const [shouldStreamLogs, setShouldStreamLogs] = useState(false);
   const logContainerRef = useRef(null);
 
-  // Extract processId and version from activeProcess for stable dependencies
-  const processId = activeProcess?.processId;
-  const version = activeProcess?.version;
+  // Resolve the process/version reference for stable dependencies
+  const ref = resolveProcessRef(processRef, activeProcess, processes);
+  const processId = ref?.processId;
+  const version = ref?.version;
 
   // Auto-scroll to bottom when new logs arrive, but only if user was already at bottom
   const isUserAtBottomRef = useRef(true);
@@ -115,7 +117,7 @@ function ProcessLog() {
     }
   );
 
-  if (!activeProcess) {
+  if (!ref) {
     return (
       <div className="p-3 text-center text-muted">
         <p>No process selected</p>
@@ -176,5 +178,17 @@ function ProcessLog() {
 }
 
 ProcessLog.title = "Process Log";
+
+ProcessLog.get_default = () => ({ processRef: 'current' });
+
+ProcessLog.get_schema = () => ({
+  type: 'object',
+  properties: {
+    id:         { type: 'string', title: 'ID', readOnly: true },
+    widget:     { type: 'string', title: 'Widget Type', readOnly: true },
+    processRef: { type: 'string', title: 'Process / version',
+                  'x-format': 'processVersion', default: 'current' },
+  },
+});
 
 export default ProcessLog;

@@ -1,11 +1,10 @@
 import React, { useContext } from 'react';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { ProcessContext } from '../ProcessContext';
+import { resolveProcessRef } from '../datamodel/processRef';
+import { buildProcessConfig } from '../datamodel/processConfig';
 
 const URL_PATTERN = /https?:\/\/[^\s"'<>]+/g;
-
-// Fields that aren't meaningful to show in the process info YAML dump.
-const EXCLUDED_FIELDS = new Set(['versions', 'flow_x', 'flow_y']);
 
 function toYaml(value, indent = 0) {
   const pad = '  '.repeat(indent);
@@ -59,11 +58,12 @@ function renderYamlWithLinks(yamlText) {
   return parts;
 }
 
-export default function ProcessInfo() {
+export default function ProcessInfo({ processRef }) {
   const isMobile = useIsMobile();
   const { activeProcess, processes } = useContext(ProcessContext);
 
-  if (!activeProcess) {
+  const ref = resolveProcessRef(processRef, activeProcess, processes);
+  if (!ref) {
     return (
       <div className="p-3">
         <p className="text-muted">No process selected.</p>
@@ -71,7 +71,7 @@ export default function ProcessInfo() {
     );
   }
 
-  const process = processes.find(p => p.id === activeProcess.processId);
+  const process = ref.process;
   if (!process) {
     return (
       <div className="p-3">
@@ -80,15 +80,7 @@ export default function ProcessInfo() {
     );
   }
 
-  const versionObj = process.versions?.find(v => v.version === activeProcess.version);
-  const config = Object.fromEntries(
-    Object.entries(process).filter(([k]) => !EXCLUDED_FIELDS.has(k))
-  );
-  if (versionObj) {
-    Object.assign(config, Object.fromEntries(
-      Object.entries(versionObj).filter(([k]) => !EXCLUDED_FIELDS.has(k))
-    ));
-  }
+  const config = buildProcessConfig(process, ref.versionObj);
 
   const yamlText = Object.keys(config).map(k => {
     const v = toYaml(config[k], 1);
@@ -105,3 +97,15 @@ export default function ProcessInfo() {
 }
 
 ProcessInfo.title = "Process info";
+
+ProcessInfo.get_default = () => ({ processRef: 'current' });
+
+ProcessInfo.get_schema = () => ({
+  type: 'object',
+  properties: {
+    id:         { type: 'string', title: 'ID', readOnly: true },
+    widget:     { type: 'string', title: 'Widget Type', readOnly: true },
+    processRef: { type: 'string', title: 'Process / version',
+                  'x-format': 'processVersion', default: 'current' },
+  },
+});
