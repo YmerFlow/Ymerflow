@@ -23,7 +23,7 @@ class S3ProtocolHandler(StorageProtocolHandler):
         # One bucket per project — <bucket_prefix><project_id> — same rule as every backend.
         return f"s3://{backend.bucket_prefix}{project.id}"
 
-    def fsspec_kwargs(self, backend, credentials, for_pod: bool = False) -> dict:
+    def fsspec_kwargs(self, backend, credentials) -> dict:
         # Real AWS S3: no endpoint_url (boto talks to the AWS endpoint); a static key/secret pair
         # for the static-key strategy, or STS-minted creds for short-lived. Left as the same stub
         # shape MinIO uses minus the MinIO endpoint until AWS provisioning is implemented.

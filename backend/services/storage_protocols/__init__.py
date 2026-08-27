@@ -54,7 +54,7 @@ class StorageProtocolHandler:
         `backend/services/storage_service.py:resolve_bucket`)."""
         raise NotImplementedError
 
-    def fsspec_kwargs(self, backend, credentials, for_pod: bool = False) -> dict:
+    def fsspec_kwargs(self, backend, credentials) -> dict:
         """The fsspec kwargs to pass to `fsspec.open(url, **kwargs)`/`fsspec.filesystem(proto,
         **kwargs)` for the given credential set. Called with admin credentials
         (`admin_credentials(backend)`) for trusted backend-side I/O, and with project-scoped
@@ -63,10 +63,10 @@ class StorageProtocolHandler:
         the only place fsspec kwarg *shape* (client_kwargs/key/secret vs. token, etc.) is
         decided.
 
-        `for_pod=True` signals the kwargs are for a job pod (in-cluster), so a handler whose pod-
-        facing endpoint differs from its backend-facing one (e.g. MinIO's dev localhost vs. the
-        in-cluster service DNS) can translate; handlers where the endpoint is the same everywhere
-        (GCS/S3) ignore it."""
+        The endpoint is `backend.config["endpoint"]`, one configured, externally-reachable
+        address used identically from the backend host and from every cluster's job pods — no
+        per-caller/per-cluster endpoint rewriting (see
+        docs/plans/done/storage-endpoint-single-public-address.md)."""
         raise NotImplementedError
 
     def admin_credentials(self, backend) -> dict:

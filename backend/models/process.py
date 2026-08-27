@@ -894,7 +894,7 @@ class ProcessVersion(Base):
                         "secret_key": project.storage_secret_key,
                     }
 
-                storage_kwargs = handler.fsspec_kwargs(storage_backend, project_scoped_creds, for_pod=True)
+                storage_kwargs = handler.fsspec_kwargs(storage_backend, project_scoped_creds)
 
                 # --- Resolve registry pull credentials for the Job's own image ---
                 # Mirrors the storage-backend resolution above, for the third pluggable-backend

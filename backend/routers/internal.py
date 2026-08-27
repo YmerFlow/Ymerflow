@@ -78,7 +78,7 @@ async def refresh_storage_credentials(
     mint_result = await asyncio.to_thread(strategy.mint, project, backend)
 
     handler = get_protocol_handler(backend.protocol)
-    kwargs = handler.fsspec_kwargs(backend, mint_result["credentials"], for_pod=True)
+    kwargs = handler.fsspec_kwargs(backend, mint_result["credentials"])
 
     return {
         "kwargs": kwargs,

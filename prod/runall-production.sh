@@ -322,7 +322,15 @@ kubectl create secret generic pgadmin-pgpass \
 
 MINIO_ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
 export MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
-export MC_HOST_minio="https://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio.minio.svc.cluster.local:9000"
+# Default MinIO host: the configured public S3 host when PUBLIC_TLS is enabled, otherwise the
+# in-cluster MinIO Service (dev / no-public-TLS). This is just a default value, not split-brain
+# logic — whichever single address is chosen here is then used identically from the backend host,
+# local-cluster pods, and remote-cluster pods (no runtime endpoint rewriting; see
+# docs/plans/done/storage-endpoint-single-public-address.md). MC_HOST_minio is exported but not
+# actually invoked during bring-up, so it is not load-bearing at bootstrap; it tracks the same
+# default purely for consistency with STORAGE_ENDPOINT below.
+MINIO_DEFAULT_HOST="${PUBLIC_TLS_S3_HOST:-minio.minio.svc.cluster.local:9000}"
+export MC_HOST_minio="https://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@${MINIO_DEFAULT_HOST}"
 
 # REGISTRY_USER/REGISTRY_PASSWORD (config.env, defaults ymerflow/ymerflow) only feed
 # REGISTRY_AUTH below — yf-deploy-app's fallback registry credential when REGISTRY_PROTOCOL/
@@ -345,11 +353,12 @@ export DATABASE_URL="postgresql+asyncpg://ymerflow:ymerflowpass@postgres.ymerflo
 #
 # STORAGE_ENDPOINT / STORAGE_BUCKET_PREFIX: CONFIG WINS. A value explicitly set in config.env
 # is preserved (the `:-` defaults below only supply a value when config.env left it unset).
-# This matters for any deployment where MinIO is NOT the in-cluster minikube Service — a
-# remote/other cluster, an external S3-compatible endpoint, a different namespace — where the
-# old unconditional `export STORAGE_ENDPOINT=...svc.cluster.local` silently clobbered the
-# operator's address and broke storage. The default remains the in-cluster MinIO Service, so
-# the stock local minikube deployment is unchanged.
+# The default (MINIO_DEFAULT_HOST, resolved above) is the configured public S3 host when
+# PUBLIC_TLS is enabled, else the in-cluster MinIO Service for dev / no-public-TLS — a plain
+# default value, not split-brain: whichever address is chosen is used identically from the backend
+# host and from every cluster's job pods, with no per-cluster endpoint rewriting. See
+# docs/plans/done/storage-endpoint-single-public-address.md. A remote/other cluster, an external
+# S3-compatible endpoint, or a different namespace can still override it via config.env.
 #
 # STORAGE_PROTOCOL/MINIO_ROOT_USER are deliberately NOT set here (verified genuinely dead, per
 # docs/plans/generic-deployment-orchestration.md Phase 5): the seed migration chain's later,
@@ -362,8 +371,10 @@ export DATABASE_URL="postgresql+asyncpg://ymerflow:ymerflowpass@postgres.ymerflo
 # the `storage_backends.endpoint` column past the initial seed
 # (`a6b7c8d9e0f1_seed_default_storage_backend.py`, which reads `settings.storage_endpoint`), and
 # `MinioProtocolHandler.fsspec_kwargs()`/`test_connection()` read `backend.endpoint` directly at
-# runtime — it stays here as the one genuinely load-bearing key.
-export STORAGE_ENDPOINT="${STORAGE_ENDPOINT:-https://minio.minio.svc.cluster.local:9000}"
+# runtime — it stays here as the one genuinely load-bearing key. Note this seeds the endpoint only
+# on a FRESH install; on a running system a backend's endpoint is admin-owned data, edited in
+# Admin → Storage, and is never rewritten by a redeploy.
+export STORAGE_ENDPOINT="${STORAGE_ENDPOINT:-https://${MINIO_DEFAULT_HOST}}"
 export STORAGE_BUCKET_PREFIX="${STORAGE_BUCKET_PREFIX:-ymerflow-project-}"
 export BACKEND_BASE_URL="${BACKEND_BASE_URL}"
 export SERVER_URL="${SERVER_URL}"
