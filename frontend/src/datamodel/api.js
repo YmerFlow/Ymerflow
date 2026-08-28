@@ -68,20 +68,27 @@ export async function createAdminTosVersion(body) {
   return response.data;
 }
 
-// ── Admin stats dashboard (docs/plans/admin-stats-dashboard.md) ──────────────────────────────
+// ── Admin stats dashboard (docs/plans/admin-stats-pivot-redesign.md) ─────────────────────────
 
 export async function getAdminStatsSummary() {
   const response = await apiClient.get('/admin/stats/summary');
   return response.data;
 }
 
-export async function getAdminStatsBreakdown(params) {
-  const response = await apiClient.get('/admin/stats/breakdown', { params });
+// Static per-deploy dimension / filter whitelist — the single source of truth the pivot UI
+// renders its builders from (Decision 5).
+export async function getAdminStatsSchema() {
+  const response = await apiClient.get('/admin/stats/schema');
   return response.data;
 }
 
-export async function getAdminStatsTimeseries(params) {
-  const response = await apiClient.get('/admin/stats/timeseries', { params });
+// Free N-dimensional GROUP BY. `group_by` is an ordered array sent as a repeated query param;
+// axios serialises arrays with `arrayFormat: 'repeat'` so group_by=[a,b] → ?group_by=a&group_by=b.
+export async function getAdminStatsPivot(params) {
+  const response = await apiClient.get('/admin/stats/pivot', {
+    params,
+    paramsSerializer: { indexes: null },
+  });
   return response.data;
 }
 

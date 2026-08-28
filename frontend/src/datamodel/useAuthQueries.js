@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { login, signup, forgotPassword, getUserAccount, getPublicConfig, getTos, acceptTos, updateUserPreferences, updateUserEmail, getApiKeys, createApiKey, deleteApiKey, listAdminUsers, setUserAdmin, listAdminClusters, createAdminCluster, updateAdminCluster, testAdminClusterConnection, getAdminClusterByRegistrationToken, listAdminStorageBackends, createAdminStorageBackend, updateAdminStorageBackend, testAdminStorageBackendConnection, listAdminTosVersions, createAdminTosVersion, getAdminStatsSummary, getAdminStatsBreakdown, getAdminStatsTimeseries } from './api';
+import { login, signup, forgotPassword, getUserAccount, getPublicConfig, getTos, acceptTos, updateUserPreferences, updateUserEmail, getApiKeys, createApiKey, deleteApiKey, listAdminUsers, setUserAdmin, listAdminClusters, createAdminCluster, updateAdminCluster, testAdminClusterConnection, getAdminClusterByRegistrationToken, listAdminStorageBackends, createAdminStorageBackend, updateAdminStorageBackend, testAdminStorageBackendConnection, listAdminTosVersions, createAdminTosVersion, getAdminStatsSummary, getAdminStatsSchema, getAdminStatsPivot } from './api';
 
 export function useLogin() {
   return useMutation({
@@ -201,9 +201,9 @@ export function useCreateAdminTosVersion() {
   });
 }
 
-// ── Admin stats dashboard (docs/plans/admin-stats-dashboard.md) ──────────────────────────────
+// ── Admin stats dashboard (docs/plans/admin-stats-pivot-redesign.md) ─────────────────────────
 // Read-only; params live in the queryKey so pivoting/re-windowing refetches. keepPreviousData
-// avoids chart/table flicker while the next slice loads.
+// avoids chart/table flicker while the next slice loads. The schema is static per deploy.
 
 export function useAdminStatsSummary() {
   return useQuery({
@@ -212,18 +212,19 @@ export function useAdminStatsSummary() {
   });
 }
 
-export function useAdminStatsBreakdown(params) {
+export function useAdminStatsSchema() {
   return useQuery({
-    queryKey: ['adminStatsBreakdown', params],
-    queryFn: () => getAdminStatsBreakdown(params),
-    keepPreviousData: true,
+    queryKey: ['adminStatsSchema'],
+    queryFn: getAdminStatsSchema,
+    staleTime: Infinity,
   });
 }
 
-export function useAdminStatsTimeseries(params) {
+export function useAdminStatsPivot(params) {
   return useQuery({
-    queryKey: ['adminStatsTimeseries', params],
-    queryFn: () => getAdminStatsTimeseries(params),
+    queryKey: ['adminStatsPivot', params],
+    queryFn: () => getAdminStatsPivot(params),
+    enabled: !!(params && params.entity),
     keepPreviousData: true,
   });
 }
