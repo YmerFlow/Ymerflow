@@ -8,6 +8,17 @@
   <link rel="stylesheet" href="{{ root_prefix }}assets/pygments.css">
 </head>
 <body>
+  <header id="topbar">
+    <a class="topbar-logo" href="{{ root_prefix }}index.html">
+      <img src="{{ root_prefix }}assets/Logo-OnDark.svg" alt="YmerFlow">
+    </a>
+    <nav class="topbar-nav" aria-label="Site links">
+      <a href="https://ymerflow.earth/page/about" target="_blank" rel="noopener">About</a>
+      <a class="topbar-cta" href="https://ymerflow.earth" target="_blank" rel="noopener">Try it!</a>
+    </nav>
+  </header>
+
+  <div id="layout">
   <aside id="sidebar">
     <div id="sidebar-header">
       <a href="{{ root_prefix }}index.html" id="site-logo">
@@ -77,6 +88,7 @@
     {{ toc }}
   </aside>
   {% endif %}
+  </div>
 
   <script>
     document.querySelectorAll('.section-toggle').forEach(function(btn) {

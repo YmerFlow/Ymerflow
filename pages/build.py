@@ -140,6 +140,11 @@ def main() -> None:
             if f.is_file():
                 shutil.copy(f, dest / f.name)
 
+    # Copy the app wordmark SVG (single-sourced from the frontend) into the site
+    logo_svg = REPO_ROOT / "frontend" / "src" / "assets" / "Logo-OnDark.svg"
+    if logo_svg.exists():
+        shutil.copy(logo_svg, OUT_DIR / "assets" / "Logo-OnDark.svg")
+
     # Copy screenshots referenced from README
     screenshots_dir = REPO_ROOT / "screenshots"
     if screenshots_dir.exists():

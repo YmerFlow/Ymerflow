@@ -3,6 +3,9 @@
    ========================================================================== */
 
 :root {
+  --topbar-h: 56px;
+  --brand-gradient: linear-gradient(180deg, #050914, #091B2C);
+  --brand-blue: #2269A7;
   --sidebar-w: 268px;
   --sidebar-bg: #1b2737;
   --sidebar-text: #b8cfe0;
@@ -36,8 +39,66 @@ body {
   color: var(--body-text);
   background: var(--body-bg);
   display: flex;
+  flex-direction: column;
   min-height: 100vh;
   line-height: 1.6;
+}
+
+/* ── Top bar ─────────────────────────────────────────────────────────────── */
+
+#topbar {
+  height: var(--topbar-h);
+  background: var(--brand-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex-shrink: 0;
+}
+
+.topbar-logo {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+}
+.topbar-logo img {
+  height: 28px;
+  width: auto;
+  display: block;
+}
+
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+.topbar-nav a {
+  color: #d7e4f0;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: color 0.12s;
+}
+.topbar-nav a:hover { color: #fff; }
+
+.topbar-cta {
+  padding: 7px 16px;
+  border-radius: 6px;
+  background: var(--brand-blue);
+  color: #fff !important;
+  font-weight: 600;
+}
+.topbar-cta:hover { background: #2a7ac2; }
+
+/* ── Layout row (sidebar + content + toc) ────────────────────────────────── */
+
+#layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
@@ -50,8 +111,8 @@ body {
   display: flex;
   flex-direction: column;
   position: sticky;
-  top: 0;
-  height: 100vh;
+  top: var(--topbar-h);
+  height: calc(100vh - var(--topbar-h));
   overflow-y: auto;
   overflow-x: hidden;
   flex-shrink: 0;
@@ -200,8 +261,8 @@ nav { flex: 1; padding: 10px 0 16px; }
   border-left: 1px solid var(--border);
   padding: 52px 20px 80px 24px;
   position: sticky;
-  top: 0;
-  height: 100vh;
+  top: var(--topbar-h);
+  height: calc(100vh - var(--topbar-h));
   overflow-y: auto;
   overflow-x: hidden;
   flex-shrink: 0;
@@ -395,7 +456,7 @@ article dd { margin-left: 20px; color: var(--muted); }
 }
 
 @media (max-width: 640px) {
-  body { flex-direction: column; }
+  #layout { flex-direction: column; }
   #sidebar {
     position: static;
     width: 100%;
@@ -404,6 +465,8 @@ article dd { margin-left: 20px; color: var(--muted); }
     max-height: 50vh;
   }
   #content { padding: 24px 20px 48px; }
+  #topbar { padding: 0 14px; }
+  .topbar-nav { gap: 14px; }
 }
 
 /* ── Feature card grid ───────────────────────────────────────────────────── */
