@@ -1,7 +1,6 @@
 import { useContext, useEffect, useRef } from 'react';
 import { ProcessContext } from './ProcessContext';
 import { LayoutContext } from './flexout/LayoutContext';
-import { useWorkspace, useWorkspaces } from './datamodel/useQueries';
 
 // When a user lands on a project that has no processes yet, and the active workspace layout
 // contains a ProcessEditor, auto-open it defaulted to the latest Environment + `import_skytem`
@@ -12,14 +11,9 @@ function AutoOpenProcessEditor() {
   const {
     currentProject, projects, processes, isLoading,
     environments, environmentsLoading,
-    selectedEnvironment, setSelectedEnvironment, startNewProcess,
+    startNewProcess,
   } = useContext(ProcessContext);
-  const { updateLayout, findWidgetPaths, activatePath } = useContext(LayoutContext);
-
-  // The global `default` workspace is not returned by the project-scoped list, so fetch it
-  // directly; it cannot be deleted, so it effectively always exists.
-  const { data: defaultWorkspace } = useWorkspace('default');
-  const { data: projectWorkspaces = [] } = useWorkspaces(currentProject);
+  const { findWidgetPaths, activatePath } = useContext(LayoutContext);
 
   // Project id we've already handled, so we fire at most once per project.
   const handledProjectRef = useRef(null);
@@ -33,19 +27,6 @@ function AutoOpenProcessEditor() {
     // Can't create processes on a read-only publication.
     if (projects.find(p => p.id === currentProject)?.read_only) {
       handledProjectRef.current = currentProject;
-      return;
-    }
-
-    // Step 0 — no workspace selected: select `default` (or the first project workspace),
-    // load its latest version's layout, and let the URL/layout settle before continuing.
-    // Return WITHOUT marking handled so the effect resumes on the next render.
-    if (!selectedEnvironment) {
-      const ws = defaultWorkspace ?? projectWorkspaces[0];
-      const versions = ws?.versions ?? [];
-      const latest = versions[versions.length - 1];
-      if (!ws || !latest) return;   // workspace data not loaded yet — wait
-      updateLayout(latest.layout);
-      setSelectedEnvironment(ws.id, latest.version);
       return;
     }
 
@@ -66,9 +47,7 @@ function AutoOpenProcessEditor() {
   }, [
     currentProject, projects, processes, isLoading,
     environments, environmentsLoading,
-    selectedEnvironment, setSelectedEnvironment, startNewProcess,
-    updateLayout, findWidgetPaths, activatePath,
-    defaultWorkspace, projectWorkspaces,
+    startNewProcess, findWidgetPaths, activatePath,
   ]);
 
   return null;

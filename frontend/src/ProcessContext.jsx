@@ -493,12 +493,8 @@ export function ProcessProvider({ children }) {
     };
   }, [datasetObjects, currentPart, addMessage]);
 
-  // Auto-select first project if none selected (only on /app routes)
-  React.useEffect(() => {
-    if (!currentProject && projects.length > 0 && location.pathname.startsWith('/app')) {
-      setCurrentProject(projects[0].id);
-    }
-  }, [projects, currentProject, setCurrentProject, location.pathname]);
+  // Project bootstrap (select the first project when none is selected) now lives in
+  // AppBootstrap, which selects workspace + project atomically in a single navigation.
 
   const contextValue = useMemo(
     () => ({

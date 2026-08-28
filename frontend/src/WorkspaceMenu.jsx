@@ -204,7 +204,7 @@ function PublicWorkspaceSearch({ onSelect }) {
 }
 
 export default function WorkspaceMenu() {
-  const { layout, updateLayout } = useContext(LayoutContext);
+  const { layout } = useContext(LayoutContext);
   const { currentProject, selectedEnvironment } = useContext(ProcessContext);
   const { data: current } = useWorkspace(selectedEnvironment);
   const saveWorkspace = useSaveWorkspace(currentProject);
@@ -216,14 +216,7 @@ export default function WorkspaceMenu() {
     layoutRef.current = layout;
   }, [layout]);
 
-  // A private workspace dropped by setCurrentProject's switch logic (ProcessContext, Decision 4)
-  // leaves selectedEnvironment null. Clear the layout too, so the previous project's panes don't
-  // stay on screen referencing processes/datasets the new project has no relationship to.
-  useEffect(() => {
-    if (!selectedEnvironment) {
-      updateLayout({ id: 'root', widget: 'Empty' });
-    }
-  }, [selectedEnvironment]);
+  // "No workspace → Empty layout" is now owned by WorkspaceLayoutSync.
 
   const handleSaveAsNew = async () => {
     const title = window.prompt('Enter workspace name:');

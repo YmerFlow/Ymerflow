@@ -15,6 +15,8 @@ import ProcessSelector from "./ProcessSelector";
 import ProjectDropdown from "./ProjectDropdown";
 import AutoCreateProjectDialog from "./AutoCreateProjectDialog";
 import AutoOpenProcessEditor from "./AutoOpenProcessEditor";
+import AppBootstrap from "./AppBootstrap";
+import WorkspaceLayoutSync from "./WorkspaceLayoutSync";
 import UserMenu from "./UserMenu";
 import WorkspaceMenu from "./WorkspaceMenu";
 import BrandLogo from "./BrandLogo";
@@ -116,32 +118,6 @@ function buildWidgets() {
   return map;
 }
 
-var initial_layout = {
-    "splitType": "vertical",
-    "id": "root",
-    "widget": "VerticalSplit",
-    "children": [
-        {
-            "id": "35501582-95b5-458e-b8ca-3a2b63413eac",
-            "widget": "FlowView"
-        },
-        {
-            "id": "794e8232-a793-4ff6-9372-3c94169a3eac",
-            "widget": "TabSet",
-            "children": [
-                {
-                    "id": "8658b5f1-d171-49b0-8dd9-73e46b469e5d",
-                    "widget": "ProcessEditor"
-                },
-                {
-                    "id": "d1e9273c-c3ca-4261-b14a-55cc0e45f583",
-                    "widget": "PlotView"
-                }
-            ]
-        }
-    ]
-};
-
 function MenuBarWithComponents() {
   useRegisterMenuComponent(["_brandLogo"], BrandLogo, 0);
   useRegisterMenuComponent(["_projectDropdown"], ProjectDropdown, -2);
@@ -177,49 +153,11 @@ function RequireAdmin({ children }) {
 
 function AppWithContext({ widgets }) {
   const processContext = useContext(ProcessContext);
-  const location = useLocation();
   const isMobile = useIsMobile();
-  const [layoutToUse, setLayoutToUse] = useState(initial_layout);
-  const [layoutLoaded, setLayoutLoaded] = useState(false);
 
-  // Load workspace on mount based on URL or fall back to 'default'
-  useEffect(() => {
-    const loadInitialWorkspace = async () => {
-      // Extract workspace ID and version from URL path (e.g. /app/w/:workspace/wv/:workspaceVersion/...)
-      const match = location.pathname.match(/\/w\/([^/]+)/);
-      const workspaceId = match ? match[1] : 'default';
-      const versionMatch = location.pathname.match(/\/wv\/([^/]+)/);
-      const workspaceVersion = versionMatch ? parseInt(versionMatch[1], 10) : null;
-
-      try {
-        const { getWorkspace } = await import('./datamodel/api');
-        const workspace = await getWorkspace(workspaceId);
-        const versions = workspace?.versions ?? [];
-        const selectedVersion = versions.find(v => v.version === workspaceVersion) ?? versions[versions.length - 1];
-        if (selectedVersion) {
-          setLayoutToUse(selectedVersion.layout);
-        }
-      } catch (error) {
-        console.error('Failed to load workspace, using hardcoded layout:', error);
-      } finally {
-        setLayoutLoaded(true);
-      }
-    };
-
-    loadInitialWorkspace();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (!layoutLoaded) {
-    return <div className="d-flex align-items-center justify-content-center h-100">
-      <div className="spinner-border" role="status">
-        <span className="visually-hidden">Loading workspace...</span>
-      </div>
-    </div>;
-  }
-
+  // LayoutProvider starts Empty; WorkspaceLayoutSync fills it in from the URL's workspace.
   return (
-    <LayoutProvider widgets={widgets} initial_layout={layoutToUse} data_context={processContext}>
+    <LayoutProvider widgets={widgets} initial_layout={{ id: 'root', widget: 'Empty' }} data_context={processContext}>
       <MenuProvider>
         <Routes>
           <Route path="/account/:tab?" element={
@@ -237,6 +175,8 @@ function AppWithContext({ widgets }) {
               <div className={`flex-grow-1 ${isMobile ? 'overflow-auto' : 'overflow-hidden'}`}>
                 <MainLayout />
               </div>
+              <AppBootstrap />
+              <WorkspaceLayoutSync />
               <AutoCreateProjectDialog />
               <AutoOpenProcessEditor />
             </div>

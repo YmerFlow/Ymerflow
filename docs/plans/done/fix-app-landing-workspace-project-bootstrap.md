@@ -13,7 +13,7 @@ On landing at `/app` (or any URL missing a `/w/` segment) while signed in:
    function of the URL's workspace — Empty when the URL names no workspace.
 
 This is "Fix direction 2" from
-`docs/bugs/app-landing-no-workspace-blocks-project-selection.md` (establish a workspace
+`docs/fixed-bugs/app-landing-no-workspace-blocks-project-selection.md` (establish a workspace
 segment on landing), explicitly **not** direction 1 (the URL grammar is unchanged).
 
 ## Design decisions (confirmed with user)
