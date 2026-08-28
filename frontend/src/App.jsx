@@ -178,6 +178,14 @@ function AppWithContext({ widgets }) {
           {hooks.run_jsx.app_routes().map(({ path, element }) => (
             <Route key={path} path={path} element={<PageChrome>{element}</PageChrome>} />
           ))}
+          {/* Logged-out plugin routes (e.g. the CMS /page/* pages) are ALSO reachable while logged
+              in — a shared/bookmarked logged-out URL resolves instead of bouncing to /app. They get
+              the logged-in PageChrome here. They never appear in a logged-in menu: the menu bar only
+              runs menu_registrars({ context: 'in' }), so 'out'-context pages are never listed. The
+              reverse stays safe — app_routes/pages/fullscreen_pages are never mounted logged-out. */}
+          {hooks.run_jsx.logged_out_routes().map(({ path, element }) => (
+            <Route key={path} path={path} element={<PageChrome>{element}</PageChrome>} />
+          ))}
           <Route path="/" element={<Navigate to="/app" replace />} />
           <Route path="*" element={<Navigate to="/app" replace />} />
         </Routes>
