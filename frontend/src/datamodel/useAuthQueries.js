@@ -95,10 +95,11 @@ export function useDeleteApiKey() {
   });
 }
 
-export function useAdminUsers() {
+export function useAdminUsers(params) {
   return useQuery({
-    queryKey: ['adminUsers'],
-    queryFn: listAdminUsers,
+    queryKey: ['adminUsers', params],   // params in the key → refetch on any change
+    queryFn: () => listAdminUsers(params),
+    keepPreviousData: true,             // avoid table flicker on page/sort change
   });
 }
 
@@ -106,7 +107,8 @@ export function useSetUserAdmin() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ username, isAdmin }) => setUserAdmin(username, isAdmin),
-    onSuccess: () => queryClient.invalidateQueries(['adminUsers']),
+    // Invalidate the ['adminUsers'] prefix so every param-keyed page refetches.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminUsers'] }),
   });
 }
 

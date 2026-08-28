@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy import func
@@ -437,16 +437,52 @@ async def delete_api_key(
 # Admin endpoints
 # ---------------------------------------------------------------------------
 
+SORTABLE_USER_COLUMNS = {
+    "username": User.username,
+    "email": User.email,
+    "is_admin": User.is_admin,
+}
+
+
 @router.get("/admin/users")
 async def admin_list_users(
+    q: Optional[str] = None,
+    sort: str = "username",
+    dir: str = "asc",
+    limit: int = 25,
+    offset: int = 0,
     auth: AuthContext = Depends(require_admin),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    """List all users (admin only)."""
-    stmt = select(User).order_by(User.username)
-    result = await db.execute(stmt)
-    users = result.scalars().all()
-    return [{"username": u.username, "email": u.email, "is_admin": u.is_admin} for u in users]
+    """List users (admin only), server-side paged, sorted and searched.
+
+    Returns ``{"items": [...], "total": N}`` where ``total`` is the count *after* the ``q`` filter.
+    """
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    sort_col = SORTABLE_USER_COLUMNS.get(sort, User.username)
+    order = sort_col.desc() if dir == "desc" else sort_col.asc()
+
+    base = select(User)
+    if q:
+        # Match q as a literal substring: escape LIKE wildcards in user input so % and _ aren't
+        # treated as wildcards. lower()-wrapping keeps this DB-agnostic (Postgres prod / SQLite dev).
+        needle = "%" + q.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        base = base.where(or_(
+            func.lower(User.username).like(needle, escape="\\"),
+            func.lower(User.email).like(needle, escape="\\"),
+        ))
+
+    total = await db.scalar(select(func.count()).select_from(base.subquery()))
+
+    # Secondary username tiebreak keeps paging stable under low-cardinality sorts (e.g. is_admin).
+    stmt = base.order_by(order, User.username.asc()).limit(limit).offset(offset)
+    users = (await db.execute(stmt)).scalars().all()
+
+    return {
+        "items": [{"username": u.username, "email": u.email, "is_admin": u.is_admin} for u in users],
+        "total": total,
+    }
 
 
 @router.put("/admin/users/{username}/admin")

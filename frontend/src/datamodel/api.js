@@ -186,9 +186,11 @@ export async function updateUserEmail(email) {
   return response.data;
 }
 
-export async function listAdminUsers() {
-  const response = await apiClient.get('/auth/admin/users');
-  return response.data;
+export async function listAdminUsers({ q, sort, dir, limit, offset } = {}) {
+  const response = await apiClient.get('/auth/admin/users', {
+    params: { q: q || undefined, sort, dir, limit, offset },
+  });
+  return response.data;   // { items, total }
 }
 
 export async function setUserAdmin(username, isAdmin) {
