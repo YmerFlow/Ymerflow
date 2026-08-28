@@ -1,13 +1,37 @@
 from sqlalchemy import Column, String, DateTime, JSON, Integer, ForeignKey, Enum, Index, UniqueConstraint, Text, select, Table, Float
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import relationship, selectinload
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 import uuid
 import enum
 import asyncio
 
 from backend.database import Base
+
+
+def _iso8601_duration(delta: timedelta) -> str:
+    """Format a timedelta as an ISO 8601 duration string (e.g. 'PT1H3M42S').
+
+    Fractional seconds are preserved. Negative durations are not expected
+    (completed_at should never precede started_at) but are represented with a
+    leading '-' on the whole duration if they occur.
+    """
+    total = delta.total_seconds()
+    sign = "-" if total < 0 else ""
+    total = abs(total)
+    hours, rem = divmod(total, 3600)
+    minutes, seconds = divmod(rem, 60)
+    parts = []
+    if hours:
+        parts.append(f"{int(hours)}H")
+    if minutes:
+        parts.append(f"{int(minutes)}M")
+    # Always emit seconds so a zero-length duration renders as 'PT0S'.
+    if seconds or not parts:
+        # Drop trailing ".0" for whole-second durations, keep fractions otherwise.
+        parts.append(f"{seconds:g}S")
+    return f"{sign}PT{''.join(parts)}"
 
 
 class ProcessState(str, enum.Enum):
@@ -327,6 +351,10 @@ class ProcessVersion(Base):
             for dataset in self.datasets
         }
 
+        run_length = None
+        if self.started_at is not None and self.completed_at is not None:
+            run_length = _iso8601_duration(self.completed_at - self.started_at)
+
         return {
             "version": self.version,
             "parameters": parameters,
@@ -337,6 +365,9 @@ class ProcessVersion(Base):
             "deadline_seconds": self.deadline_seconds,
             "cluster": self.cluster.to_dict() if self.cluster else None,
             "tags": [t.to_dict() for t in self.tags],
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "run_length": run_length,
         }
 
     async def update_state(self, db: AsyncSession, new_state: ProcessState, project_id: str = None):
