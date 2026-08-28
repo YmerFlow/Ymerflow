@@ -1,33 +1,47 @@
 """Admin-only stats dashboard endpoints.
 
-Three generic, parameterised aggregation endpoints (see docs/plans/admin-stats-dashboard.md
-Design decision 4) — all guarded by require_admin, same as backend/routers/admin.py:
+Generic, parameterised aggregation endpoints (see docs/plans/admin-stats-pivot-redesign.md) —
+all guarded by require_admin, same as backend/routers/admin.py:
 
-  GET /admin/stats/summary     — headline scalar counts, each as {all, year, month}
-  GET /admin/stats/breakdown   — one grouped-count query (drives the drill-down pivot)
-  GET /admin/stats/timeseries  — bucketed counts over time (drives the line charts)
+  GET /admin/stats/summary   — headline scalar counts, each as {all, year, month}
+  GET /admin/stats/schema    — per-entity dimension / filter whitelist served to the frontend
+  GET /admin/stats/pivot     — free N-dimensional GROUP BY (breakdown + time series + cross-tab)
 
-All aggregation is a bounded, indexed GROUP BY in the database — no per-row Python work
-(CLAUDE.md Best Practice 7). Dimension / filter names are a server-side whitelist and never
-raw-interpolated (mirrors the sort-column whitelist in the paged-users plan).
+The `pivot` endpoint supersedes the original single-dimension `breakdown` and single-series
+`timeseries` routes: a breakdown is `group_by=[dim]`, a time series is `group_by=[t_month]`, a
+cross-tab is `group_by=[dimA, t_monthB]`. All aggregation is a bounded, indexed GROUP BY in the
+database — no per-row Python work (CLAUDE.md Best Practice 7). Dimension / filter names are a
+server-side whitelist and never raw-interpolated (mirrors the sort-column whitelist in the
+paged-users plan).
 """
+import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, distinct
+from sqlalchemy import select, func, distinct, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db, engine
 from backend.auth_deps import require_admin
 from backend.models import Project, Process, ProcessVersion, Environment, User, ProcessState
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["Admin"])
 
 WINDOWS = ("all", "year", "month")
 GRANULARITIES = ("day", "week", "month")
-# Cap on distinct series in a timeseries split; the rest fold into an "(other)" series.
-MAX_SERIES = 8
+# Top-N pass keeps the top `limit` dim-1 values; a global row backstop guards a pathological
+# high-cardinality second dimension. If tripped the response sets truncated=True and logs —
+# never a silent drop (Decision 4).
+MAX_PIVOT_ROWS = 5000
+
+# Temporal grouping dimensions (Decision 2). All three resolve to _bucket_expr against the
+# entity's created_at column, so at most one may appear in a single group_by list. Available on
+# every entity; label-kind "bucket" (identity label = the ISO-ish bucket string itself).
+_TEMPORAL_DIMS = {"t_day": "day", "t_week": "week", "t_month": "month"}
+_TEMPORAL_LABELS = {"t_day": "Day", "t_week": "Week", "t_month": "Month"}
 
 # entity -> ORM model (the row being counted)
 _ENTITY_MODEL = {
@@ -99,6 +113,21 @@ _FILTERS = {
     "users": {
         "admin": (User.is_admin, False),
     },
+}
+
+# Human labels for dimensions / filters, and the value-picker type per filter (Decision 5,
+# served by GET /admin/stats/schema so the frontend never mirrors this whitelist).
+_DIM_LABELS = {
+    "user": "User", "project": "Project", "type": "Type", "state": "State",
+    "environment": "Environment", "admin": "Admin",
+}
+_FILTER_TYPES = {
+    "user": "user", "project": "project", "type": "string", "state": "state",
+    "environment": "environment", "admin": "admin",
+}
+_ENTITY_LABELS = {
+    "projects": "Projects", "processes": "Processes", "versions": "Process versions",
+    "environments": "Environments", "users": "Users",
 }
 
 
@@ -269,12 +298,64 @@ async def stats_summary(auth=Depends(require_admin), db: AsyncSession = Depends(
     return result
 
 
-# ── GET /admin/stats/breakdown ────────────────────────────────────────────────────────────────
+# ── GET /admin/stats/schema ─────────────────────────────────────────────────────────────────
 
-@router.get("/admin/stats/breakdown")
-async def stats_breakdown(
+@router.get("/admin/stats/schema")
+async def stats_schema(auth=Depends(require_admin)):
+    """Per-entity dimension / filter whitelist (Decision 5). Static per deploy — the single
+    source of truth the frontend renders its builders from, killing the duplicated mirror. Every
+    entity additionally exposes the three temporal grouping dimensions."""
+    entities = {}
+    for entity, dims in _DIMENSIONS.items():
+        dimensions = [
+            {"key": key, "label": _DIM_LABELS.get(key, key), "temporal": False}
+            for key in dims
+        ]
+        dimensions += [
+            {"key": key, "label": _TEMPORAL_LABELS[key], "temporal": True}
+            for key in _TEMPORAL_DIMS
+        ]
+        filters = [
+            {"key": key, "label": _DIM_LABELS.get(key, key), "type": _FILTER_TYPES.get(key, "string")}
+            for key in _FILTERS[entity]
+        ]
+        entities[entity] = {
+            "label": _ENTITY_LABELS.get(entity, entity),
+            "dimensions": dimensions,
+            "filters": filters,
+        }
+    return {"entities": entities}
+
+
+# ── GET /admin/stats/pivot ──────────────────────────────────────────────────────────────────
+
+def _pivot_columns(entity: str, group_by: List[str]):
+    """Validate an ordered group_by list against the entity whitelist and resolve each dim to a
+    SQL expression. Returns a list of (dim_key, sql_expr, label_kind, needs_join). Temporal dims
+    resolve lazily to _bucket_expr against this entity's created_at column; at most one temporal
+    dim is allowed in a single list (they all share the one timestamp column)."""
+    dims = _DIMENSIONS[entity]
+    out = []
+    temporal_seen = 0
+    for dim in group_by:
+        if dim in _TEMPORAL_DIMS:
+            temporal_seen += 1
+            expr = _bucket_expr(_CREATED_AT[entity], _TEMPORAL_DIMS[dim])
+            out.append((dim, expr, "bucket", False))
+        elif dim in dims:
+            col, kind, needs_join = dims[dim]
+            out.append((dim, col, kind, needs_join))
+        else:
+            raise HTTPException(status_code=400, detail=f"group_by {dim!r} is not valid for entity {entity!r}")
+    if temporal_seen > 1:
+        raise HTTPException(status_code=400, detail="at most one temporal dimension may be grouped at a time")
+    return out
+
+
+@router.get("/admin/stats/pivot")
+async def stats_pivot(
     entity: str,
-    group_by: str,
+    group_by: List[str] = Query(default=[]),
     window: str = "all",
     filter_user: Optional[str] = None,
     filter_project: Optional[str] = None,
@@ -285,113 +366,87 @@ async def stats_breakdown(
     auth=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """One grouped count query. Top-N by count; the remainder folds into an '(other)' row."""
+    """Free N-dimensional GROUP BY (Decisions 1-4). Top-N applies to the first group-by dim; each
+    kept dim-1 value is returned fully cross-tabulated across the remaining dims, the rest fold
+    into a single __other__ row. A global row backstop guards a pathological second dimension."""
     if entity not in _ENTITY_MODEL:
         raise HTTPException(status_code=400, detail=f"unknown entity {entity!r}")
-    dims = _DIMENSIONS[entity]
-    if group_by not in dims:
-        raise HTTPException(status_code=400, detail=f"group_by {group_by!r} is not valid for entity {entity!r}")
-    group_col, kind, group_join = dims[group_by]
     filters = _collect_filters(entity, filter_user, filter_project, filter_type, filter_state, filter_environment)
-
     total = await _count(db, entity, window, filters)
 
-    model = _ENTITY_MODEL[entity]
-    needs_join = group_join or _filters_need_join(entity, filters)
-    stmt = select(group_col.label("key"), func.count().label("count")).select_from(model)
-    stmt = _with_process_join(stmt, entity, needs_join)
-    stmt = _apply_window_filters(stmt, entity, window, filters)
-    stmt = stmt.group_by(group_col).order_by(func.count().desc()).limit(limit)
-    grouped = (await db.execute(stmt)).all()
+    cols = _pivot_columns(entity, group_by)
+    temporal = [c[0] for c in cols if c[0] in _TEMPORAL_DIMS]
 
-    lookup = await _resolve_labels(db, kind, [r.key for r in grouped])
-    rows = [
-        {"key": _serialize_key(kind, r.key), "label": _label_for(kind, r.key, lookup), "count": r.count}
-        for r in grouped
-    ]
-    shown = sum(r.count for r in grouped)
+    # Empty group_by → grand total only (Decision 3).
+    if not cols:
+        return {"entity": entity, "group_by": [], "temporal": [], "total": total,
+                "truncated": False, "rows": []}
+
+    model = _ENTITY_MODEL[entity]
+    needs_join = any(c[3] for c in cols) or _filters_need_join(entity, filters)
+
+    dim1_key, dim1_expr, dim1_kind, _ = cols[0]
+
+    # Pass 1 — top-N values of dim 1 by count (Decision 4).
+    top_stmt = select(dim1_expr.label("k"), func.count().label("c")).select_from(model)
+    top_stmt = _with_process_join(top_stmt, entity, needs_join)
+    top_stmt = _apply_window_filters(top_stmt, entity, window, filters)
+    top_stmt = top_stmt.group_by(dim1_expr).order_by(func.count().desc()).limit(limit)
+    top_rows = (await db.execute(top_stmt)).all()
+    if not top_rows:
+        return {"entity": entity, "group_by": group_by, "temporal": temporal, "total": total,
+                "truncated": False, "rows": []}
+    kept = [r.k for r in top_rows]
+    kept_non_null = [k for k in kept if k is not None]
+    kept_has_null = any(k is None for k in kept)
+
+    # Pass 2 — full multi-dim cross-tab restricted to the kept dim-1 values.
+    group_exprs = [c[1] for c in cols]
+    full_stmt = select(*group_exprs, func.count().label("count")).select_from(model)
+    full_stmt = _with_process_join(full_stmt, entity, needs_join)
+    full_stmt = _apply_window_filters(full_stmt, entity, window, filters)
+    keep_conds = []
+    if kept_non_null:
+        keep_conds.append(dim1_expr.in_(kept_non_null))
+    if kept_has_null:
+        keep_conds.append(dim1_expr.is_(None))
+    full_stmt = full_stmt.where(or_(*keep_conds))
+    full_stmt = full_stmt.group_by(*group_exprs).limit(MAX_PIVOT_ROWS + 1)
+    result_rows = (await db.execute(full_stmt)).all()
+
+    truncated = len(result_rows) > MAX_PIVOT_ROWS
+    if truncated:
+        result_rows = result_rows[:MAX_PIVOT_ROWS]
+        logger.warning(
+            "stats pivot truncated: entity=%s group_by=%s hit MAX_PIVOT_ROWS=%d — response marked truncated",
+            entity, group_by, MAX_PIVOT_ROWS,
+        )
+
+    # Per-dimension bulk label resolution (id → name for user/project/environment).
+    lookups = []
+    for i, (_, _, kind, _) in enumerate(cols):
+        raw_keys = [row[i] for row in result_rows]
+        lookups.append(await _resolve_labels(db, kind, raw_keys))
+
+    rows = []
+    for row in result_rows:
+        keys, labels = [], []
+        for i, (_, _, kind, _) in enumerate(cols):
+            raw = row[i]
+            keys.append(_serialize_key(kind, raw))
+            labels.append(_label_for(kind, raw, lookups[i]))
+        rows.append({"keys": keys, "labels": labels, "count": row[-1]})
+
+    # Fold everything outside the kept dim-1 values into one __other__ row (Decision 4).
+    shown = sum(r["count"] for r in rows)
     other = total - shown
     if other > 0:
-        rows.append({"key": "__other__", "label": "(other)", "count": other})
+        n = len(cols)
+        rows.append({
+            "keys": ["__other__"] + ["*"] * (n - 1),
+            "labels": ["(other)"] + [""] * (n - 1),
+            "count": other,
+        })
 
-    return {"entity": entity, "group_by": group_by, "window": window, "total": total, "rows": rows}
-
-
-# ── GET /admin/stats/timeseries ───────────────────────────────────────────────────────────────
-
-@router.get("/admin/stats/timeseries")
-async def stats_timeseries(
-    entity: str,
-    granularity: str = "month",
-    window: str = "all",
-    series_by: Optional[str] = None,
-    filter_user: Optional[str] = None,
-    filter_project: Optional[str] = None,
-    filter_type: Optional[str] = None,
-    filter_state: Optional[str] = None,
-    filter_environment: Optional[str] = None,
-    auth=Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Bucketed counts over time, optionally split into one series per top-N group value.
-    Missing buckets are zero-filled server-side so every series is bucket-aligned."""
-    if entity not in _ENTITY_MODEL:
-        raise HTTPException(status_code=400, detail=f"unknown entity {entity!r}")
-    filters = _collect_filters(entity, filter_user, filter_project, filter_type, filter_state, filter_environment)
-
-    series_col = None
-    kind = None
-    series_join = False
-    if series_by is not None:
-        dims = _DIMENSIONS[entity]
-        if series_by not in dims:
-            raise HTTPException(status_code=400, detail=f"series_by {series_by!r} is not valid for entity {entity!r}")
-        series_col, kind, series_join = dims[series_by]
-
-    model = _ENTITY_MODEL[entity]
-    needs_join = series_join or _filters_need_join(entity, filters)
-    bucket = _bucket_expr(_CREATED_AT[entity], granularity)
-
-    cols = [bucket.label("bucket")]
-    if series_col is not None:
-        cols.append(series_col.label("skey"))
-    cols.append(func.count().label("count"))
-
-    stmt = select(*cols).select_from(model)
-    stmt = _with_process_join(stmt, entity, needs_join)
-    stmt = _apply_window_filters(stmt, entity, window, filters)
-    group_cols = [bucket] + ([series_col] if series_col is not None else [])
-    stmt = stmt.group_by(*group_cols).order_by(bucket)
-    rows = (await db.execute(stmt)).all()
-
-    buckets = sorted({r.bucket for r in rows})
-    bucket_index = {b: i for i, b in enumerate(buckets)}
-
-    if series_col is None:
-        counts = [0] * len(buckets)
-        for r in rows:
-            counts[bucket_index[r.bucket]] = r.count
-        series = [{"key": None, "label": "all", "counts": counts}]
-    else:
-        per_key: Dict = {}
-        totals: Dict = {}
-        for r in rows:
-            arr = per_key.setdefault(r.skey, [0] * len(buckets))
-            arr[bucket_index[r.bucket]] = r.count
-            totals[r.skey] = totals.get(r.skey, 0) + r.count
-        ranked = sorted(totals, key=lambda k: totals[k], reverse=True)
-        top = ranked[:MAX_SERIES]
-        lookup = await _resolve_labels(db, kind, top)
-        series = [
-            {"key": _serialize_key(kind, k), "label": _label_for(kind, k, lookup), "counts": per_key[k]}
-            for k in top
-        ]
-        rest = ranked[MAX_SERIES:]
-        if rest:
-            other_counts = [0] * len(buckets)
-            for k in rest:
-                for i, c in enumerate(per_key[k]):
-                    other_counts[i] += c
-            series.append({"key": "__other__", "label": "(other)", "counts": other_counts})
-
-    return {"entity": entity, "granularity": granularity, "buckets": buckets, "series": series}
+    return {"entity": entity, "group_by": group_by, "temporal": temporal, "total": total,
+            "truncated": truncated, "rows": rows}
