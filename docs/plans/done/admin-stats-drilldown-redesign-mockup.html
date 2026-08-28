@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin Stats — drilldown mockup</title>
+<style>
+  :root {
+    --bg:#f6f7f9; --panel:#fff; --ink:#1f2530; --muted:#6b7480; --line:#e3e6ea;
+    --accent:#2f6feb; --accent-soft:#e7efff; --other:#9aa3ad; --bar:#2f6feb; --bar2:#7aa7f5;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+         background:var(--bg); color:var(--ink); }
+  .wrap { max-width:1080px; margin:0 auto; padding:24px 20px 80px; }
+  h1 { font-size:20px; margin:0 0 2px; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 18px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:16px; }
+
+  /* top controls */
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+  .bar .lbl { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.03em; margin-right:2px; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { border:0; background:#fff; padding:6px 12px; cursor:pointer; font:inherit; color:var(--ink); border-left:1px solid var(--line); }
+  .seg button:first-child { border-left:0; }
+  .seg button.on { background:var(--accent); color:#fff; }
+
+  /* filter breadcrumb */
+  .crumbs { display:flex; flex-wrap:wrap; gap:6px; align-items:center; min-height:30px; }
+  .chip { display:inline-flex; align-items:center; gap:6px; background:var(--accent-soft); color:#1c4fbf;
+          border:1px solid #cfe0ff; border-radius:16px; padding:3px 6px 3px 11px; font-size:13px; }
+  .chip b { font-weight:600; }
+  .chip .x { cursor:pointer; border-radius:50%; width:18px; height:18px; display:grid; place-items:center;
+             color:#5a76b8; }
+  .chip .x:hover { background:#cfe0ff; }
+  .crumbs .empty { color:var(--muted); font-style:italic; font-size:13px; }
+  .crumbs .clear { margin-left:auto; font-size:12px; color:var(--muted); cursor:pointer; text-decoration:underline; }
+
+  /* pivot picker inline */
+  .pick { font:inherit; color:var(--accent); background:none; border:0; border-bottom:1px dashed var(--accent);
+          cursor:pointer; padding:0 1px; }
+  select.dim { font:inherit; padding:4px 8px; border:1px solid var(--line); border-radius:7px; background:#fff; }
+
+  /* chart */
+  svg { display:block; width:100%; height:230px; }
+  .axislbl { fill:var(--muted); font-size:11px; }
+  rect.b { cursor:pointer; }
+  rect.b:hover { opacity:.82; }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:5px; }
+  .sw { width:11px; height:11px; border-radius:2px; display:inline-block; }
+
+  /* table */
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th,td { padding:7px 10px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
+  th.lead, td.lead { text-align:left; }
+  thead th { color:var(--muted); font-weight:600; font-size:12px; background:#fbfcfd; }
+  th.click, td.click { cursor:pointer; }
+  th.click:hover { color:var(--accent); }
+  td.val.click:hover, td.lead.click:hover { background:var(--accent-soft); color:#1c4fbf; }
+  tr.other td { color:var(--other); font-style:italic; }
+  tfoot td { font-weight:700; border-top:2px solid var(--line); border-bottom:0; }
+  .miniwrap { display:inline-block; width:70px; height:8px; background:#eef1f4; border-radius:4px; margin-left:10px; vertical-align:middle; overflow:hidden; }
+  .mini { height:100%; background:var(--bar2); }
+  .hint { color:var(--muted); font-size:12px; margin-top:10px; }
+  .apicall { font:12px/1.4 ui-monospace,Menlo,Consolas,monospace; color:#8a5; background:#1e2430; color:#c8e6a0;
+             padding:8px 10px; border-radius:7px; margin-top:14px; overflow-x:auto; }
+  .total-lead { font-size:26px; font-weight:700; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Deployment Statistics</h1>
+  <p class="sub">Mockup with fake data — every click recomputes real GROUP-BY numbers so the drilldown behaves like the real thing. No cards: the <b>table</b> is the interface.</p>
+
+  <div class="panel">
+    <div class="bar">
+      <span class="lbl">Entity</span>
+      <div class="seg" id="entitySeg"></div>
+      <span style="flex:1"></span>
+      <span class="lbl">Window</span>
+      <div class="seg" id="windowSeg"></div>
+    </div>
+    <div class="crumbs" id="crumbs"></div>
+  </div>
+
+  <div class="panel">
+    <div class="bar" style="margin-bottom:6px">
+      <span class="total-lead" id="totalLead">0</span>
+      <span class="lbl" id="totalUnit"></span>
+    </div>
+    <div class="bar">
+      <span class="lbl">Break down by</span>
+      <select class="dim" id="rowDim"></select>
+      <span class="lbl" style="margin-left:10px">split into columns by</span>
+      <select class="dim" id="colDim"></select>
+    </div>
+    <svg id="chart" viewBox="0 0 1000 230" preserveAspectRatio="none"></svg>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="panel">
+    <div id="tableWrap"></div>
+    <p class="hint" id="hint"></p>
+    <div class="apicall" id="apicall"></div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// Seeded RNG so the fake numbers are identical on every load (stable to discuss).
+// ─────────────────────────────────────────────────────────────────────────────
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const rnd = mulberry32(20260829);
+const pick = arr => arr[Math.floor(rnd()*arr.length)];
+const weighted = pairs => { let s=pairs.reduce((a,[,w])=>a+w,0), r=rnd()*s; for(const [v,w] of pairs){ if((r-=w)<0) return v; } return pairs[0][0]; };
+const NOW = new Date('2026-08-29T00:00:00Z');
+function randDate(daysBack){ const d=new Date(NOW); d.setUTCDate(d.getUTCDate()-Math.floor(rnd()*daysBack)); return d; }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fake value pools + record generation (records are the "database").
+// ─────────────────────────────────────────────────────────────────────────────
+const USERS = ['alice','bob','carol','dave','erin','frank','grace',null]; // null = (unknown)
+const PROJECTS = ['Survey A','Lidar B','MagLine C','AEM Delta','Basin E','Coastal F','Ridge G'];
+const TYPES = ['fft','inversion','import','gridding','export','qc','filter'];
+const ENVS = ['prod-v1','prod-v2','dev','gpu-large'];
+const STATES = ['completed','completed','completed','failed','running','pending'];
+
+function gen(n, fn){ return Array.from({length:n}, () => { const r=fn(); r.created = randDate(560); return r; }); }
+
+const DB = {
+  projects:     gen(140,  () => ({ user: weighted(USERS.map(u=>[u, u==='alice'?4:u===null?1:2])) })),
+  processes:    gen(1600, () => ({ user: pick(USERS), project: pick(PROJECTS), type: weighted(TYPES.map(t=>[t, t==='inversion'?5:t==='fft'?4:2])), environment: pick(ENVS) })),
+  versions:     gen(4200, () => ({ user: pick(USERS), state: pick(STATES), type: pick(TYPES), project: pick(PROJECTS) })),
+  environments: gen(18,   () => ({ user: pick(USERS) })),
+  users:        gen(46,   () => ({ admin: weighted([[true,1],[false,7]]) })),
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Schema (mirrors backend _DIMENSIONS): dims are both group-by AND filterable.
+// ─────────────────────────────────────────────────────────────────────────────
+const TEMPORAL = { t_day:'Day', t_week:'Week', t_month:'Month' };
+// Environments is NOT a top-level "count" category (thin), but `environment` stays a dimension of
+// processes. Entity order = display order.
+const SCHEMA = {
+  processes:    { label:'Processes',       unit:'processes',        dims:{ environment:'Environment', type:'Type', project:'Project', user:'User' } },
+  versions:     { label:'Process versions',unit:'versions',         dims:{ type:'Type', state:'State', project:'Project', user:'User' } },
+  projects:     { label:'Projects',        unit:'projects',         dims:{ user:'User' } },
+  users:        { label:'Users',           unit:'users',            dims:{ admin:'Admin' } },
+};
+// Logical drilldown hierarchy: after drilling one dimension, auto-advance walks FORWARD from the
+// current dimension in this order (processes: environment → type → project → user).
+const DRILL_ORDER = {
+  processes: ['environment','type','project','user'],
+  versions:  ['type','state','project','user'],
+  projects:  ['user'],
+  users:     ['admin'],
+};
+function orderedDims(entity){
+  const cat = Object.keys(SCHEMA[entity].dims);
+  const pref = (DRILL_ORDER[entity]||[]).filter(k=>cat.includes(k));
+  return [...pref, ...cat.filter(k=>!pref.includes(k))];
+}
+const WINDOWS = { all:'All time', year:'This year', month:'This month' };
+
+function labelFor(dim, raw){
+  if(raw===null || raw===undefined) return '(unknown)';
+  if(dim==='admin') return raw ? 'Admins' : 'Non-admins';
+  return String(raw);
+}
+function dimLabel(entity, dim){ return TEMPORAL[dim] || SCHEMA[entity].dims[dim] || dim; }
+function allDims(entity){ return [ ...Object.keys(SCHEMA[entity].dims), ...Object.keys(TEMPORAL) ]; }
+
+// temporal bucketing off created date
+function bucket(d, gran){
+  const y=d.getUTCFullYear(), m=String(d.getUTCMonth()+1).padStart(2,'0'), day=String(d.getUTCDate()).padStart(2,'0');
+  if(gran==='t_month') return `${y}-${m}`;
+  if(gran==='t_day')   return `${y}-${m}-${day}`;
+  // week (approx ISO week number)
+  const oneJan=new Date(Date.UTC(y,0,1)); const wk=Math.ceil((((d-oneJan)/86400000)+oneJan.getUTCDay()+1)/7);
+  return `${y}-W${String(wk).padStart(2,'0')}`;
+}
+function valueOf(entity, rec, dim){
+  if(TEMPORAL[dim]) return bucket(rec.created, dim);
+  return rec[dim];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// State (this is what would live in the URL query string).
+// ─────────────────────────────────────────────────────────────────────────────
+const S = { entity:'processes', window:'all', rowDim:'environment', colDim:'', filters:[] /* {dim,value} */ };
+
+function windowStart(w){
+  if(w==='year') return new Date(Date.UTC(NOW.getUTCFullYear(),0,1));
+  if(w==='month') return new Date(Date.UTC(NOW.getUTCFullYear(),NOW.getUTCMonth(),1));
+  return null;
+}
+function filteredRecords(){
+  const start = windowStart(S.window);
+  return DB[S.entity].filter(rec => {
+    if(start && rec.created < start) return false;
+    for(const f of S.filters){
+      const v = valueOf(S.entity, rec, f.dim);
+      const key = (v===null||v===undefined) ? '__null__' : String(v);
+      if(key !== f.value) return false;
+    }
+    return true;
+  });
+}
+
+const TOPN = 12;
+
+// pivot: rowDim (+ optional colDim) group-by over filtered records
+function computePivot(recs){
+  const rowDim = S.rowDim, colDim = S.colDim;
+  const rowMap = new Map();  // rowKey -> {raw,label,total, cols:Map colKey->count}
+  const colMap = new Map();
+  for(const rec of recs){
+    const rv = valueOf(S.entity, rec, rowDim);
+    const rk = (rv===null||rv===undefined)?'__null__':String(rv);
+    if(!rowMap.has(rk)) rowMap.set(rk,{raw:rv,label:labelFor(rowDim,rv),total:0,cols:new Map()});
+    const R=rowMap.get(rk); R.total++;
+    if(colDim){
+      const cv = valueOf(S.entity, rec, colDim);
+      const ck = (cv===null||cv===undefined)?'__null__':String(cv);
+      if(!colMap.has(ck)) colMap.set(ck,{raw:cv,label:labelFor(colDim,cv),total:0});
+      colMap.get(ck).total++;
+      R.cols.set(ck,(R.cols.get(ck)||0)+1);
+    }
+  }
+  const temporalRow = !!TEMPORAL[rowDim];
+  let rows=[...rowMap.entries()].map(([k,v])=>({key:k,...v}));
+  rows.sort((a,b)=> temporalRow ? (a.label<b.label?-1:1) : b.total-a.total);
+  // top-N fold
+  let other=null;
+  if(!temporalRow && rows.length>TOPN){
+    const kept=rows.slice(0,TOPN), rest=rows.slice(TOPN);
+    other={total:rest.reduce((a,r)=>a+r.total,0)};
+    rows=kept;
+  }
+  const cols=[...colMap.entries()].map(([k,v])=>({key:k,...v})).sort((a,b)=> (TEMPORAL[colDim] ? (a.label<b.label?-1:1) : b.total-a.total)).slice(0,8);
+  return { rows, cols, other, total:recs.length, temporalRow };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Actions
+// ─────────────────────────────────────────────────────────────────────────────
+// next breakdown dim: walk FORWARD from `current` through the drill order, wrapping
+function nextRowDim(current, usedSet, avoidCol){
+  const order = orderedDims(S.entity);
+  const start = order.indexOf(current);
+  const rot = start<0 ? order : [...order.slice(start+1), ...order.slice(0,start+1)];
+  return rot.find(d=>!usedSet.has(d) && d!==avoidCol) || current;
+}
+function addFilter(dim, valueKey){
+  if(valueKey==='__other__') return;
+  S.filters = S.filters.filter(f=>f.dim!==dim);
+  S.filters.push({dim, value:valueKey});
+  const used = new Set(S.filters.map(f=>f.dim));
+  if(S.colDim && used.has(S.colDim)) S.colDim='';
+  // advance the breakdown along the hierarchy so drilling keeps going
+  if(used.has(S.rowDim)) S.rowDim = nextRowDim(S.rowDim, used, S.colDim);
+  render();
+}
+function removeFilter(i){ S.filters.splice(i,1); render(); }
+function setEntity(e){ S.entity=e; S.filters=[]; S.rowDim=orderedDims(e)[0]; S.colDim=''; render(); }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Render
+// ─────────────────────────────────────────────────────────────────────────────
+function seg(container, opts, current, onclick){
+  container.innerHTML='';
+  for(const [k,v] of Object.entries(opts)){
+    const b=document.createElement('button'); b.textContent=v; if(k===current)b.className='on';
+    b.onclick=()=>onclick(k); container.appendChild(b);
+  }
+}
+const COLORS=['#2f6feb','#7aa7f5','#39b58a','#e0a83e','#d76a6a','#9b6ad7','#4bbcd0','#b0b7c0'];
+
+function render(){
+  // entity + window segments
+  seg(document.getElementById('entitySeg'), Object.fromEntries(Object.entries(SCHEMA).map(([k,v])=>[k,v.label])), S.entity, setEntity);
+  seg(document.getElementById('windowSeg'), WINDOWS, S.window, w=>{S.window=w; render();});
+
+  // breadcrumb
+  const cr=document.getElementById('crumbs'); cr.innerHTML='';
+  const flabel=document.createElement('span'); flabel.className='lbl'; flabel.textContent='Filters'; cr.appendChild(flabel);
+  if(S.filters.length===0){ const e=document.createElement('span'); e.className='empty'; e.textContent='none — showing all '+SCHEMA[S.entity].unit; cr.appendChild(e); }
+  S.filters.forEach((f,i)=>{
+    const c=document.createElement('span'); c.className='chip';
+    const shown = f.value==='__null__' ? '(unknown)' : (f.dim==='admin' ? labelFor('admin', f.value==='true') : f.value);
+    c.innerHTML=`<span>${dimLabel(S.entity,f.dim)} = <b>${shown}</b></span>`;
+    const x=document.createElement('span'); x.className='x'; x.textContent='×'; x.title='Remove filter'; x.onclick=()=>removeFilter(i);
+    c.appendChild(x); cr.appendChild(c);
+  });
+  if(S.filters.length){ const cl=document.createElement('span'); cl.className='clear'; cl.textContent='clear all'; cl.onclick=()=>{S.filters=[];render();}; cr.appendChild(cl); }
+
+  // dimension pickers (exclude dims already fixed by a filter)
+  const usedDims=new Set(S.filters.map(f=>f.dim));
+  const rowSel=document.getElementById('rowDim'), colSel=document.getElementById('colDim');
+  rowSel.innerHTML=''; colSel.innerHTML='<option value="">— none —</option>';
+  for(const d of allDims(S.entity)){
+    if(usedDims.has(d)) continue;
+    const o=document.createElement('option'); o.value=d; o.textContent=dimLabel(S.entity,d); if(d===S.rowDim)o.selected=true; rowSel.appendChild(o);
+    if(d!==S.rowDim){ const o2=document.createElement('option'); o2.value=d; o2.textContent=dimLabel(S.entity,d); if(d===S.colDim)o2.selected=true; colSel.appendChild(o2); }
+  }
+  if(!allDims(S.entity).includes(S.rowDim) || usedDims.has(S.rowDim)){ S.rowDim = allDims(S.entity).find(d=>!usedDims.has(d)); }
+  rowSel.onchange=()=>{ S.rowDim=rowSel.value; if(S.colDim===S.rowDim)S.colDim=''; render(); };
+  colSel.onchange=()=>{ S.colDim=colSel.value; render(); };
+
+  const recs=filteredRecords();
+  const P=computePivot(recs);
+
+  document.getElementById('totalLead').textContent=P.total.toLocaleString();
+  document.getElementById('totalUnit').textContent=SCHEMA[S.entity].unit + (S.filters.length?' (filtered)':'');
+
+  drawChart(P);
+  drawTable(P);
+  drawApi(P);
+}
+
+function drawChart(P){
+  const svg=document.getElementById('chart'), W=1000,H=230, padL=8,padR=8,padB=26,padT=10;
+  svg.innerHTML='';
+  const cats=P.rows.concat(P.other?[{key:'__other__',label:'(other)',total:P.other.total,cols:new Map()}]:[]);
+  if(!cats.length){ svg.innerHTML='<text x="12" y="24" class="axislbl">No data.</text>'; document.getElementById('legend').innerHTML=''; return; }
+  const max=Math.max(...cats.map(c=>c.total),1);
+  const n=cats.length, gap=10, bw=(W-padL-padR)/n;
+  const line=P.temporalRow;
+  const ns='http://www.w3.org/2000/svg';
+  const y=v=> padT + (H-padT-padB)*(1 - v/max);
+
+  if(line){
+    // line chart for temporal
+    let pts=cats.map((c,i)=>[padL+bw*i+bw/2, y(c.total)]);
+    const path=document.createElementNS(ns,'polyline');
+    path.setAttribute('points',pts.map(p=>p.join(',')).join(' '));
+    path.setAttribute('fill','none'); path.setAttribute('stroke',COLORS[0]); path.setAttribute('stroke-width','2');
+    svg.appendChild(path);
+    cats.forEach((c,i)=>{ const [cx,cy]=pts[i]; const dot=document.createElementNS(ns,'circle');
+      dot.setAttribute('cx',cx);dot.setAttribute('cy',cy);dot.setAttribute('r',3.5);dot.setAttribute('fill',COLORS[0]);
+      dot.setAttribute('class','b'); dot.style.cursor='pointer'; dot.onclick=()=>addFilter(S.rowDim,c.key); svg.appendChild(dot);
+      if(i%Math.ceil(n/12||1)===0){ const t=document.createElementNS(ns,'text'); t.setAttribute('x',cx);t.setAttribute('y',H-8);
+        t.setAttribute('text-anchor','middle');t.setAttribute('class','axislbl');t.textContent=c.label; svg.appendChild(t);} });
+    document.getElementById('legend').innerHTML='';
+    return;
+  }
+
+  const colKeys = S.colDim ? P.cols : [{key:null,label:SCHEMA[S.entity].unit}];
+  cats.forEach((c,i)=>{
+    const x0=padL+bw*i+gap/2, w=bw-gap;
+    if(S.colDim){
+      let acc=0;
+      P.cols.forEach((col,ci)=>{
+        const v=c.cols.get(col.key)||0; if(!v) return;
+        const h=(H-padT-padB)*(v/max); const yy=y(acc+v);
+        const r=document.createElementNS(ns,'rect');
+        r.setAttribute('x',x0);r.setAttribute('y',yy);r.setAttribute('width',w);r.setAttribute('height',h);
+        r.setAttribute('fill',COLORS[ci%COLORS.length]);r.setAttribute('class','b');
+        r.onclick=()=>{ addFilter(S.rowDim,c.key); }; svg.appendChild(r); acc+=v;
+      });
+    } else {
+      const h=(H-padT-padB)*(c.total/max); const yy=y(c.total);
+      const r=document.createElementNS(ns,'rect');
+      r.setAttribute('x',x0);r.setAttribute('y',yy);r.setAttribute('width',w);r.setAttribute('height',h);
+      r.setAttribute('fill',c.key==='__other__'?'#c4cad2':COLORS[0]);r.setAttribute('class','b');
+      r.onclick=()=>addFilter(S.rowDim,c.key); svg.appendChild(r);
+    }
+    if(n<=16){ const t=document.createElementNS(ns,'text'); t.setAttribute('x',x0+w/2);t.setAttribute('y',H-8);
+      t.setAttribute('text-anchor','middle');t.setAttribute('class','axislbl');
+      t.textContent=c.label.length>10?c.label.slice(0,9)+'…':c.label; svg.appendChild(t);}
+  });
+  // legend
+  const lg=document.getElementById('legend');
+  if(S.colDim){ lg.innerHTML=P.cols.map((c,ci)=>`<span><span class="sw" style="background:${COLORS[ci%COLORS.length]}"></span>${c.label}</span>`).join(''); }
+  else lg.innerHTML='';
+}
+
+function drawTable(P){
+  const wrap=document.getElementById('tableWrap');
+  const rowDim=S.rowDim, colDim=S.colDim;
+  const maxTotal=Math.max(...P.rows.map(r=>r.total),1);
+  let h='<table><thead><tr>';
+  h+=`<th class="lead click" data-act="repivot-row" title="Click column heading to change breakdown">${dimLabel(S.entity,rowDim)} ▾</th>`;
+  if(colDim){
+    P.cols.forEach(c=>{ h+=`<th class="val click" data-col="${c.key}" title="Filter to ${c.label}">${c.label}</th>`; });
+    h+=`<th class="val">Total</th>`;
+  } else {
+    h+=`<th class="val">Count</th><th></th>`;
+  }
+  h+='</tr></thead><tbody>';
+  P.rows.forEach(r=>{
+    h+='<tr>';
+    h+=`<td class="lead val click" data-row="${r.key}" title="Drill into ${r.label}">${r.label}</td>`;
+    if(colDim){
+      P.cols.forEach(c=>{ const v=r.cols.get(c.key)||0;
+        h+= v ? `<td class="val click" data-row="${r.key}" data-col="${c.key}">${v.toLocaleString()}</td>` : `<td class="val" style="color:#c8ccd2">·</td>`; });
+      h+=`<td class="val" style="font-weight:600">${r.total.toLocaleString()}</td>`;
+    } else {
+      const pct=Math.round(100*r.total/maxTotal);
+      h+=`<td class="val click" data-row="${r.key}">${r.total.toLocaleString()}</td>`;
+      h+=`<td><span class="miniwrap"><span class="mini" style="width:${pct}%"></span></span></td>`;
+    }
+    h+='</tr>';
+  });
+  if(P.other){
+    h+=`<tr class="other"><td class="lead">(other, not top ${TOPN})</td>`;
+    if(colDim){ h+=`<td class="val" colspan="${P.cols.length}"></td><td class="val">${P.other.total.toLocaleString()}</td>`; }
+    else h+=`<td class="val">${P.other.total.toLocaleString()}</td><td></td>`;
+    h+='</tr>';
+  }
+  h+='</tbody><tfoot><tr>';
+  h+=`<td class="lead">Total</td>`;
+  if(colDim){ P.cols.forEach(c=>{ h+=`<td class="val">${c.total.toLocaleString()}</td>`; }); h+=`<td class="val">${P.total.toLocaleString()}</td>`; }
+  else h+=`<td class="val">${P.total.toLocaleString()}</td><td></td>`;
+  h+='</tr></tfoot></table>';
+  wrap.innerHTML=h;
+
+  // wire clicks
+  wrap.querySelector('[data-act="repivot-row"]').onclick=()=>{ document.getElementById('rowDim').focus(); document.getElementById('rowDim').size=0; /* hint */ cycleRowDim(); };
+  wrap.querySelectorAll('th[data-col]').forEach(th=> th.onclick=()=> addFilter(colDim, th.dataset.col));
+  wrap.querySelectorAll('td[data-row]').forEach(td=> td.onclick=()=>{
+    if(td.dataset.col!==undefined && td.dataset.col!==''){ addFilter(rowDim,td.dataset.row); addFilter(colDim,td.dataset.col); }
+    else addFilter(rowDim, td.dataset.row);
+  });
+
+  const hint=document.getElementById('hint');
+  hint.innerHTML = colDim
+    ? 'Click a <b>row label</b> to filter to it · a <b>column heading</b> to filter to that column · a <b>cell</b> to filter to both. The breakdown then advances to the next dimension.'
+    : 'Click a <b>row label</b> or its <b>count</b> to drill in. Click the <b>“'+dimLabel(S.entity,rowDim)+' ▾”</b> heading to cycle the breakdown dimension, or use the dropdowns above the chart.';
+}
+
+// clicking the heading cycles to the next breakdown dimension along the hierarchy
+function cycleRowDim(){
+  const used=new Set(S.filters.map(f=>f.dim));
+  const avail=orderedDims(S.entity).filter(d=>!used.has(d) && d!==S.colDim);
+  if(avail.length<2) return;
+  const i=avail.indexOf(S.rowDim);
+  S.rowDim=avail[(i+1)%avail.length];
+  render();
+}
+
+function drawApi(P){
+  const q=new URLSearchParams();
+  q.set('entity',S.entity); q.set('window',S.window);
+  q.append('group_by',S.rowDim); if(S.colDim)q.append('group_by',S.colDim);
+  S.filters.forEach(f=> q.set('filter_'+f.dim, f.value));
+  document.getElementById('apicall').textContent='GET /admin/stats/pivot?'+q.toString().replace(/%3A/g,':');
+}
+
+render();
+</script>
+</body>
+</html>
