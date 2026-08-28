@@ -1,6 +1,6 @@
 # YmerFlow — Cloud-Native Geophysics
 
-<img src="frontend/public/YmerFlow.jpg" height="200" align="right" />
+<img src="frontend/src/assets/YmerIcon.svg" height="200" align="right" />
 
 Browser-based AEM and magnetic survey processing, inversion, and pipeline automation — no Windows install, no per-seat licenses, no black-box algorithms.
 

@@ -70,28 +70,89 @@ body {
   display: block;
 }
 
+/* Mirrors the app's logged-out MenuBar: a Bootstrap navbar-dark on the brand
+   gradient — plain light nav links, standard light dropdown, all centered. */
 .topbar-nav {
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 4px;
 }
-.topbar-nav a {
-  color: #d7e4f0;
-  text-decoration: none;
-  font-size: 0.9rem;
+
+/* Shared look for both plain links and the dropdown toggle button. */
+.topbar-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.55);   /* Bootstrap navbar-dark link color */
+  font-family: inherit;
+  font-size: 0.95rem;
   font-weight: 500;
+  line-height: 1.5;
+  text-decoration: none;
+  cursor: pointer;
   transition: color 0.12s;
 }
-.topbar-nav a:hover { color: #fff; }
-
-.topbar-cta {
-  padding: 7px 16px;
-  border-radius: 6px;
-  background: var(--brand-blue);
-  color: #fff !important;
-  font-weight: 600;
+.topbar-nav-link:hover,
+.topbar-nav-link:focus {
+  color: rgba(255, 255, 255, 0.85);
+  outline: none;
 }
-.topbar-cta:hover { background: #2a7ac2; }
+
+/* GitHub icon link — icon only, sits at the far right of the bar. */
+.topbar-github { padding: 6px 8px; }
+.topbar-github svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+/* Dropdown (e.g. "Company") */
+.topbar-dropdown {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.topbar-caret {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+.topbar-dropdown.open .topbar-caret { transform: rotate(180deg); }
+
+.topbar-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 180px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--body-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(5, 9, 20, 0.22);
+  display: none;
+  z-index: 30;
+}
+.topbar-dropdown.open .topbar-dropdown-menu { display: block; }
+
+.topbar-dropdown-menu a {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 5px;
+  color: var(--body-text);
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.12s;
+}
+.topbar-dropdown-menu a:hover {
+  background: var(--code-bg);
+  color: var(--body-text);
+}
 
 /* ── Layout row (sidebar + content + toc) ────────────────────────────────── */
 
@@ -120,50 +181,9 @@ body {
   scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
 
-/* Sidebar header */
-#sidebar-header {
-  position: relative;
-  border-bottom: 1px solid var(--sidebar-border);
-  flex-shrink: 0;
-}
 
-#site-logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 18px 62px 18px 16px;
-  text-decoration: none;
-  color: #fff;
-  font-weight: 700;
-  font-size: 1.05rem;
-  letter-spacing: -0.01em;
-}
-#site-logo img {
-  width: 34px;
-  height: 34px;
-  object-fit: cover;
-  border-radius: 5px;
-  flex-shrink: 0;
-}
-#site-logo:hover { color: #fff; }
-
-#github-link {
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  color: #fff;
-  text-decoration: none;
-}
-#github-link svg {
-  width: 34px;
-  height: 34px;
-}
-#github-link:hover { opacity: 0.75; }
-
-/* Nav list */
-nav { flex: 1; padding: 10px 0 16px; }
+/* Nav list — scoped to the sidebar so it doesn't stretch the top-bar <nav>. */
+#sidebar nav { flex: 1; padding: 10px 0 16px; }
 
 .nav-list {
   list-style: none;
