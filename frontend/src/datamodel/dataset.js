@@ -8,6 +8,7 @@ import { Data, DataGroup, registerAxisQuantityKind, parseCrsCode, crsToQkX, crsT
 // that scrambles class-evaluation order under the bundler ("Class extends undefined"). Non-core
 // dataset types are resolved lazily through the plugin registry instead (see createDatasetInstance).
 import { getDatasetClass } from './datasetRegistry';
+import { cacheNamespace } from './cacheNamespace';
 
 // ── Shared fetch semaphore ────────────────────────────────────────────────────
 // All dataset types (XYZ, Mag, JSON, webxtile, …) share this pool so the total
@@ -164,22 +165,25 @@ async function initDB() {
   });
 }
 
-// Cache utilities with LRU eviction
+// Cache utilities with LRU eviction. Stored keys are namespaced by the current
+// user id (cacheNamespace()) so a logout → login-as-different-user switch (which
+// does not reload the page) never reads the previous user's cached data.
 async function getFromCache(storeName, key) {
   try {
     const database = await initDB();
     const transaction = database.transaction([storeName], 'readwrite');
     const store = transaction.objectStore(storeName);
 
+    const nsKey = `${cacheNamespace()}:${key}`;
     return new Promise((resolve, reject) => {
-      const getRequest = store.get(key);
+      const getRequest = store.get(nsKey);
 
       getRequest.onsuccess = () => {
         const result = getRequest.result;
         if (result) {
           // Update lastAccessed timestamp
           result.lastAccessed = Date.now();
-          store.put(result, key);
+          store.put(result, nsKey);
           resolve(result);
         } else {
           resolve(null);
@@ -197,7 +201,7 @@ async function getFromCache(storeName, key) {
 async function putInCache(storeName, key, value) {
   try {
     const database = await initDB();
-    await putInCacheWithRetry(database, storeName, key, value);
+    await putInCacheWithRetry(database, storeName, `${cacheNamespace()}:${key}`, value);
   } catch (error) {
     console.error('Cache write error:', error);
   }
@@ -229,6 +233,10 @@ async function putInCacheWithRetry(database, storeName, key, value, retries = 3)
   }
 }
 
+// Global quota manager: cursors raw stored keys across all stores and evicts the
+// globally-oldest entry regardless of namespace. Keys are now namespaced (see
+// getFromCache/putInCache), so one user hitting quota may evict another user's
+// cold entries — acceptable for an LRU space reclaimer.
 async function evictOldest(database) {
   const stores = ['datasets', 'data', 'geography'];
   const entries = [];

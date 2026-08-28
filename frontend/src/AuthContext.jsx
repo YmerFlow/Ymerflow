@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { setAuthToken } from './datamodel/api';
+import { queryClient } from './datamodel/queryClient';
 
 export const AuthContext = createContext();
 
@@ -50,6 +51,9 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('auth_user', JSON.stringify(userData));
     // Set token in API client
     setAuthToken(authToken);
+    // Drop any prior user's cached queries; mounted observers refetch under the
+    // new token so the new user never sees the previous user's data.
+    queryClient.clear();
   }, []);
 
   // Read-and-clear the one-shot just-authenticated signal. Returns true at most
@@ -68,6 +72,9 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('auth_user');
     // Clear token from API client
     setAuthToken(null);
+    // Drop the departing user's cached queries so a logged-out (or next) user
+    // never sees them; observers refetch under the absent/new token.
+    queryClient.clear();
   }, []);
 
   const updateUser = useCallback((updatedUser) => {

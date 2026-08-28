@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './datamodel/queryClient';
 import { LayoutProvider } from './flexout/LayoutContext';
 import { MainLayout } from './flexout/Layout';
 import { ProcessProvider, ProcessContext } from './ProcessContext';
@@ -99,16 +100,6 @@ registerHook('storage_protocol_forms', () => [
 
 // Note: buildDatasetRegistry() and friends are called AFTER plugins load in AuthenticatedApp,
 // so plugin-contributed types are included. See useEffect inside AuthenticatedApp.
-
-// Create a client
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-});
 
 function buildWidgets() {
   const map = Object.fromEntries(
