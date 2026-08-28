@@ -20,6 +20,7 @@ from backend.routers import (
     plugin_assets_router,
     internal_router,
     admin_router,
+    stats_router,
 )
 
 # Configure logging
@@ -89,6 +90,7 @@ app.include_router(plugins_router)
 app.include_router(plugin_assets_router)
 app.include_router(internal_router)
 app.include_router(admin_router)
+app.include_router(stats_router)
 
 
 @app.get("/")

@@ -7,6 +7,7 @@ import TabbedPage from './TabbedPage';
 import ClustersAdminPanel from './ClustersAdminPanel';
 import StorageBackendsAdminPanel from './StorageBackendsAdminPanel';
 import TosAdminPanel from './TosAdminPanel';
+import StatsAdminPanel from './StatsAdminPanel';
 
 const PAGE_SIZE = 25;
 
@@ -176,6 +177,11 @@ export default function AdminPage() {
       key: 'storage',
       title: 'Storage',
       render: () => <StorageBackendsAdminPanel />,
+    },
+    {
+      key: 'stats',
+      title: 'Stats',
+      render: () => <StatsAdminPanel />,
     },
     {
       key: 'tos',

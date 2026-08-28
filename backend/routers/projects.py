@@ -156,6 +156,7 @@ async def create_project(
         created_at=datetime.utcnow(),
         storage_status="pending",
         storage_backend_id=backend.id,
+        created_by=auth.user.id,
     )
     db.add(proj)
 

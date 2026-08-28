@@ -76,10 +76,14 @@ class Process(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     flow_x = Column(Float, nullable=True)
     flow_y = Column(Float, nullable=True)
+    # Attribution for the admin stats dashboard (docs/plans/admin-stats-dashboard.md); nullable,
+    # SET NULL — see Project.created_by.
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Relationships
     environment = relationship("Environment", back_populates="processes", foreign_keys=[environment_id])
     project = relationship("Project", back_populates="processes")
+    created_by_user = relationship("User", foreign_keys=[created_by])
     versions = relationship("ProcessVersion", back_populates="process", cascade="all, delete-orphan", order_by="ProcessVersion.version")
     logs = relationship("ProcessLog", back_populates="process", cascade="all, delete-orphan")
 
@@ -197,7 +201,9 @@ class Process(Base):
                 name=proc.get("name", f"{proc['type']}-process"),
                 type=proc["type"],
                 environment_id=environment_id,
-                project_id=project_id
+                project_id=project_id,
+                # Attribution for the admin stats dashboard — the acting user is loaded above.
+                created_by=user.id,
             )
             db.add(process)
             new_version = 1
@@ -258,7 +264,9 @@ class Process(Base):
             resource_requests=resource_requests,
             deadline_seconds=deadline_seconds,
             k8s_cluster_id=cluster.id,
-            log_retrieval_state=LogRetrievalState.NOT_STARTED
+            log_retrieval_state=LogRetrievalState.NOT_STARTED,
+            # Attribution for the admin stats dashboard — every version records its submitter.
+            created_by=user.id,
         )
         db.add(version_obj)
 
@@ -290,6 +298,9 @@ class ProcessVersion(Base):
     dependencies = Column(JSON, default=list, nullable=False)  # Array of dependency objects
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    # Attribution for the admin stats dashboard (docs/plans/admin-stats-dashboard.md); nullable,
+    # SET NULL — see Project.created_by.
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # K8s execution fields
     resource_requests = Column(JSON, default=lambda: {"cpu": "1000m", "memory": "2Gi", "ephemeral-storage": "10Gi"}, nullable=True)
@@ -315,6 +326,7 @@ class ProcessVersion(Base):
 
     # Relationships
     process = relationship("Process", back_populates="versions")
+    created_by_user = relationship("User", foreign_keys=[created_by])
     datasets = relationship("Dataset", back_populates="process_version")
     tags = relationship("ProcessTag", secondary=process_version_tags_table, viewonly=True)
     # viewonly=True: nothing should mutate cluster assignment through this relationship —
@@ -1166,7 +1178,9 @@ class ProcessVersion(Base):
                 name=env_info['name'],
                 docker_image=env_info['docker_image'],
                 process_id=env_info['process_id'],
-                process_types=env_info.get('process_types', {})
+                process_types=env_info.get('process_types', {}),
+                # Attribution for the admin stats dashboard — inherit the creating process's user.
+                created_by=process.created_by,
             )
 
             db.add(environment)

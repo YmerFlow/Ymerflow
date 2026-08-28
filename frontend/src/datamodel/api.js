@@ -68,6 +68,23 @@ export async function createAdminTosVersion(body) {
   return response.data;
 }
 
+// ── Admin stats dashboard (docs/plans/admin-stats-dashboard.md) ──────────────────────────────
+
+export async function getAdminStatsSummary() {
+  const response = await apiClient.get('/admin/stats/summary');
+  return response.data;
+}
+
+export async function getAdminStatsBreakdown(params) {
+  const response = await apiClient.get('/admin/stats/breakdown', { params });
+  return response.data;
+}
+
+export async function getAdminStatsTimeseries(params) {
+  const response = await apiClient.get('/admin/stats/timeseries', { params });
+  return response.data;
+}
+
 export async function getInviteInfo(token) {
   const response = await apiClient.get(`/auth/invites/${token}`);
   return response.data;

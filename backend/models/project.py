@@ -17,8 +17,13 @@ class Project(Base):
     storage_access_key = Column(String(255), nullable=True)
     storage_secret_key = Column(Text, nullable=True)
     storage_backend_id = Column(String(36), ForeignKey("storage_backends.id"), nullable=True)
+    # Attribution for the admin stats dashboard (docs/plans/admin-stats-dashboard.md). Nullable:
+    # historical/system rows have no known creator and re-bucket as "(unknown)". SET NULL so
+    # deleting a user never cascades away their projects.
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     storage_backend = relationship("StorageBackend")
+    created_by_user = relationship("User", foreign_keys=[created_by])
     processes = relationship("Process", back_populates="project", cascade="all, delete-orphan")
     datasets = relationship("Dataset", back_populates="project", cascade="all, delete-orphan")
     workspaces = relationship("Workspace", back_populates="project", cascade="all, delete-orphan")

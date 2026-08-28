@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { login, signup, forgotPassword, getUserAccount, getPublicConfig, getTos, acceptTos, updateUserPreferences, updateUserEmail, getApiKeys, createApiKey, deleteApiKey, listAdminUsers, setUserAdmin, listAdminClusters, createAdminCluster, updateAdminCluster, testAdminClusterConnection, getAdminClusterByRegistrationToken, listAdminStorageBackends, createAdminStorageBackend, updateAdminStorageBackend, testAdminStorageBackendConnection, listAdminTosVersions, createAdminTosVersion } from './api';
+import { login, signup, forgotPassword, getUserAccount, getPublicConfig, getTos, acceptTos, updateUserPreferences, updateUserEmail, getApiKeys, createApiKey, deleteApiKey, listAdminUsers, setUserAdmin, listAdminClusters, createAdminCluster, updateAdminCluster, testAdminClusterConnection, getAdminClusterByRegistrationToken, listAdminStorageBackends, createAdminStorageBackend, updateAdminStorageBackend, testAdminStorageBackendConnection, listAdminTosVersions, createAdminTosVersion, getAdminStatsSummary, getAdminStatsBreakdown, getAdminStatsTimeseries } from './api';
 
 export function useLogin() {
   return useMutation({
@@ -198,5 +198,32 @@ export function useCreateAdminTosVersion() {
   return useMutation({
     mutationFn: createAdminTosVersion,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminTosVersions'] }),
+  });
+}
+
+// ── Admin stats dashboard (docs/plans/admin-stats-dashboard.md) ──────────────────────────────
+// Read-only; params live in the queryKey so pivoting/re-windowing refetches. keepPreviousData
+// avoids chart/table flicker while the next slice loads.
+
+export function useAdminStatsSummary() {
+  return useQuery({
+    queryKey: ['adminStatsSummary'],
+    queryFn: getAdminStatsSummary,
+  });
+}
+
+export function useAdminStatsBreakdown(params) {
+  return useQuery({
+    queryKey: ['adminStatsBreakdown', params],
+    queryFn: () => getAdminStatsBreakdown(params),
+    keepPreviousData: true,
+  });
+}
+
+export function useAdminStatsTimeseries(params) {
+  return useQuery({
+    queryKey: ['adminStatsTimeseries', params],
+    queryFn: () => getAdminStatsTimeseries(params),
+    keepPreviousData: true,
   });
 }
