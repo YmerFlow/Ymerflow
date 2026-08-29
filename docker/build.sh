@@ -20,8 +20,17 @@ _ENV_REGISTRY_PROTOCOL="${REGISTRY_PROTOCOL:-}"
 _ENV_REGISTRY_CONFIG_JSON="${REGISTRY_CONFIG_JSON:-}"
 _ENV_STORAGE_PROTOCOL="${STORAGE_PROTOCOL:-}"
 _ENV_STORAGE_CONFIG_JSON="${STORAGE_CONFIG_JSON:-}"
+# `set -a` (allexport) so every assignment in config.env is EXPORTED into the environment, not
+# left as a plain shell variable. The production branch below shells out to inline `python3`
+# subprocesses that read REGISTRY_PROTOCOL/REGISTRY_CONFIG_JSON (and the RegistryProtocolHandler
+# reads REGISTRY_*_HOST/PORT) via os.environ — those only see EXPORTED vars. Without this a
+# standalone `./docker/build.sh` in production mode fails with KeyError: 'REGISTRY_PROTOCOL',
+# because it never runs as a child of prod/runall-production.sh (which does its own `set -a`
+# before sourcing config.env). Mirrors that script exactly.
 if [ -f "config.env" ]; then
+    set -a
     source "config.env"
+    set +a
 fi
 [ -n "$_ENV_DEPLOYMENT" ] && DEPLOYMENT="$_ENV_DEPLOYMENT"
 [ -n "$_ENV_CLUSTER_TYPE" ] && CLUSTER_TYPE="$_ENV_CLUSTER_TYPE"
