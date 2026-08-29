@@ -13,6 +13,7 @@ from backend.routers.plugins import router as plugins_router, assets_router as p
 from backend.routers.internal import router as internal_router
 from backend.routers.admin import router as admin_router
 from backend.routers.stats import router as stats_router
+from backend.routers.nav import router as nav_router
 
 __all__ = [
     "auth_router",
@@ -31,4 +32,5 @@ __all__ = [
     "internal_router",
     "admin_router",
     "stats_router",
+    "nav_router",
 ]

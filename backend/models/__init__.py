@@ -13,6 +13,7 @@ from backend.models.upload import Upload
 from backend.models.project_export import ProjectExport, ProjectImport
 from backend.models.system import System
 from backend.models.plugin import Plugin, PluginVersion, UserPlugin
+from backend.models.nav_view import NavView
 
 # Call register_models hook so plugin models (e.g. billing) are registered
 # with Base.metadata before any mapper/session is configured.
@@ -47,4 +48,5 @@ __all__ = [
     "Plugin",
     "PluginVersion",
     "UserPlugin",
+    "NavView",
 ]

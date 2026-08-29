@@ -6,6 +6,7 @@ import { loadDataset, DatasetCollectionAdapter } from './datamodel/dataset';
 import XYZ from './datamodel/libaarhusxyz';
 import { useWebSocket } from './hooks/useWebSocket';
 import { WS_API, uploadFile } from './datamodel/api';
+import { recordNavView } from './datamodel/navTracking';
 import { MessageContext } from './MessageContext';
 
 export const ProcessContext = createContext();
@@ -173,6 +174,27 @@ export function ProcessProvider({ children }) {
 
   // Parse current values from URL
   const urlParams = useMemo(() => parseUrlParams(location.pathname), [location.pathname]);
+
+  // GUI usage tracking (docs/plans/done/gui-usage-nav-tracking.md). One capture chokepoint:
+  // every navigation — navigate() setters, AppBootstrap landings, back/forward, pasted URLs —
+  // flows through parseUrlParams here. Debounced ~700ms so only a *dwelled* coordinate is
+  // recorded: rapid drill-down / scrubbing re-arms and the cleanup cancels the transient states.
+  useEffect(() => {
+    const { workspace, workspaceVersion, project, process, version, part, sounding } = urlParams;
+    if (!workspace && !project && !process) return;  // bare /app → skip
+    const t = setTimeout(() => {
+      recordNavView({
+        workspace,
+        workspace_version: workspaceVersion,
+        project,
+        process,
+        version,
+        part: part === "all" ? null : part,  // normalise to match the URL builder (Decision 5)
+        sounding,
+      });
+    }, 700);
+    return () => clearTimeout(t);
+  }, [urlParams]);
 
   // Extract values from URL - memoize objects to prevent unnecessary re-renders
   const selectedEnvironment = urlParams.workspace;

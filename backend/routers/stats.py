@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db, engine
 from backend.auth_deps import require_admin
-from backend.models import Project, Process, ProcessVersion, Environment, User, ProcessState
+from backend.models import Project, Process, ProcessVersion, Environment, User, ProcessState, Workspace, NavView
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,7 @@ _ENTITY_MODEL = {
     "versions": ProcessVersion,
     "environments": Environment,
     "users": User,
+    "navigation": NavView,
 }
 
 # entity -> creation-timestamp column the window WHERE clause bounds
@@ -59,6 +60,7 @@ _CREATED_AT = {
     "versions": ProcessVersion.created_at,
     "environments": Environment.created_at,
     "users": User.created_at,
+    "navigation": NavView.created_at,
 }
 
 # entity -> {dimension: (group-by column, label-kind, needs_process_join)}.
@@ -85,6 +87,16 @@ _DIMENSIONS = {
     },
     "users": {
         "admin": (User.is_admin, "admin", False),
+    },
+    # Self-contained table (Decisions 1-4): every coordinate is a plain column, no joins.
+    "navigation": {
+        "workspace": (NavView.workspace, "workspace", False),
+        "workspace_version": (NavView.workspace_version, "raw", False),
+        "project": (NavView.project, "project", False),
+        "process": (NavView.process, "process", False),
+        "version": (NavView.version, "raw", False),
+        "part": (NavView.part, "raw", False),
+        "sounding": (NavView.sounding, "raw", False),
     },
 }
 
@@ -113,6 +125,15 @@ _FILTERS = {
     "users": {
         "admin": (User.is_admin, False),
     },
+    "navigation": {
+        "workspace": (NavView.workspace, False),
+        "workspace_version": (NavView.workspace_version, False),
+        "project": (NavView.project, False),
+        "process": (NavView.process, False),
+        "version": (NavView.version, False),
+        "part": (NavView.part, False),
+        "sounding": (NavView.sounding, False),
+    },
 }
 
 # Human labels for dimensions / filters, and the value-picker type per filter (Decision 5,
@@ -120,14 +141,18 @@ _FILTERS = {
 _DIM_LABELS = {
     "user": "User", "project": "Project", "type": "Type", "state": "State",
     "environment": "Environment", "admin": "Admin",
+    "workspace": "Workspace", "workspace_version": "Workspace version",
+    "process": "Process", "version": "Version", "part": "Part", "sounding": "Sounding",
 }
 _FILTER_TYPES = {
     "user": "user", "project": "project", "type": "string", "state": "state",
     "environment": "environment", "admin": "admin",
+    "workspace": "workspace", "workspace_version": "number", "process": "process",
+    "version": "number", "part": "string", "sounding": "number",
 }
 _ENTITY_LABELS = {
     "projects": "Projects", "processes": "Processes", "versions": "Process versions",
-    "environments": "Environments", "users": "Users",
+    "environments": "Environments", "users": "Users", "navigation": "Navigation views",
 }
 
 
@@ -160,10 +185,16 @@ def _bucket_expr(col, granularity: str):
     return func.strftime(fmt, col)
 
 
-def _collect_filters(entity: str, filter_user, filter_project, filter_type, filter_state, filter_environment=None) -> Dict[str, str]:
+def _collect_filters(entity: str, filter_user, filter_project, filter_type, filter_state,
+                     filter_environment=None, filter_workspace=None, filter_workspace_version=None,
+                     filter_process=None, filter_version=None, filter_part=None,
+                     filter_sounding=None) -> Dict[str, str]:
     """Gather the non-empty pivot filters and validate them against the entity's whitelist."""
     raw = {"user": filter_user, "project": filter_project, "type": filter_type,
-           "state": filter_state, "environment": filter_environment}
+           "state": filter_state, "environment": filter_environment,
+           "workspace": filter_workspace, "workspace_version": filter_workspace_version,
+           "process": filter_process, "version": filter_version, "part": filter_part,
+           "sounding": filter_sounding}
     fmap = _FILTERS[entity]
     out = {}
     for name, value in raw.items():
@@ -192,6 +223,13 @@ def _coerce_filter(name: str, value: str):
             raise HTTPException(status_code=400, detail=f"invalid state {value!r}")
     if name == "admin":
         return value in ("true", "1", "True"), False
+    # navigation integer coordinates: string-compare against an Integer column is not portable
+    # to Postgres, so coerce (Decision 5 / _coerce_filter extension).
+    if name in ("version", "sounding", "workspace_version"):
+        try:
+            return int(value), False
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"filter_{name} must be an integer, got {value!r}")
     return value, False
 
 
@@ -235,6 +273,13 @@ async def _resolve_labels(db: AsyncSession, kind: str, raw_keys: List) -> Dict:
     if kind == "environment":
         rows = await db.execute(select(Environment.id, Environment.name).where(Environment.id.in_(non_null)))
         return {r.id: r.name for r in rows}
+    if kind == "process":
+        rows = await db.execute(select(Process.id, Process.name).where(Process.id.in_(non_null)))
+        return {r.id: r.name for r in rows}
+    if kind == "workspace":
+        # Workspace's human name is its `title` column.
+        rows = await db.execute(select(Workspace.id, Workspace.title).where(Workspace.id.in_(non_null)))
+        return {r.id: r.title for r in rows}
     return {}
 
 
@@ -257,7 +302,7 @@ def _label_for(kind: str, raw, lookup: Dict) -> str:
         return raw.value if hasattr(raw, "value") else str(raw)
     if kind == "admin":
         return "Admins" if raw else "Non-admins"
-    if kind in ("user", "project", "environment"):
+    if kind in ("user", "project", "environment", "process", "workspace"):
         return lookup.get(raw) or f"({kind} {raw})"
     return str(raw)
 
@@ -283,6 +328,7 @@ async def stats_summary(auth=Depends(require_admin), db: AsyncSession = Depends(
         ("environments", Environment, Environment.created_at, None),
         ("users", User, User.created_at, None),
         ("process_types", Process, Process.created_at, Process.type),
+        ("navigation", NavView, NavView.created_at, None),
     ]
     result: Dict[str, Dict[str, int]] = {}
     for key, model, created_at, distinct_col in specs:
@@ -362,6 +408,12 @@ async def stats_pivot(
     filter_type: Optional[str] = None,
     filter_state: Optional[str] = None,
     filter_environment: Optional[str] = None,
+    filter_workspace: Optional[str] = None,
+    filter_workspace_version: Optional[str] = None,
+    filter_process: Optional[str] = None,
+    filter_version: Optional[str] = None,
+    filter_part: Optional[str] = None,
+    filter_sounding: Optional[str] = None,
     limit: int = Query(50, ge=1, le=500),
     auth=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -371,7 +423,9 @@ async def stats_pivot(
     into a single __other__ row. A global row backstop guards a pathological second dimension."""
     if entity not in _ENTITY_MODEL:
         raise HTTPException(status_code=400, detail=f"unknown entity {entity!r}")
-    filters = _collect_filters(entity, filter_user, filter_project, filter_type, filter_state, filter_environment)
+    filters = _collect_filters(entity, filter_user, filter_project, filter_type, filter_state,
+                               filter_environment, filter_workspace, filter_workspace_version,
+                               filter_process, filter_version, filter_part, filter_sounding)
     total = await _count(db, entity, window, filters)
 
     cols = _pivot_columns(entity, group_by)
