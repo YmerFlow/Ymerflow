@@ -40,6 +40,47 @@ fi
 [ -n "$_ENV_STORAGE_PROTOCOL" ] && STORAGE_PROTOCOL="$_ENV_STORAGE_PROTOCOL"
 [ -n "$_ENV_STORAGE_CONFIG_JSON" ] && STORAGE_CONFIG_JSON="$_ENV_STORAGE_CONFIG_JSON"
 
+# ── Standalone bootstrap-provision (production only) ──────────────────────────────────────────
+# When this script runs as a child of prod/runall-production.sh (its Step 10), that script has
+# already bootstrap-provisioned every axis (its Step 3) and exported the ENRICHED
+# REGISTRY_*/CLUSTER_*/STORAGE_* config into our environment — CLUSTER_CONFIG_JSON then already
+# carries e.g. minikube's real kubeconfig, REGISTRY_CONFIG_JSON any minted credential, etc.
+# Run STANDALONE (`./docker/build.sh <env>` by hand to rebuild just the runner image), we only have
+# config.env's RAW pre-bootstrap values — CLUSTER_TYPE=minikube with CLUSTER_CONFIG_JSON={} and no
+# kubeconfig yet — so yf-materialize-kubeconfig below dies with KeyError: 'kubeconfig' (and the
+# production registry step fails the same way). Detect the standalone case via an empty INHERITED
+# _ENV_CLUSTER_CONFIG_JSON (runall always passes a non-empty, enriched one) and run the SAME
+# bootstrap-provision + export-eval runall's Step 3 does. bootstrap() hooks are idempotent
+# (minikube: a fast no-op when the VM is already up), so this is safe to run on every standalone
+# build and never runs in the runall-child path.
+if [ "${DEPLOYMENT:-}" = "production" ] && [ -z "$_ENV_CLUSTER_CONFIG_JSON" ]; then
+    echo "Bootstrap-provisioning configured backends (standalone build)..." >&2
+    export YMERFLOW_DATA_DIR="${YMERFLOW_DATA_DIR:-$HOME/.ymerflow/data}"
+    mkdir -p "${YMERFLOW_DATA_DIR}"
+    _BOOTSTRAP_JSON=$(PYTHONPATH=. env/bin/python backend/bin/yf-bootstrap-provision)
+    # eval runs directly in this shell so the `export`s persist into the production branch below.
+    eval "$(python3 -c '
+import json, sys, shlex
+
+data = json.loads(sys.argv[1])
+axis_map = {
+    "registry": ("REGISTRY_PROTOCOL", "REGISTRY_CONFIG_JSON"),
+    "storage": ("STORAGE_PROTOCOL", "STORAGE_CONFIG_JSON"),
+    "cluster": ("CLUSTER_TYPE", "CLUSTER_CONFIG_JSON"),
+}
+lines = []
+for axis, (protocol_var, config_var) in axis_map.items():
+    if axis not in data:
+        continue
+    entry = data[axis]
+    protocol = entry["protocol"]
+    config_json = json.dumps(entry["config"])
+    lines.append(f"export {protocol_var}={shlex.quote(protocol)}")
+    lines.append(f"export {config_var}={shlex.quote(config_json)}")
+print("\n".join(lines))
+' "${_BOOTSTRAP_JSON}")"
+fi
+
 # ── Materialize kubeconfig: point kubectl at the resolved cluster, never the ambient context ──
 # See docs/plans/base-infrastructure-via-cluster-provider.md, Design decision 1. Cheap/harmless
 # even when this script's kubectl-using (production) branch doesn't run.
