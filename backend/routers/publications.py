@@ -80,7 +80,7 @@ async def delete_publication(
     return {"status": "deleted"}
 
 
-@router.get("/publications/public", summary="List all public (findable) publications")
+@router.get("/publications/public", summary="List all public (findable) publications", tags=["ProjectDiscovery"])
 async def list_public_publications(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

@@ -134,6 +134,12 @@ mcp = FastApiMCP(
         "the key is already scoped to a project, but every endpoint still takes that same "
         "project_id as an explicit path parameter — pass it on every call.\n"
         "Typical workflow:\n"
+        "0. list_projects() — discover the project(s) this key can access; use an entry's 'id' as "
+        "project_id below. (Read-only publications may also appear, marked read_only:true.)\n"
+        "0b. list_public_publications() — discover public (findable) read-only projects shared by "
+        "others. Any 'id' it returns is a publication id usable as project_id in the read-only tools "
+        "below (list_processes, get_process, get_process_logs, search_datasets, get_dataset); write "
+        "tools like create_process reject it.\n"
         "1. list_environments(include_schemas=false) — discover environments and process type names.\n"
         "2. get_environment_process_type(env_id, type_name) — fetch schema for the specific type.\n"
         "3. For local files: upload_file(project_id, ...) (JSON+base64 for small files); or "
@@ -146,6 +152,6 @@ mcp = FastApiMCP(
         "7. curl '{url}' — download results; /files/ URLs need no authentication.\n"
         "Use describe_dataset before downloading to check columns, record counts, and bbox."
     ),
-    include_tags=["Processes", "Datasets", "Environments", "Uploads", "Workspaces"],
+    include_tags=["ProjectDiscovery", "Processes", "Datasets", "Environments", "Uploads", "Workspaces"],
 )
 mcp.mount_http()

@@ -40,7 +40,7 @@ async def _setup_storage_background(project_id: str, force: bool = False):
             await db.commit()
 
 
-@router.get("", summary="List accessible projects")
+@router.get("", summary="List accessible projects", tags=["ProjectDiscovery"])
 async def list_projects(
     viewing_id: Optional[str] = None,
     auth: AuthContext | None = Depends(get_current_user_optional),
