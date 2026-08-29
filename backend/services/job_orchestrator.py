@@ -1,5 +1,5 @@
 from kubernetes_asyncio import client
-from backend.services.k8s_client import k8s_clients
+from backend.services.k8s_client import k8s_clients, _parse_cpu_cores, _parse_memory_bytes
 import base64
 import json
 
@@ -67,6 +67,23 @@ def create_job_manifest(docker_image, process_id, version, process_type, paramet
         client.V1EnvVar(name="STORAGE_BASE", value=storage_base),
         client.V1EnvVar(name="STORAGE_KWARGS_JSON", value=json.dumps(storage_kwargs)),
     ]
+
+    # Expose the pod's real CPU/memory limit so in-pod code (e.g. SimPEG's
+    # detect_cpu_availability) sizes its process pool to the pod's quota, not the whole
+    # node's core count. The pod runs with limits == requests (see container spec below), so
+    # resource_requests is authoritative. CPU_LIMIT is decimal cores (e.g. "3.5"); RAM_LIMIT
+    # is integer bytes (e.g. "8589934592" for 8Gi), exposed for a future memory-aware worker
+    # cap (no consumer yet). When resource_requests is None the vars are omitted and the pod
+    # falls back to cgroup detection.
+    if resource_requests:
+        cpu = resource_requests.get("cpu")
+        if cpu:
+            env_vars.append(client.V1EnvVar(
+                name="CPU_LIMIT", value=str(_parse_cpu_cores(str(cpu)))))
+        mem = resource_requests.get("memory")
+        if mem:
+            env_vars.append(client.V1EnvVar(
+                name="RAM_LIMIT", value=str(_parse_memory_bytes(str(mem)))))
 
     # Add registry configuration if available (global — the runner images only exist wherever
     # docker/build.sh pushed them, so every cluster reaches the same one registry)

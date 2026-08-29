@@ -5,7 +5,7 @@
 Right-size the multiprocessing pool used by SimPEG's stitched 1D forward simulations to the
 CPU the pod is *actually* allowed to use, instead of the whole node's core count.
 
-Today `simulation__n_cpu` (default `3`) is passed straight through to
+Today `simulation__n_cpu` (default `3`, changed to `0`/auto by this plan) is passed straight through to
 `tdem.Simulation1DLayeredStitched(n_cpu=...)`, which eventually calls `Pool(self.n_cpu)`. The two
 "auto" paths are both broken for our Kubernetes jobs:
 
@@ -42,12 +42,15 @@ Belts-and-suspenders fix, in two independently-versioned repos:
   `os.environ["CPU_LIMIT"]` → cgroup CFS quota → `os.cpu_count()`.
 - **Both `None` and `0`** for `simulation__n_cpu` trigger detection. Any positive value is used
   verbatim (explicit override always wins).
+- **The default becomes `0`** (auto-detect), replacing the current fixed `3`. Out of the box, pools
+  size to the pod's real CPU limit; users only set a positive value to pin a specific count.
 - **Result is always a usable pool size:** an integer `>= 1` (so `Pool(n)` never raises). Fractional
   cores are floored (`3.5 → 3`), with a floor of 1.
 
 ## Current state
 
-- `deps/simpeg/.../static_instrument/base.py:393` — `simulation__n_cpu = 3`; `make_simulation()`
+- `deps/simpeg/.../static_instrument/base.py:393` — `simulation__n_cpu = 3` (to become `0`);
+  `make_simulation()`
   (lines 395-414) passes `n_cpu=self.simulation__n_cpu` to both the Pardiso and default-solver
   `Simulation1DLayeredStitched(...)` constructions. `os` is already imported at the top of the file.
 - `deps/simpeg/.../static_instrument/utils.py` — sibling module, natural home for the helper.
@@ -120,6 +123,8 @@ Notes:
 
 ### 2. SimPEG fork — `static_instrument/base.py`: use it for `None` and `0`
 
+- Change the default: `simulation__n_cpu = 0` (was `3`), so auto-detect is the out-of-the-box
+  behavior.
 - Add import near the top (matching the file's absolute-import style):
   ```python
   from SimPEG.electromagnetics.utils.static_instrument.utils import detect_cpu_availability
@@ -133,8 +138,9 @@ Notes:
       n_cpu = detect_cpu_availability()
   ```
   and pass `n_cpu=n_cpu` in both `Simulation1DLayeredStitched(...)` calls (Pardiso + default).
-- Update the `simulation__n_cpu` docstring (line 394) to document that `None`/`0` mean "auto-detect
-  from the pod's CPU limit (CPU_LIMIT env / cgroup / node count)".
+- Update the `simulation__n_cpu` docstring (line 394) to document the new default (`0`) and that
+  `0`/`None` mean "auto-detect from the pod's CPU limit (CPU_LIMIT env / cgroup / node count)"; a
+  positive value pins that many workers.
 
 ### 3. Backend — `job_orchestrator.py`: export `CPU_LIMIT` / `RAM_LIMIT`
 

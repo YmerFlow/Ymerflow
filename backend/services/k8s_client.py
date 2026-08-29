@@ -40,6 +40,27 @@ def _parse_memory_gb(value: str) -> float:
     return float(value) / (1024.0 ** 3)
 
 
+def _parse_memory_bytes(value: str) -> int:
+    """Parse a Kubernetes memory quantity string to an integer number of bytes.
+
+    Handles the K8s binary suffixes (Ki/Mi/Gi/Ti/Pi/Ei), decimal SI suffixes
+    (k/M/G/T/P/E), and a plain byte count with no suffix. Unlike _parse_memory_gb
+    this is lossless (exact bytes), which is what RAM_LIMIT must expose.
+    """
+    value = value.strip()
+    binary = {'Ki': 1024, 'Mi': 1024 ** 2, 'Gi': 1024 ** 3,
+              'Ti': 1024 ** 4, 'Pi': 1024 ** 5, 'Ei': 1024 ** 6}
+    decimal = {'k': 1000, 'M': 1000 ** 2, 'G': 1000 ** 3,
+               'T': 1000 ** 4, 'P': 1000 ** 5, 'E': 1000 ** 6}
+    for suffix, factor in binary.items():
+        if value.endswith(suffix):
+            return int(float(value[:-len(suffix)]) * factor)
+    for suffix, factor in decimal.items():
+        if value.endswith(suffix):
+            return int(float(value[:-len(suffix)]) * factor)
+    return int(float(value))
+
+
 # Container waiting reasons that mean the pod has hit a terminal image/config error, not a
 # transient "coming up" state. Mirrors get_pod_error_status so the widget's derived state and
 # the monitor's DB transitions agree by construction.
