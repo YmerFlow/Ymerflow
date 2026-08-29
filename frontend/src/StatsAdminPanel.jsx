@@ -12,9 +12,13 @@ import StatChart, { statSeriesColor } from './StatChart';
 // shareable; the :tab path segment is left untouched (merge-not-clobber). Every dimension / filter
 // list is served by GET /admin/stats/schema — nothing about the dimensions is hardcoded here.
 
-// Top-level "count" entities (Decision 1). Environments is dropped as a top entity (thin — only
-// breaks down by user) but stays a breakdown/filter dimension of processes/versions.
-const ENTITY_ORDER = ['processes', 'versions', 'projects', 'users'];
+// Top-level "count" entities are derived at runtime from the /schema whitelist (see the component)
+// so any entity the backend exposes appears automatically — e.g. navigation. ENTITY_PREFERRED fixes
+// the display order of the entities we already curate; anything else the schema lists is appended
+// after these in schema order. ENTITY_EXCLUDE drops environments as a *top-level* entity (thin —
+// only breaks down by user) though it stays a breakdown/filter dimension of processes/versions.
+const ENTITY_PREFERRED = ['processes', 'versions', 'projects', 'users', 'navigation'];
+const ENTITY_EXCLUDE = new Set(['environments']);
 
 const WINDOWS = [
   { key: 'all', label: 'All time' },
@@ -31,6 +35,9 @@ const DRILL_ORDER = {
   versions: ['type', 'state', 'project', 'user'],
   projects: ['user'],
   users: ['admin'],
+  // Navigation views drill from the broadest context (which workspace) down to the exact thing
+  // being looked at (which sounding). See backend/models/nav_view.py for the coordinate columns.
+  navigation: ['workspace', 'workspace_version', 'project', 'process', 'version', 'part', 'sounding'],
 };
 
 // ── URL <-> state helpers ──────────────────────────────────────────────────────────────────
@@ -168,8 +175,18 @@ export default function StatsAdminPanel() {
   const { data: schema } = useAdminStatsSchema();
 
   const window = searchParams.get('window') || 'all';
-  const entity = ENTITY_ORDER.includes(searchParams.get('entity'))
-    ? searchParams.get('entity') : 'processes';
+
+  // Entity toggle list = curated order first, then any other schema entity (minus the excluded
+  // ones) in schema order. Empty until /schema loads; the entity falls back to processes then.
+  const schemaEntities = schema?.entities ? Object.keys(schema.entities) : [];
+  const entityOrder = [
+    ...ENTITY_PREFERRED.filter(e => schemaEntities.includes(e)),
+    ...schemaEntities.filter(e => !ENTITY_PREFERRED.includes(e) && !ENTITY_EXCLUDE.has(e)),
+  ];
+  const requestedEntity = searchParams.get('entity');
+  const entity = entityOrder.includes(requestedEntity)
+    ? requestedEntity
+    : (entityOrder.includes('processes') ? 'processes' : (entityOrder[0] || 'processes'));
 
   const entitySchema = schema?.entities?.[entity];
   const dimDefs = entitySchema?.dimensions || [];
@@ -295,7 +312,7 @@ export default function StatsAdminPanel() {
         <div className="d-flex align-items-center flex-wrap gap-2 mb-3">
           <span className="text-muted small text-uppercase">Entity</span>
           <ButtonGroup size="sm">
-            {ENTITY_ORDER.map(e => (
+            {entityOrder.map(e => (
               <Button key={e} variant={entity === e ? 'primary' : 'outline-primary'} onClick={() => setEntity(e)}>
                 {schema?.entities?.[e]?.label || e}
               </Button>
