@@ -77,6 +77,10 @@ body {
   align-items: center;
   gap: 4px;
 }
+/* Left group: logo followed by the "Company" dropdown. */
+.topbar-nav-left {
+  gap: 12px;
+}
 
 /* Shared look for both plain links and the dropdown toggle button. */
 .topbar-nav-link {

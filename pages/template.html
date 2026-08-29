@@ -9,10 +9,10 @@
 </head>
 <body>
   <header id="topbar">
-    <a class="topbar-logo" href="{{ root_prefix }}index.html">
-      <img src="{{ root_prefix }}assets/Logo-OnDark.svg" alt="YmerFlow">
-    </a>
-    <nav class="topbar-nav" aria-label="Site links">
+    <nav class="topbar-nav topbar-nav-left" aria-label="Site links">
+      <a class="topbar-logo" href="{{ root_prefix }}index.html">
+        <img src="{{ root_prefix }}assets/Logo-OnDark.svg" alt="YmerFlow">
+      </a>
       <div class="topbar-dropdown">
         <button type="button" class="topbar-nav-link topbar-dropdown-toggle" aria-haspopup="true" aria-expanded="false">
           Company
@@ -24,6 +24,8 @@
           <li><a href="https://ymerflow.earth/page/about" target="_blank" rel="noopener">About us</a></li>
         </ul>
       </div>
+    </nav>
+    <nav class="topbar-nav" aria-label="External links">
       <a class="topbar-nav-link" href="https://ymerflow.earth" target="_blank" rel="noopener">Try it!</a>
       <a class="topbar-nav-link topbar-github" href="https://github.com/YmerFlow/Ymerflow" aria-label="GitHub repository" target="_blank" rel="noopener">
         <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
