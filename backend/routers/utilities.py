@@ -201,7 +201,7 @@ async def cluster_queues(
                     "process_id": pv.process_id,
                     "process_name": pv.process.name,
                     "version": pv.version,
-                    "process_type": pv.process.type,
+                    "process_type": pv.type,
                     "tags": [t.to_dict() for t in pv.tags],
                 })
             else:

@@ -156,7 +156,7 @@ const ProcessNode = React.memo(({ data }) => {
           <StateBadge state={versionObj?.state} />
         </strong>
         <div className="text-muted small">
-          {process.type}
+          {versionObj?.type}
         </div>
       </div>
 

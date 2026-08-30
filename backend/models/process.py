@@ -70,8 +70,9 @@ class Process(Base):
 
     id = Column(String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False)
-    type = Column(String(100), nullable=False)
-    environment_id = Column(String(255), ForeignKey("environments.id", ondelete="CASCADE"), nullable=False, index=True)
+    # NOTE: `type` and `environment_id` are per-run and live on ProcessVersion, not here —
+    # every version records the process type and environment it actually ran under. See
+    # docs/plans/done/move-type-environment-to-processversion.md.
     project_id = Column(String(255), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     flow_x = Column(Float, nullable=True)
@@ -81,7 +82,6 @@ class Process(Base):
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Relationships
-    environment = relationship("Environment", back_populates="processes", foreign_keys=[environment_id])
     project = relationship("Project", back_populates="processes")
     created_by_user = relationship("User", foreign_keys=[created_by])
     versions = relationship("ProcessVersion", back_populates="process", cascade="all, delete-orphan", order_by="ProcessVersion.version")
@@ -92,11 +92,8 @@ class Process(Base):
         return {
             "id": self.id,
             "name": self.name,
-            "type": self.type,
-            # minimal=True: only the process's own environment id/name are ever
-            # consumed by the frontend — not worth shipping docker_image/process_id/
-            # process_types (even just names) on every process.
-            "environment": self.environment.to_dict(minimal=True) if self.environment else None,
+            # `type` and `environment` are per-version — read them from a version entry
+            # (typically versions[-1] for the "current" type/environment).
             "project_id": self.project_id,
             "flow_x": self.flow_x,
             "flow_y": self.flow_y,
@@ -193,14 +190,10 @@ class Process(Base):
 
         if process:
             new_version = len(process.versions) + 1
-            process.type = proc["type"]
-            process.environment_id = environment_id
         else:
             process = Process(
                 id=str(uuid.uuid4()),
                 name=proc.get("name", f"{proc['type']}-process"),
-                type=proc["type"],
-                environment_id=environment_id,
                 project_id=project_id,
                 # Attribution for the admin stats dashboard — the acting user is loaded above.
                 created_by=user.id,
@@ -264,6 +257,10 @@ class Process(Base):
         version_obj = ProcessVersion(
             process_id=process.id,
             version=new_version,
+            # type and environment are per-run — recorded on the version, never mutated on the
+            # process (so history stays truthful and an in-flight version keeps its own image).
+            type=proc["type"],
+            environment_id=environment_id,
             parameters=params,
             state=ProcessState.QUEUED,
             dependencies=[],  # Resolved in background
@@ -299,6 +296,11 @@ class ProcessVersion(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     process_id = Column(String(255), ForeignKey("processes.id", ondelete="CASCADE"), nullable=False, index=True)
     version = Column(Integer, nullable=False)
+    # Per-run process type + environment (moved off Process — see
+    # docs/plans/done/move-type-environment-to-processversion.md). environment_id is RESTRICT:
+    # an environment referenced by any historical version cannot be deleted.
+    type = Column(String(100), nullable=False)
+    environment_id = Column(String(255), ForeignKey("environments.id", ondelete="RESTRICT"), nullable=False, index=True)
     parameters = Column(JSON, nullable=False)  # Process parameters
     state = Column(Enum(ProcessState), default=ProcessState.QUEUED, nullable=False, index=True)
     dependencies = Column(JSON, default=list, nullable=False)  # Array of dependency objects
@@ -332,6 +334,7 @@ class ProcessVersion(Base):
 
     # Relationships
     process = relationship("Process", back_populates="versions")
+    environment = relationship("Environment", back_populates="process_versions", foreign_keys=[environment_id])
     created_by_user = relationship("User", foreign_keys=[created_by])
     datasets = relationship("Dataset", back_populates="process_version")
     tags = relationship("ProcessTag", secondary=process_version_tags_table, viewonly=True)
@@ -350,9 +353,10 @@ class ProcessVersion(Base):
     def to_dict(self, project_id: str):
         """Convert to API response format.
 
-        Note: Requires self.datasets, self.tags, and self.cluster to be eagerly loaded.
-        Use selectinload(ProcessVersion.datasets), selectinload(ProcessVersion.tags), and
-        selectinload(ProcessVersion.cluster). Logs are not included — use
+        Note: Requires self.datasets, self.tags, self.cluster, and self.environment to be
+        eagerly loaded. Use selectinload(ProcessVersion.datasets), selectinload(ProcessVersion.tags),
+        selectinload(ProcessVersion.cluster), and selectinload(ProcessVersion.environment). Logs
+        are not included — use
         GET /projects/{project_id}/process/{id}/logs for paginated log access.
 
         project_id must be passed explicitly (rather than read off self.process) to avoid
@@ -375,6 +379,11 @@ class ProcessVersion(Base):
 
         return {
             "version": self.version,
+            "type": self.type,
+            # minimal=True: only id/name are consumed by the frontend — not worth shipping
+            # docker_image/process_id/process_types on every version. Requires
+            # selectinload(ProcessVersion.environment).
+            "environment": self.environment.to_dict(minimal=True) if self.environment else None,
             "parameters": parameters,
             "outputs": outputs,
             "state": self.state.value,
@@ -966,7 +975,9 @@ class ProcessVersion(Base):
                 registry_pull_credentials = await registry_handler.pull_credentials(registry_backend.config)
 
                 # --- Create K8s job ---
-                stmt = select(Environment).where(Environment.id == process.environment_id)
+                # Read type/environment from THIS version, not the process — a later version with a
+                # different environment must not change the image an already-queued job launches with.
+                stmt = select(Environment).where(Environment.id == process_version.environment_id)
                 result = await db.execute(stmt)
                 environment = result.scalar_one_or_none()
 
@@ -983,7 +994,7 @@ class ProcessVersion(Base):
                     docker_image=environment.docker_image,
                     process_id=process_version.process_id,
                     version=process_version.version,
-                    process_type=process.type,
+                    process_type=process_version.type,
                     parameters=process_version.parameters,
                     resource_requests=process_version.resource_requests,
                     deadline_seconds=process_version.deadline_seconds,

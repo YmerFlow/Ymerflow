@@ -406,7 +406,7 @@ export function ProcessProvider({ children }) {
       const latestVer = proc.versions[proc.versions.length - 1];
       try {
         await createProcess.mutateAsync({
-          proc: { id: proc.id, type: proc.type, name: proc.name, params: { ...latestVer.parameters, diff: diffUrl } },
+          proc: { id: proc.id, type: latestVer.type, environment: { id: latestVer.environment?.id }, name: proc.name, params: { ...latestVer.parameters, diff: diffUrl } },
           projectId: currentProject,
         });
       } catch (e) {

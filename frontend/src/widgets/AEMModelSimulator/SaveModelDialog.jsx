@@ -1,6 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { ProcessContext } from '../../ProcessContext';
-import { uploadFile } from '../../datamodel/api';
+import { uploadFile, getLatestProcessType, getLatestProcessEnvironment } from '../../datamodel/api';
 import { useCreateProcess } from '../../datamodel/useQueries';
 import { XYZ } from '../../datamodel/libaarhusxyz';
 
@@ -29,7 +29,7 @@ function SaveModelDialog({ onClose, flightlines, sourceProcess }) {
     sourceProcess ? sourceProcess.name : ''
   );
   const [environment, setEnvironment] = useState(
-    fullSourceProcess?.environment?.id || selectedEnvironment || ''
+    getLatestProcessEnvironment(fullSourceProcess)?.id || selectedEnvironment || ''
   );
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -82,7 +82,7 @@ function SaveModelDialog({ onClose, flightlines, sourceProcess }) {
       setProgress(80);
 
       // Check if we're updating an existing process
-      const isUpdate = sourceProcess && sourceProcess.type === 'import_ymerflow_aem';
+      const isUpdate = !!sourceProcess && getLatestProcessType(fullSourceProcess) === 'import_ymerflow_aem';
 
       const proc = {
         name: processName,

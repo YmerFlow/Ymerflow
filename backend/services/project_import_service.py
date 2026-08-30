@@ -171,18 +171,23 @@ async def _do_import(db, import_row: ProjectImport, manifest: dict, zf: zipfile.
         new_process = Process(
             id=str(uuid.uuid4()),
             name=proc["name"],
-            type=proc["type"],
-            environment_id=env_id_map[proc["environment_id"]],
             project_id=project.id,
             flow_x=proc.get("flow_x"),
             flow_y=proc.get("flow_y"),
         )
         db.add(new_process)
 
+        # D6 back-compat: v3 manifests carry type/environment_id inside each version; v1/v2
+        # manifests carry them once at process level — fall back to those for every version.
+        proc_level_type = proc.get("type")
+        proc_level_env = proc.get("environment_id")
+
         for version in proc.get("versions", []):
             version_row = ProcessVersion(
                 process_id=new_process.id,
                 version=version["version"],
+                type=version.get("type", proc_level_type),
+                environment_id=env_id_map[version.get("environment_id", proc_level_env)],
                 parameters=version["parameters"],  # rewritten in pass 2
                 state=ProcessState(version["state"]),
                 dependencies=[],  # rewritten in pass 2

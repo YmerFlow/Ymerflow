@@ -432,6 +432,22 @@ export function getLatestVersion(process) {
   return Math.max(...process.versions.map(v => v.version));
 }
 
+// Get the latest version object for a process (highest version number).
+export function getLatestVersionObj(process) {
+  if (!process || !process.versions || process.versions.length === 0) return null;
+  return process.versions.reduce((a, b) => (b.version > a.version ? b : a));
+}
+
+// Get the process type of the latest version. `type` and `environment` moved from Process to
+// ProcessVersion (each run records its own), so read them from a version — typically the latest.
+export function getLatestProcessType(process) {
+  return getLatestVersionObj(process)?.type ?? null;
+}
+
+export function getLatestProcessEnvironment(process) {
+  return getLatestVersionObj(process)?.environment ?? null;
+}
+
 // Get data for a dataset or part
 export async function getDatasetData(datasetId, partPath = "all", projectId) {
   let url;

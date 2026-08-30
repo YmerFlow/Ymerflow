@@ -4,7 +4,7 @@ import { Modal, Button, Card } from 'react-bootstrap';
 import { CustomForm } from '../jsoneditor';
 import { ProcessContext } from '../ProcessContext';
 import { useEnvironmentProcessTypes, useCreateProcess, useAvailableClusters, useCancelProcess, useAddVersionTag } from "../datamodel/useQueries";
-import { getProcessVersion, getLatestVersion } from '../datamodel/api';
+import { getProcessVersion, getLatestVersion, getLatestProcessType } from '../datamodel/api';
 import { LayoutContext } from '../flexout/LayoutContext';
 import { AuthContext } from '../AuthContext';
 import TagSelector from './FlowView/TagSelector';
@@ -139,8 +139,9 @@ export default function ProcessEditor() {
   // Sync all state from process data when active process/version changes
   useEffect(() => {
     if (!process || !versionObj) return;
-    setLocalEnvironment(process.environment?.id);
-    setLocalType(process.type);
+    // type/environment are per-version now — seed from the active version, not the process.
+    setLocalEnvironment(versionObj.environment?.id);
+    setLocalType(versionObj.type);
     setFormData(versionObj.parameters || {});
     setSelectedTags(versionObj.tags || []);
     if (versionObj.resource_requests) {
@@ -155,7 +156,7 @@ export default function ProcessEditor() {
   // Auto-generate name when type changes in new-process mode
   useEffect(() => {
     if (!activeProcess && localType) {
-      const count = processes.filter(p => p.type === localType).length;
+      const count = processes.filter(p => getLatestProcessType(p) === localType).length;
       setProcessName(`${localType}-${count + 1}`);
     }
   }, [localType, processes, activeProcess]);
@@ -176,7 +177,7 @@ export default function ProcessEditor() {
 
   const handleCreateNew = () => {
     if (localType) {
-      const count = processes.filter(p => p.type === localType).length;
+      const count = processes.filter(p => getLatestProcessType(p) === localType).length;
       setProcessName(`${localType}-${count + 1}`);
     }
     setActiveProcess(null);

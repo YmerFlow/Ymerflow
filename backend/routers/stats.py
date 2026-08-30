@@ -70,16 +70,18 @@ _DIMENSIONS = {
     "projects": {
         "user": (Project.created_by, "user", False),
     },
+    # type/environment moved to ProcessVersion (per-run) — they're inherently per-version now,
+    # so the processes entity no longer exposes them; use the versions entity instead
+    # (docs/plans/done/move-type-environment-to-processversion.md, stats decision (a)).
     "processes": {
         "user": (Process.created_by, "user", False),
         "project": (Process.project_id, "project", False),
-        "type": (Process.type, "raw", False),
-        "environment": (Process.environment_id, "environment", False),
     },
     "versions": {
         "user": (ProcessVersion.created_by, "user", False),
         "state": (ProcessVersion.state, "state", False),
-        "type": (Process.type, "raw", True),
+        "type": (ProcessVersion.type, "raw", False),
+        "environment": (ProcessVersion.environment_id, "environment", False),
         "project": (Process.project_id, "project", True),
     },
     "environments": {
@@ -110,13 +112,12 @@ _FILTERS = {
     "processes": {
         "user": (Process.created_by, False),
         "project": (Process.project_id, False),
-        "type": (Process.type, False),
-        "environment": (Process.environment_id, False),
     },
     "versions": {
         "user": (ProcessVersion.created_by, False),
         "state": (ProcessVersion.state, False),
-        "type": (Process.type, True),
+        "type": (ProcessVersion.type, False),
+        "environment": (ProcessVersion.environment_id, False),
         "project": (Process.project_id, True),
     },
     "environments": {
@@ -327,7 +328,7 @@ async def stats_summary(auth=Depends(require_admin), db: AsyncSession = Depends(
         ("versions", ProcessVersion, ProcessVersion.created_at, None),
         ("environments", Environment, Environment.created_at, None),
         ("users", User, User.created_at, None),
-        ("process_types", Process, Process.created_at, Process.type),
+        ("process_types", ProcessVersion, ProcessVersion.created_at, ProcessVersion.type),
         ("navigation", NavView, NavView.created_at, None),
     ]
     result: Dict[str, Dict[str, int]] = {}

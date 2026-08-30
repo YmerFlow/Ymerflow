@@ -20,8 +20,10 @@ class Environment(Base):
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Relationships
-    # Processes that use this environment (via Process.environment_id)
-    processes = relationship("Process", back_populates="environment", foreign_keys="Process.environment_id")
+    # Process versions that ran in this environment (via ProcessVersion.environment_id).
+    # ondelete=RESTRICT on that FK means an environment in use cannot be deleted out from under
+    # historical versions (see docs/plans/done/move-type-environment-to-processversion.md D5).
+    process_versions = relationship("ProcessVersion", back_populates="environment", foreign_keys="ProcessVersion.environment_id")
     # The process that created this environment (via Environment.process_id)
     creating_process = relationship("Process", foreign_keys=[process_id], uselist=False)
     created_by_user = relationship("User", foreign_keys=[created_by])

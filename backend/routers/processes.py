@@ -120,6 +120,9 @@ async def list_processes(
     Each process has a 'versions' array sorted ascending by version number; the most
     recent run is always versions[-1]. Each version entry has:
     - version: integer (1-based, increments with each re-run via the 'id' param)
+    - type: the process type this version ran as (e.g. 'aem_inversion'). Per-version — a
+      re-run may use a different type, so read it from the version, not the process.
+    - environment: {id, name} of the environment this version ran in (per-version, same caveat)
     - state: 'queued' | 'running' | 'done' | 'failed'
     - outputs: dict mapping output name → /projects/{project_id}/dataset/{id} URL (populated when state == 'done')
     - parameters: the input params the job was run with
@@ -136,10 +139,10 @@ async def list_processes(
     then use the 'url' field from that response.
     """
     stmt = select(Process).options(
-        selectinload(Process.environment),
         selectinload(Process.versions).selectinload(ProcessVersion.datasets),
         selectinload(Process.versions).selectinload(ProcessVersion.tags),
         selectinload(Process.versions).selectinload(ProcessVersion.cluster),
+        selectinload(Process.versions).selectinload(ProcessVersion.environment),
     ).where(Process.project_id == access.project.id)
 
     result = await db.execute(stmt)
@@ -160,6 +163,10 @@ async def get_process(
     create_process). It fetches only the one process you need rather than all processes
     in the project. Logs are not included — use get_process_logs for paginated log access.
 
+    Each version entry carries its own 'type' and 'environment' (the process type and
+    environment that version ran under) — these are per-version, so read them from a version
+    (typically versions[-1]), not from the process.
+
     Returns 404 if the process is not found or not in the given project.
 
     After create_process returns an id, poll this endpoint until
@@ -167,10 +174,10 @@ async def get_process(
     for dataset URLs.
     """
     stmt = select(Process).options(
-        selectinload(Process.environment),
         selectinload(Process.versions).selectinload(ProcessVersion.datasets),
         selectinload(Process.versions).selectinload(ProcessVersion.tags),
         selectinload(Process.versions).selectinload(ProcessVersion.cluster),
+        selectinload(Process.versions).selectinload(ProcessVersion.environment),
     ).where(Process.id == process_id)
     result = await db.execute(stmt)
     process = result.scalar_one_or_none()
@@ -305,10 +312,11 @@ async def clone_process_version(
         else source_version.k8s_cluster_id
     )
 
+    # type/environment are per-version now — clone from the SOURCE version, not the process.
     proc = {
         "id": process_id,
-        "type": process.type,
-        "environment_id": process.environment_id,
+        "type": source_version.type,
+        "environment_id": source_version.environment_id,
         "params": http_params,
         "resource_requests": resource_requests,
         "deadline_seconds": deadline_seconds,
@@ -319,7 +327,7 @@ async def clone_process_version(
         db=db,
         proc=proc,
         project_id=process.project_id,
-        environment_id=process.environment_id,
+        environment_id=source_version.environment_id,
         username=auth.user.username
     )
 
