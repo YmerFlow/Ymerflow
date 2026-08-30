@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useState } from 'react';
 import { Modal, Button } from 'react-bootstrap';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 import { LayoutContext } from './flexout/LayoutContext';
 
 // Modal YAML editor for the live flexout layout tree. Reads the current layout from
