@@ -4,6 +4,7 @@ import { LayoutContext } from './flexout/LayoutContext';
 import { ProcessContext } from './ProcessContext';
 import { useWorkspaces, useWorkspace, useSaveWorkspace, useSaveWorkspaceVersion, usePublicWorkspaces } from './datamodel/useQueries';
 import WorkspaceSharingModal from './WorkspaceSharingModal';
+import WorkspaceCodeModal from './WorkspaceCodeModal';
 
 // One row per workspace: clickable title (loads the selected version, default latest) plus an
 // inline version <select>. Clicking the title makes this the "current" workspace — that identity
@@ -210,6 +211,7 @@ export default function WorkspaceMenu() {
   const saveWorkspace = useSaveWorkspace(currentProject);
   const layoutRef = useRef(layout);
   const [showSharingModal, setShowSharingModal] = useState(false);
+  const [showCodeModal, setShowCodeModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -254,6 +256,13 @@ export default function WorkspaceMenu() {
           >
             Publish Workspaces...
           </button>
+          <button
+            type="button"
+            className="dropdown-item"
+            onClick={() => { setShowCodeModal(true); setMenuOpen(false); }}
+          >
+            <i className="fa fa-code me-2" aria-hidden="true" />Edit as code...
+          </button>
           <Dropdown.Divider />
           <PublicWorkspaceSearch onSelect={() => setMenuOpen(false)} />
         </Dropdown.Menu>
@@ -264,6 +273,8 @@ export default function WorkspaceMenu() {
         onHide={() => setShowSharingModal(false)}
         currentProject={currentProject}
       />
+
+      <WorkspaceCodeModal show={showCodeModal} onHide={() => setShowCodeModal(false)} />
     </>
   );
 }
