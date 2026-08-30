@@ -1,6 +1,7 @@
 import urllib.parse
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select
@@ -16,6 +17,147 @@ from backend.config import settings
 router = APIRouter(prefix="/workspace", tags=["Workspaces"])
 
 WIDGET_SCHEMAS_PATH = Path(__file__).parent.parent / "widget_schemas.json"
+
+# Built-in container widgets from the flexout layout system (they carry `children`,
+# not a `layoutConfig`). Leaf widgets are discovered from widget_schemas.json.
+_CONTAINER_WIDGETS = {
+    "VerticalSplit": "Split the pane vertically into two resizable children.",
+    "HorizontalSplit": "Split the pane horizontally into two resizable children.",
+    "TabSet": "Tabbed pane — children are switchable tabs.",
+}
+
+_NODE_ID_PROP = {"type": "string", "description": "Unique pane identifier (UUID recommended)"}
+
+
+class CreateWorkspaceBody(BaseModel):
+    title: str = "Untitled Workspace"
+    # Object-typed so the MCP tool schema advertises an object and FastAPI returns
+    # 422 (not a silently-stored string) when a caller serializes the layout to JSON.
+    layout: dict
+
+
+class CreateWorkspaceVersionBody(BaseModel):
+    layout: dict
+
+
+def _load_widget_schemas() -> dict:
+    """Load the build-time widget schema export, or raise 503 with a fix hint."""
+    try:
+        with open(WIDGET_SCHEMAS_PATH) as f:
+            widget_schemas = json.load(f)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=503,
+            detail="Widget schema file not found. Run: cd frontend && npm run export-schemas",
+        )
+    except (json.JSONDecodeError, IOError) as e:
+        raise HTTPException(status_code=503, detail=f"Failed to read widget schemas: {e}")
+
+    if not widget_schemas:
+        raise HTTPException(
+            status_code=503,
+            detail="Widget schema file is empty. Run: cd frontend && npm run export-schemas",
+        )
+    return widget_schemas
+
+
+def _container_node_def(widget_name: str, description: str) -> dict:
+    """Node schema for a built-in container widget (`{id, widget, children}`)."""
+    return {
+        "type": "object",
+        "title": widget_name,
+        "description": description,
+        "properties": {
+            "id": _NODE_ID_PROP,
+            "widget": {"const": widget_name},
+            "children": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/Node"},
+                "minItems": 1,
+            },
+        },
+        "required": ["id", "widget", "children"],
+        "additionalProperties": False,
+    }
+
+
+def _leaf_node_def_raw(widget_name: str, widget_info: dict) -> dict:
+    """Node schema for a leaf widget as embedded in the full recursive dump.
+
+    This reproduces the historical `get_workspace_schema` shape verbatim (the
+    widget's exported `schema` is nested under `layoutConfig` as-is), so the
+    `verbose=true` response is unchanged from before this refactor.
+    """
+    layout_config_schema = widget_info.get("schema") or {}
+    if widget_info.get("default") is not None:
+        layout_config_schema = {**layout_config_schema, "default": widget_info["default"]}
+
+    node_def = {
+        "type": "object",
+        "title": widget_info.get("title", widget_name),
+        "properties": {
+            "id": _NODE_ID_PROP,
+            "widget": {"const": widget_name},
+        },
+        "required": ["id", "widget"],
+        "additionalProperties": False,
+    }
+    if layout_config_schema:
+        node_def["properties"]["layoutConfig"] = layout_config_schema
+    return node_def
+
+
+def _widget_layout_config(widget_info: dict):
+    """Return `(layout_config_schema, defs)` for a leaf widget, or `(None, {})`.
+
+    A widget's exported `get_schema()` may return either a full node schema
+    (`{id, widget, layoutConfig}` — as PlotView does) or a bare layoutConfig
+    schema. Normalize both to just the layoutConfig sub-schema plus the `$defs`
+    that its `#/$defs/...` refs resolve against.
+    """
+    schema = widget_info.get("schema")
+    if not schema:
+        return None, {}
+    defs = schema.get("$defs", {})
+    props = schema.get("properties", {})
+    if "layoutConfig" in props:
+        return props["layoutConfig"], defs
+    return schema, defs
+
+
+def _plot_layer_members(layout_config) -> list:
+    """The `layers.items.anyOf` union members of a PlotView layoutConfig, or `[]`."""
+    return (
+        (layout_config or {})
+        .get("properties", {})
+        .get("layers", {})
+        .get("items", {})
+        .get("anyOf", [])
+    )
+
+
+def _collapse_plot_layers(layout_config: dict) -> dict:
+    """Copy of a PlotView layoutConfig with `layers.items` collapsed to type names.
+
+    The `anyOf` union of ~19 layer types is the bulk of the schema and overflows
+    the tool-output limit; callers drill in with `list_plot_layer_types` /
+    `get_plot_layer_schema` instead.
+    """
+    names = [m.get("title") for m in _plot_layer_members(layout_config)]
+    collapsed = json.loads(json.dumps(layout_config))  # deep copy
+    layers = collapsed.get("properties", {}).get("layers")
+    if layers is not None:
+        layers["items"] = {
+            "type": "object",
+            "description": (
+                "One layer: an object with a single key naming its type, e.g. "
+                '{"ResistivityCurtain": {...params...}}. Call '
+                "list_plot_layer_types then get_plot_layer_schema(layer_type=...) "
+                "for each type's parameter schema."
+            ),
+            "layer_types": names,
+        }
+    return collapsed
 
 _WORKSPACE_LOAD_OPTIONS = (selectinload(Workspace.versions), selectinload(Workspace.project))
 
@@ -98,84 +240,17 @@ async def list_public_workspaces(
     return [w.to_dict(project_name=w.project.name if w.project else None) for w in workspaces]
 
 
-@router.get("-schema", operation_id="get_workspace_schema")
-async def get_workspace_schema():
-    """
-    Get the JSON Schema for the full workspace layout format.
-
-    Returns a JSON Schema describing the recursive node tree accepted when saving a
-    workspace version. Includes all registered widget types as a discriminated union,
-    with per-widget `layoutConfig` schemas and defaults.
-
-    Always call this before constructing a workspace layout.
-    Returns 503 if widget schemas have not been generated yet — run:
-    `cd frontend && npm run export-schemas`
-    """
-    try:
-        with open(WIDGET_SCHEMAS_PATH) as f:
-            widget_schemas = json.load(f)
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=503,
-            detail="Widget schema file not found. Run: cd frontend && npm run export-schemas",
-        )
-    except (json.JSONDecodeError, IOError) as e:
-        raise HTTPException(status_code=503, detail=f"Failed to read widget schemas: {e}")
-
-    if not widget_schemas:
-        raise HTTPException(
-            status_code=503,
-            detail="Widget schema file is empty. Run: cd frontend && npm run export-schemas",
-        )
-
+def _build_full_workspace_schema(widget_schemas: dict) -> dict:
+    """The full recursive node-tree JSON Schema (the historical `verbose` dump)."""
     defs = {}
     all_node_refs = []
 
-    # Built-in container widgets from the flexout layout system
-    container_widgets = {
-        "VerticalSplit": "Split the pane vertically into two resizable children.",
-        "HorizontalSplit": "Split the pane horizontally into two resizable children.",
-        "TabSet": "Tabbed pane — children are switchable tabs.",
-    }
-    for widget_name, description in container_widgets.items():
-        defs[f"{widget_name}Node"] = {
-            "type": "object",
-            "title": widget_name,
-            "description": description,
-            "properties": {
-                "id": {"type": "string", "description": "Unique pane identifier (UUID recommended)"},
-                "widget": {"const": widget_name},
-                "children": {
-                    "type": "array",
-                    "items": {"$ref": "#/$defs/Node"},
-                    "minItems": 1,
-                },
-            },
-            "required": ["id", "widget", "children"],
-            "additionalProperties": False,
-        }
+    for widget_name, description in _CONTAINER_WIDGETS.items():
+        defs[f"{widget_name}Node"] = _container_node_def(widget_name, description)
         all_node_refs.append({"$ref": f"#/$defs/{widget_name}Node"})
 
-    # Leaf widgets discovered from the frontend at export time
     for widget_name, widget_info in widget_schemas.items():
-        layout_config_schema = widget_info.get("schema") or {}
-        if widget_info.get("default") is not None:
-            layout_config_schema = {**layout_config_schema, "default": widget_info["default"]}
-
-        node_def = {
-            "type": "object",
-            "title": widget_info.get("title", widget_name),
-            "properties": {
-                "id": {"type": "string", "description": "Unique pane identifier (UUID recommended)"},
-                "widget": {"const": widget_name},
-            },
-            "required": ["id", "widget"],
-            "additionalProperties": False,
-        }
-        if layout_config_schema:
-            node_def["properties"]["layoutConfig"] = layout_config_schema
-
-        defs[f"{widget_name}Node"] = node_def
+        defs[f"{widget_name}Node"] = _leaf_node_def_raw(widget_name, widget_info)
         all_node_refs.append({"$ref": f"#/$defs/{widget_name}Node"})
 
     defs["Node"] = {"oneOf": all_node_refs}
@@ -190,6 +265,175 @@ async def get_workspace_schema():
         "$defs": defs,
         "$ref": "#/$defs/Node",
     }
+
+
+@router.get("-schema", operation_id="get_workspace_schema")
+async def get_workspace_schema(verbose: bool = Query(False, include_in_schema=False)):
+    """
+    List the widget types available for a workspace layout.
+
+    A workspace layout is a recursive tree of nodes. Every node is an object with
+    `id` (a UUID) and `widget` (a type name from the index below); container
+    widgets also carry `children` (an array of nodes) and leaf widgets may carry
+    `layoutConfig` (widget-specific parameters). This returns a terse index — one
+    short row per widget type plus the node envelope — so you can pick a widget,
+    then drill in for its parameter schema:
+
+      1. get_workspace_schema()                    → this widget index
+      2. get_widget_schema(widget=...)             → one widget's node/param schema
+      3. list_plot_layer_types(widget="PlotView")  → PlotView's layer types
+      4. get_plot_layer_schema(widget="PlotView", layer_type=...)  → one layer's params
+
+    `has_params` marks widgets whose node accepts a `layoutConfig`. PlotView is the
+    only widget large enough to need the two layer tools above.
+
+    Returns 503 if widget schemas have not been generated yet — run:
+    `cd frontend && npm run export-schemas`
+    """
+    widget_schemas = _load_widget_schemas()
+
+    if verbose:
+        return _build_full_workspace_schema(widget_schemas)
+
+    widgets = []
+    for widget_name, description in _CONTAINER_WIDGETS.items():
+        widgets.append({
+            "widget": widget_name,
+            "title": widget_name,
+            "description": description,
+            "container": True,
+            "has_params": False,
+        })
+    for widget_name, widget_info in widget_schemas.items():
+        layout_config, _ = _widget_layout_config(widget_info)
+        widgets.append({
+            "widget": widget_name,
+            "title": widget_info.get("title", widget_name),
+            "container": False,
+            "has_params": layout_config is not None,
+        })
+
+    return {
+        "widgets": widgets,
+        "node_envelope": {
+            "id": "<uuid>",
+            "widget": "<name from widgets[].widget>",
+            "children?": "[...nodes]  (container widgets only)",
+            "layoutConfig?": "{...}  (leaf widgets where has_params is true)",
+        },
+    }
+
+
+@router.get("-schema/widget/{widget}", operation_id="get_widget_schema")
+async def get_widget_schema(widget: str):
+    """
+    Get the node schema for one widget type.
+
+    For a container widget this is the `{id, widget, children}` shape; for a leaf
+    widget it is `{id, widget, layoutConfig}` with `layoutConfig` being that
+    widget's parameter schema. PlotView is special: its response gives the
+    top-level layoutConfig shape but collapses its `layers` union to the list of
+    layer-type names — enumerate them with list_plot_layer_types and fetch each
+    layer's parameters with get_plot_layer_schema.
+    """
+    widget_schemas = _load_widget_schemas()
+
+    if widget in _CONTAINER_WIDGETS:
+        return _container_node_def(widget, _CONTAINER_WIDGETS[widget])
+
+    if widget not in widget_schemas:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown widget '{widget}'. Call get_workspace_schema for the widget index.",
+        )
+
+    widget_info = widget_schemas[widget]
+    layout_config, defs = _widget_layout_config(widget_info)
+
+    node = {
+        "type": "object",
+        "title": widget_info.get("title", widget),
+        "properties": {
+            "id": _NODE_ID_PROP,
+            "widget": {"const": widget},
+        },
+        "required": ["id", "widget"],
+        "additionalProperties": False,
+    }
+    if layout_config is not None:
+        if widget == "PlotView":
+            layout_config = _collapse_plot_layers(layout_config)
+        node["properties"]["layoutConfig"] = layout_config
+        if defs:
+            # $defs live at the document root so #/$defs/... refs resolve.
+            node["$defs"] = defs
+    return node
+
+
+@router.get("-schema/widget/{widget}/layer", operation_id="list_plot_layer_types")
+async def list_plot_layer_types(widget: str):
+    """
+    List the layer types available for a plotting widget (PlotView).
+
+    Returns one short row per layer type. Non-plot widgets have no layers and
+    return an empty list. Follow with get_plot_layer_schema for a layer's params.
+    """
+    widget_schemas = _load_widget_schemas()
+
+    if widget not in _CONTAINER_WIDGETS and widget not in widget_schemas:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown widget '{widget}'. Call get_workspace_schema for the widget index.",
+        )
+
+    if widget not in widget_schemas:
+        return []
+
+    layout_config, _ = _widget_layout_config(widget_schemas[widget])
+    rows = []
+    for member in _plot_layer_members(layout_config):
+        layer_type = member.get("title")
+        inner = member.get("properties", {}).get(layer_type, {})
+        rows.append({
+            "layer_type": layer_type,
+            "title": layer_type,
+            "description": inner.get("description", ""),
+        })
+    return rows
+
+
+@router.get("-schema/widget/{widget}/layer/{layer_type}", operation_id="get_plot_layer_schema")
+async def get_plot_layer_schema(widget: str, layer_type: str):
+    """
+    Get the parameter schema for one layer type of a plotting widget.
+
+    A layer is an object with a single key naming its type — e.g.
+    `{"ResistivityCurtain": {...these params...}}`. Returns that inner parameter
+    schema (with any `$defs` it references).
+    """
+    widget_schemas = _load_widget_schemas()
+
+    if widget not in widget_schemas:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown widget '{widget}'. Call get_workspace_schema for the widget index.",
+        )
+
+    layout_config, defs = _widget_layout_config(widget_schemas[widget])
+    members = _plot_layer_members(layout_config)
+    member = next((m for m in members if m.get("title") == layer_type), None)
+    if member is None:
+        available = [m.get("title") for m in members]
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown layer type '{layer_type}' for widget '{widget}'. Available: {available}",
+        )
+
+    param_schema = dict(member.get("properties", {}).get(layer_type, {}))
+    param_schema.setdefault("title", layer_type)
+    if defs:
+        param_schema["$defs"] = defs
+    return param_schema
 
 
 @router.get("/app-url", operation_id="get_app_url")
@@ -258,7 +502,7 @@ async def get_workspace(
 
 @router.post("", operation_id="create_workspace")
 async def create_workspace(
-    body: Dict,
+    body: CreateWorkspaceBody,
     project_id: str,
     project: Project = Depends(require_project_member),
     auth: AuthContext = Depends(get_current_user),
@@ -267,23 +511,26 @@ async def create_workspace(
     """
     Create a new workspace in a project, with an initial version-1 layout.
 
-    The `layout` field must conform to the schema returned by `get_workspace_schema`.
-    Call `get_workspace_schema` before constructing a layout to discover valid widget
-    types and their `layoutConfig` schemas.
+    `layout` is a JSON object (a node tree), NOT a JSON string — pass it as an
+    object. Discover valid widget types with `get_workspace_schema`, then drill in
+    with `get_widget_schema` (and, for PlotView, `list_plot_layer_types` /
+    `get_plot_layer_schema`) before constructing the layout.
 
     Returns the created workspace including its generated `id`.
     """
-    title = body.get("title", "Untitled Workspace")
-    layout = body.get("layout", {})
+    # Defensive: even though `layout` is typed as an object, guard any future
+    # untyped path from reintroducing the string-stored-as-JSON footgun.
+    if not isinstance(body.layout, dict):
+        raise HTTPException(status_code=400, detail="layout must be a JSON object, not a string or array")
 
     ws = Workspace(
         id=str(uuid.uuid4()),
-        title=title,
+        title=body.title,
         project_id=project_id,
         created_by=auth.user.id,
     )
     db.add(ws)
-    ws.versions.append(WorkspaceVersion(version=1, layout=layout, created_by=auth.user.id))
+    ws.versions.append(WorkspaceVersion(version=1, layout=body.layout, created_by=auth.user.id))
 
     await db.commit()
 
@@ -293,22 +540,25 @@ async def create_workspace(
 @router.post("/{workspace_id}/versions", operation_id="create_workspace_version")
 async def create_workspace_version(
     workspace_id: str,
-    body: Dict,
+    body: CreateWorkspaceVersionBody,
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Save a new version of an existing workspace's layout.
 
-    Unlike create_workspace, this never overwrites — it appends the next version
-    number so prior layouts stay browsable. Any member of the workspace's home
-    project may add a version, whether or not the workspace is public.
+    `layout` is a JSON object (a node tree), NOT a JSON string. Unlike
+    create_workspace, this never overwrites — it appends the next version number
+    so prior layouts stay browsable. Any member of the workspace's home project
+    may add a version, whether or not the workspace is public.
     """
     workspace = await _require_workspace_member(workspace_id, auth, db)
 
-    layout = body.get("layout", {})
+    if not isinstance(body.layout, dict):
+        raise HTTPException(status_code=400, detail="layout must be a JSON object, not a string or array")
+
     next_version = max((v.version for v in workspace.versions), default=0) + 1
-    workspace.versions.append(WorkspaceVersion(version=next_version, layout=layout, created_by=auth.user.id))
+    workspace.versions.append(WorkspaceVersion(version=next_version, layout=body.layout, created_by=auth.user.id))
 
     await db.commit()
 

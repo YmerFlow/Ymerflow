@@ -454,20 +454,21 @@ Call `get_workspace_schema` first to understand valid node structures and widget
 Create a new workspace in a project, with an initial version-1 layout. Requires membership of
 `project_id`.
 
-The `layout` should conform to the schema from `get_workspace_schema`, though this is documented
-convention only — the request body is an untyped dict and is **not validated server-side**. Always
-call `get_workspace_schema` before constructing a layout.
+`layout` is a typed JSON **object** (a node tree) — not a JSON string. FastAPI returns `422` if it
+is a string or array, so the old footgun of storing a serialized-JSON string is impossible. Explore
+the layout format first with `get_workspace_schema` → `get_widget_schema` (and, for PlotView,
+`list_plot_layer_types` / `get_plot_layer_schema`).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `project_id` | string | Yes | Project the workspace belongs to. |
 
-**Request body** (untyped dict):
+**Request body:**
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `title` | string | No | Display name. Default: `"Untitled Workspace"`. |
-| `layout` | object | No | Recursive node tree for version 1. Default: `{}`. |
+| `layout` | object | Yes | Recursive node tree for version 1. Must be an object (`422` otherwise). |
 
 **Returns:** Created workspace object with its generated `id` and a single `version` 1.
 
@@ -483,7 +484,8 @@ browsable. Requires membership of the workspace's home project (whether or not i
 |---|---|---|---|
 | `workspace_id` | string | Yes | Workspace to add a version to. |
 
-**Request body:** `{layout}` — the new version's node tree.
+**Request body:** `{layout}` — the new version's node tree. `layout` is a typed JSON **object**
+(`422` if a string or array), same as `create_workspace`.
 
 **Returns:** The workspace object with the new version appended.
 
@@ -527,16 +529,73 @@ the source must be public (404 otherwise).
 ### `get_workspace_schema`
 `GET /workspace-schema`
 
-Return the JSON Schema for the workspace layout format. The schema describes a recursive tree of layout nodes; container widgets (`VerticalSplit`, `HorizontalSplit`, `TabSet`) hold `children` arrays, and leaf widgets hold `layoutConfig`.
+Return a **terse index** of the widget types available for a workspace layout — one short row per
+widget instead of one giant recursive schema (the full dump is 248 KB and overflows the tool-output
+limit). Each row is `{widget, title, description?, container, has_params}`; the response also carries
+a `node_envelope` describing the common node shape. Drill in from here:
+
+1. `get_workspace_schema()` → this index
+2. `get_widget_schema(widget=...)` → one widget's node/param schema
+3. `list_plot_layer_types(widget="PlotView")` → PlotView's layer types
+4. `get_plot_layer_schema(widget="PlotView", layer_type=...)` → one layer's params
 
 Returns 503 if widget schemas have not been generated yet (reads `backend/widget_schemas.json`). To generate them:
 ```bash
 cd frontend && npm run export-schemas
 ```
 
-No parameters.
+No parameters (MCP). REST/OpenAPI callers may pass a hidden `verbose=true` query param to get the
+historical full recursive `$defs`/`Node`-union dump unchanged; the MCP tool schema never exposes it.
 
-**Returns:** JSON Schema document with `$schema`, `title`, `description`, `$defs` for all registered widget types, and `$ref` to the root `Node` union.
+**Returns:** `{widgets: [...], node_envelope: {...}}` (terse), or the full JSON Schema document when `verbose=true`.
+
+---
+
+### `get_widget_schema`
+`GET /workspace-schema/widget/{widget}`
+
+Return the node schema for one widget type. Container widgets (`VerticalSplit`, `HorizontalSplit`,
+`TabSet`) give the `{id, widget, children}` shape; leaf widgets give `{id, widget, layoutConfig}`
+with `layoutConfig` being that widget's parameter schema. `PlotView` is special — its `layers` union
+is collapsed to a list of layer-type names (drill in via `list_plot_layer_types` /
+`get_plot_layer_schema`) so the payload stays within the tool-output limit.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `widget` | string | Yes | A `widget` value from `get_workspace_schema`. `404` if unknown. |
+
+**Returns:** A JSON Schema node object (with `$defs` at its root when the widget's params reference them).
+
+---
+
+### `list_plot_layer_types`
+`GET /workspace-schema/widget/{widget}/layer`
+
+List the layer types available for a plotting widget (`PlotView`). Returns one short row per layer
+type (`{layer_type, title, description}`). Widgets with no layers return an empty list; unknown
+widgets return `404`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `widget` | string | Yes | The plotting widget, i.e. `PlotView`. |
+
+**Returns:** Array of `{layer_type, title, description}` rows.
+
+---
+
+### `get_plot_layer_schema`
+`GET /workspace-schema/widget/{widget}/layer/{layer_type}`
+
+Return the parameter schema for one layer type of a plotting widget. A layer is an object with a
+single key naming its type — e.g. `{"ResistivityCurtain": {...params...}}` — and this returns that
+inner parameter schema (with any `$defs` it references).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `widget` | string | Yes | The plotting widget, i.e. `PlotView`. `404` if unknown. |
+| `layer_type` | string | Yes | A `layer_type` from `list_plot_layer_types`. `404` if unknown. |
+
+**Returns:** The layer type's parameter JSON Schema.
 
 ---
 

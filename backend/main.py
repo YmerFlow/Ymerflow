@@ -157,7 +157,12 @@ mcp = FastApiMCP(
         "7. get_dataset(project_id, dataset_id) — resolve each output URL to its downloadable file "
         "'url' (extract the dataset id — the last path segment — from an outputs URL).\n"
         "8. curl '{url}' — download results; /files/ URLs need no authentication.\n"
-        "Use get_dataset before downloading to check columns, record counts, and bbox."
+        "Use get_dataset before downloading to check columns, record counts, and bbox.\n"
+        "Workspaces (saved layouts/dashboards): get_workspace_schema() returns a terse widget "
+        "index; drill in with get_widget_schema(widget=...), and for PlotView with "
+        "list_plot_layer_types(widget='PlotView') then get_plot_layer_schema(widget='PlotView', "
+        "layer_type=...). `layout` on create_workspace is a JSON object (a node tree), never a "
+        "JSON string. Then create_workspace(project_id, title=..., layout={...})."
     ),
     include_tags=["ProjectDiscovery", "Processes", "Datasets", "Environments", "Uploads", "Workspaces"],
 )
