@@ -72,10 +72,14 @@ export default function ProcessEditor() {
   const { data: types = {}, isLoading: typesLoading } = useEnvironmentProcessTypes(localEnvironment);
   const createProcessMutation = useCreateProcess();
   const cancelProcessMutation = useCancelProcess();
-  const { data: clusters = [] } = useAvailableClusters(currentProject, {
-    cpu: `${Math.floor(cpuCores * 1000)}m`,
-    memory: `${memoryGb}Gi`,
-  });
+  // NOTE: do NOT key this query on the current cpu/memory slider values. The returned
+  // clusters (and their single-node max_cpu_cores/max_memory_gb, which the sliders bind to)
+  // do not depend on the request — get_allowed_clusters ignores resource_requests and the
+  // billing select_clusters hook filters purely by contract plan. Keying on the slider value
+  // refetched on every drag, briefly emptying `clusters` so the slider max collapsed to its
+  // fallback and snapped back — making the sliders jump. Submit-time validation still enforces
+  // the real per-cluster limits.
+  const { data: clusters = [] } = useAvailableClusters(currentProject);
   const addVersionTagMutation = useAddVersionTag();
   const selectedCluster = clusters.find(c => c.id === clusterId) ?? clusters[0] ?? null;
   const maxCpu = selectedCluster?.max_cpu_cores ?? 8;
