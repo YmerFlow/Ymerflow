@@ -34,6 +34,17 @@ const cleanFormData = (data) => {
   return clean(data);
 };
 
+// The environments list from the backend is unordered, so "newest" is derived
+// from created_at. Returns the id of the most recently created environment, or
+// null if the list is empty.
+const newestEnvironmentId = (environments) => {
+  if (!environments || environments.length === 0) return null;
+  const latest = environments.reduce(
+    (a, b) => (new Date(b.created_at) > new Date(a.created_at) ? b : a)
+  );
+  return latest.id;
+};
+
 export default function ProcessEditor() {
   const {
     processes, activeProcess, setActiveProcess, invalidateProject,
@@ -48,7 +59,7 @@ export default function ProcessEditor() {
   const isExisting = !!process && !!versionObj;
 
   const [processName, setProcessName] = useState("");
-  const [localEnvironment, setLocalEnvironment] = useState(selectedEnvironment || null);
+  const [localEnvironment, setLocalEnvironment] = useState(newestEnvironmentId(environments) || selectedEnvironment || null);
   const [localType, setLocalType] = useState(null);
   const [formData, setFormData] = useState({});
   const [selectedTags, setSelectedTags] = useState([]);
@@ -100,7 +111,8 @@ export default function ProcessEditor() {
       setLocalEnvironment(newProcessDefaults.environmentId ?? null);
       setLocalType(newProcessDefaults.type ?? null);   // e.g. 'import_skytem'
     } else {
-      setLocalEnvironment(selectedEnvironment || null);
+      // No existing config: default to the newest available environment.
+      setLocalEnvironment(newestEnvironmentId(environments) || selectedEnvironment || null);
       setLocalType(null);
     }
     setFormData({});
@@ -110,6 +122,15 @@ export default function ProcessEditor() {
     setDeadlineMinutes(60);
     setClusterId(null);
   }, [newProcessToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // No existing config being edited: once environments load, default to the
+  // newest one (mirrors the "Process > Create" default). Only runs when there
+  // is no active process and nothing has been selected yet.
+  useEffect(() => {
+    if (activeProcess || localEnvironment) return;
+    const newest = newestEnvironmentId(environments);
+    if (newest) setLocalEnvironment(newest);
+  }, [environments, activeProcess, localEnvironment]);
 
   // Sync all state from process data when active process/version changes
   useEffect(() => {
