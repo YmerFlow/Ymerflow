@@ -346,7 +346,13 @@ export async function getEnvironmentProcessTypes(environmentId) {
 }
 
 export async function getProcesses(projectId) {
-  const response = await apiClient.get(`/projects/${projectId}/processes`);
+  // verbose=true: the frontend (FlowView etc.) needs the full per-version payload
+  // (parameters, outputs, …). The endpoint defaults to a terse summary for MCP callers;
+  // this hidden flag opts back into the historical full shape. See
+  // docs/plans/done/mcp-terse-process-tools.md.
+  const response = await apiClient.get(`/projects/${projectId}/processes`, {
+    params: { verbose: true },
+  });
   return response.data;
 }
 
@@ -573,7 +579,12 @@ export async function upgradePlugin(pluginId) {
 
 // Fetch a single process (used to poll a build to completion).
 export async function getProcess(processId, projectId) {
-  const response = await apiClient.get(`/projects/${projectId}/process/${processId}`);
+  // verbose=true: opt back into the full per-version payload (see getProcesses above and
+  // docs/plans/done/mcp-terse-process-tools.md). Without it the endpoint returns the terse
+  // MCP summary shape (version rows, no parameters/outputs).
+  const response = await apiClient.get(`/projects/${projectId}/process/${processId}`, {
+    params: { verbose: true },
+  });
   return response.data;
 }
 

@@ -147,10 +147,17 @@ mcp = FastApiMCP(
         "-H 'Content-Type: application/octet-stream' --data-binary @path "
         "'/projects/{project_id}/upload?filename=path' for large files.\n"
         "4. create_process(project_id, ...) — submit a job; save the returned id and version number.\n"
-        "5. get_process(project_id, process_id) — poll until versions[-1].state is 'done' or 'failed'.\n"
-        "6. get_dataset(project_id, dataset_id) — resolve output URLs from versions[-1].outputs.\n"
-        "7. curl '{url}' — download results; /files/ URLs need no authentication.\n"
-        "Use describe_dataset before downloading to check columns, record counts, and bbox."
+        "5. get_process(project_id, process_id) — returns the process plus short version rows; "
+        "poll until versions[-1].state is 'done' or 'failed'. (list_processes gives one short row "
+        "per process; get_process drills into one process's versions.)\n"
+        "6. get_process_version(project_id, process_id[, version]) — full detail (parameters, "
+        "resources, cluster) for one version, defaulting to the latest. "
+        "get_process_version_outputs(project_id, process_id[, version]) — that version's output "
+        "dataset URLs (also defaults to latest).\n"
+        "7. get_dataset(project_id, dataset_id) — resolve each output URL to its downloadable file "
+        "'url' (extract the dataset id — the last path segment — from an outputs URL).\n"
+        "8. curl '{url}' — download results; /files/ URLs need no authentication.\n"
+        "Use get_dataset before downloading to check columns, record counts, and bbox."
     ),
     include_tags=["ProjectDiscovery", "Processes", "Datasets", "Environments", "Uploads", "Workspaces"],
 )

@@ -89,7 +89,7 @@ async def _stream_upload(request: Request, project_id: str, upload_id: str, file
     return await _create_upload_record(project_id, upload_id, filename, content_type, file_url, db)
 
 
-@router.post("/projects/{project_id}/upload", summary="Upload a raw input file")
+@router.post("/projects/{project_id}/upload", operation_id="upload_file", summary="Upload a raw input file")
 async def upload_file(
     request: Request,
     project: Project = Depends(require_project_member),
@@ -151,7 +151,7 @@ async def upload_file(
     return await _stream_upload(request, project.id, upload_id, filename, mime, db)
 
 
-@router.post("/upload/request-token", summary="Request a short-lived upload token for large file uploads")
+@router.post("/upload/request-token", operation_id="request_upload_token", summary="Request a short-lived upload token for large file uploads")
 async def request_upload_token(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)

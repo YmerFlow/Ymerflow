@@ -14,7 +14,7 @@ from backend.services.storage_service import get_fsspec_storage_options
 router = APIRouter(tags=["Datasets"])
 
 
-@router.get("/projects/{project_id}/datasets", summary="Search for output datasets")
+@router.get("/projects/{project_id}/datasets", operation_id="search_datasets", summary="Search for output datasets")
 async def search_datasets(
     search: str = "",
     completed_only: bool = True,
@@ -63,7 +63,7 @@ async def search_datasets(
     return [d.to_dict() for d in datasets]
 
 
-@router.get("/projects/{project_id}/dataset/{dataset_id}", summary="Get dataset metadata")
+@router.get("/projects/{project_id}/dataset/{dataset_id}", operation_id="get_dataset", summary="Get dataset metadata")
 async def get_dataset(
     dataset_id: str,
     access: ProjectReadAccess = Depends(resolve_project_for_read),

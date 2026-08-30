@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_QUEUE_LIMITS = {"max_cpu_cores": 8.0, "max_memory_gb": 32.0}
 
 
-@router.get("/projects/{project_id}/utilities/available-clusters", tags=["Processes"])
+@router.get("/projects/{project_id}/utilities/available-clusters", operation_id="available_clusters", tags=["Processes"])
 async def available_clusters(
     cpu: Optional[str] = None,
     memory: Optional[str] = None,

@@ -87,18 +87,52 @@ class Process(Base):
     versions = relationship("ProcessVersion", back_populates="process", cascade="all, delete-orphan", order_by="ProcessVersion.version")
     logs = relationship("ProcessLog", back_populates="process", cascade="all, delete-orphan")
 
-    def to_dict(self):
-        """Convert to API response format"""
-        return {
+    def to_dict(self, verbose: bool = False, include_versions: bool = False):
+        """Convert to API response format.
+
+        `verbose` controls caller-aware verbosity (see docs/plans/done/
+        mcp-terse-process-tools.md):
+
+        - verbose=True (frontend, ?verbose=true) — the full payload: every version
+          serialized with full parameters/outputs/etc. This reproduces the historical
+          shape exactly.
+        - verbose=False (MCP/terse, the default):
+            - include_versions=False (list_processes rows): a single short row per
+              process — {id, name, type, latest_version, latest_state, n_versions}.
+            - include_versions=True (get_process overview): the process plus its
+              version-summary rows — {id, name, type, latest_version, latest_state,
+              versions: [version rows]} (no parameters).
+
+        `type`/`latest_state` are per-version fields read from the latest (highest)
+        version, since type/environment moved off Process onto ProcessVersion.
+        """
+        sorted_versions = sorted(self.versions, key=lambda x: x.version)
+
+        if verbose:
+            return {
+                "id": self.id,
+                "name": self.name,
+                # `type` and `environment` are per-version — read them from a version entry
+                # (typically versions[-1] for the "current" type/environment).
+                "project_id": self.project_id,
+                "flow_x": self.flow_x,
+                "flow_y": self.flow_y,
+                "versions": [v.to_dict(self.project_id, verbose=True) for v in sorted_versions]
+            }
+
+        latest = sorted_versions[-1] if sorted_versions else None
+        result = {
             "id": self.id,
             "name": self.name,
-            # `type` and `environment` are per-version — read them from a version entry
-            # (typically versions[-1] for the "current" type/environment).
-            "project_id": self.project_id,
-            "flow_x": self.flow_x,
-            "flow_y": self.flow_y,
-            "versions": [v.to_dict(self.project_id) for v in sorted(self.versions, key=lambda x: x.version)]
+            "type": latest.type if latest else None,
+            "latest_version": latest.version if latest else None,
+            "latest_state": latest.state.value if latest else None,
         }
+        if include_versions:
+            result["versions"] = [v.to_dict(self.project_id, verbose=False) for v in sorted_versions]
+        else:
+            result["n_versions"] = len(sorted_versions)
+        return result
 
     @staticmethod
     def extract_dependencies(params: Dict[str, Any]) -> list:
@@ -350,32 +384,59 @@ class ProcessVersion(Base):
         UniqueConstraint('process_id', 'version', name='uq_process_version'),
     )
 
-    def to_dict(self, project_id: str):
+    def build_outputs(self, project_id: str) -> dict:
+        """Build the {output_name: /projects/{id}/dataset/{id} URL} map for this version.
+
+        Factored out of to_dict so the terse get_process_version_outputs endpoint can
+        reuse it. Requires self.datasets to be eagerly loaded.
+        """
+        from backend.config import settings
+        return {
+            dataset.dataset_name: f"{settings.backend_base_url}/projects/{project_id}/dataset/{dataset.id}"
+            for dataset in self.datasets
+        }
+
+    def to_dict(self, project_id: str, verbose: bool = False):
         """Convert to API response format.
 
-        Note: Requires self.datasets, self.tags, self.cluster, and self.environment to be
-        eagerly loaded. Use selectinload(ProcessVersion.datasets), selectinload(ProcessVersion.tags),
-        selectinload(ProcessVersion.cluster), and selectinload(ProcessVersion.environment). Logs
-        are not included — use
-        GET /projects/{project_id}/process/{id}/logs for paginated log access.
+        `verbose` controls caller-aware verbosity (see docs/plans/done/
+        mcp-terse-process-tools.md):
+
+        - verbose=True (frontend) — the full version dict (unchanged historical shape).
+          Requires self.datasets, self.tags, self.cluster, and self.environment to be
+          eagerly loaded. Use selectinload(ProcessVersion.datasets),
+          selectinload(ProcessVersion.tags), selectinload(ProcessVersion.cluster), and
+          selectinload(ProcessVersion.environment).
+        - verbose=False (MCP/terse, the default) — a short version-summary row:
+          {version, type, state, started_at, completed_at, run_length, has_outputs}.
+          No parameters/outputs/dependencies/resource_requests/environment/cluster/tags.
+          Requires only self.datasets (for has_outputs).
+
+        Logs are never included — use GET /projects/{project_id}/process/{id}/logs.
 
         project_id must be passed explicitly (rather than read off self.process) to avoid
         a lazy-load on the process backref, which isn't populated by selectinload(Process.versions)
         and would raise a MissingGreenlet error in async context.
         """
-        from backend.services.storage_service import translate_urls_in_dict
-
-        parameters = translate_urls_in_dict(self.parameters, to_storage=False)
-
-        from backend.config import settings
-        outputs = {
-            dataset.dataset_name: f"{settings.backend_base_url}/projects/{project_id}/dataset/{dataset.id}"
-            for dataset in self.datasets
-        }
-
         run_length = None
         if self.started_at is not None and self.completed_at is not None:
             run_length = _iso8601_duration(self.completed_at - self.started_at)
+
+        if not verbose:
+            return {
+                "version": self.version,
+                "type": self.type,
+                "state": self.state.value,
+                "started_at": self.started_at.isoformat() if self.started_at else None,
+                "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+                "run_length": run_length,
+                "has_outputs": bool(self.datasets),
+            }
+
+        from backend.services.storage_service import translate_urls_in_dict
+
+        parameters = translate_urls_in_dict(self.parameters, to_storage=False)
+        outputs = self.build_outputs(project_id)
 
         return {
             "version": self.version,
@@ -396,6 +457,18 @@ class ProcessVersion(Base):
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "run_length": run_length,
         }
+
+    def to_detail_dict(self, project_id: str):
+        """Full single-version detail EXCEPT outputs (the get_process_version tool).
+
+        Reuses the full to_dict body minus the outputs key — outputs are fetched
+        separately via get_process_version_outputs so a version drill-down doesn't pay
+        for the dataset URL map when it isn't needed. Same eager-loading requirements as
+        to_dict(verbose=True).
+        """
+        detail = self.to_dict(project_id, verbose=True)
+        detail.pop("outputs", None)
+        return detail
 
     async def update_state(self, db: AsyncSession, new_state: ProcessState, project_id: str = None):
         """Update process state and broadcast to all state listeners

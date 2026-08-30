@@ -55,7 +55,7 @@ async def _require_workspace_member(workspace_id: str, auth: AuthContext, db: As
     return workspace
 
 
-@router.get("s")
+@router.get("s", operation_id="list_workspaces")
 async def list_workspaces(
     project_id: str,
     project: Project = Depends(require_project_member),
@@ -78,7 +78,7 @@ async def list_workspaces(
     return [w.to_dict() for w in workspaces]
 
 
-@router.get("s/public")
+@router.get("s/public", operation_id="list_public_workspaces")
 async def list_public_workspaces(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -98,7 +98,7 @@ async def list_public_workspaces(
     return [w.to_dict(project_name=w.project.name if w.project else None) for w in workspaces]
 
 
-@router.get("-schema")
+@router.get("-schema", operation_id="get_workspace_schema")
 async def get_workspace_schema():
     """
     Get the JSON Schema for the full workspace layout format.
@@ -192,7 +192,7 @@ async def get_workspace_schema():
     }
 
 
-@router.get("/app-url")
+@router.get("/app-url", operation_id="get_app_url")
 def get_app_url(
     workspace_id: str,
     project_id: Optional[str] = None,
@@ -222,7 +222,7 @@ def get_app_url(
     return {"url": f"{settings.frontend_base_url}{path}"}
 
 
-@router.get("/{workspace_id}")
+@router.get("/{workspace_id}", operation_id="get_workspace")
 async def get_workspace(
     workspace_id: str,
     auth: AuthContext = Depends(get_current_user),
@@ -256,7 +256,7 @@ async def get_workspace(
     return workspace.to_dict(project_name=workspace.project.name if workspace.project else None)
 
 
-@router.post("")
+@router.post("", operation_id="create_workspace")
 async def create_workspace(
     body: Dict,
     project_id: str,
@@ -290,7 +290,7 @@ async def create_workspace(
     return await _reload_workspace_dict(ws.id, db)
 
 
-@router.post("/{workspace_id}/versions")
+@router.post("/{workspace_id}/versions", operation_id="create_workspace_version")
 async def create_workspace_version(
     workspace_id: str,
     body: Dict,
@@ -315,7 +315,7 @@ async def create_workspace_version(
     return await _reload_workspace_dict(workspace.id, db)
 
 
-@router.patch("/{workspace_id}")
+@router.patch("/{workspace_id}", operation_id="update_workspace")
 async def update_workspace(
     workspace_id: str,
     body: Dict,
@@ -347,7 +347,7 @@ async def update_workspace(
     return await _reload_workspace_dict(workspace.id, db)
 
 
-@router.post("/{workspace_id}/fork")
+@router.post("/{workspace_id}/fork", operation_id="fork_workspace")
 async def fork_workspace(
     workspace_id: str,
     body: Dict,
