@@ -228,6 +228,7 @@ class Process(Base):
         # limits via sliders bounded by GET /projects/{project_id}/utilities/available-clusters.
         from backend.models.cluster import get_allowed_clusters
         from backend.services.k8s_client import k8s_clients, _parse_cpu_cores, _parse_memory_gb
+        from backend.services.cluster_providers import get_cluster_provider
 
         allowed = await get_allowed_clusters(db, user, project_id, resource_requests)
         if not allowed:
@@ -242,16 +243,21 @@ class Process(Base):
             if cluster is None:
                 raise HTTPException(status_code=400, detail=f"Cluster {cluster_id} is not allowed for this request.")
 
-        limits = await k8s_clients.get(cluster).get_cluster_queue_limits()
-        if limits is None:
-            limits = {"max_cpu_cores": 8.0, "max_memory_gb": 32.0}
+        # A pod is atomic — it must fit on one node — so the ceiling that actually bounds a task is
+        # the cluster's single-node capacity, NOT the cluster-wide Kueue aggregate. Validating
+        # against node_capacity() rejects an unschedulable task at submit instead of admitting it
+        # on aggregate quota and letting its pod hang Unschedulable until its deadline burns. No
+        # fallback: a provider that can't report capacity raises (a real misconfiguration to fix,
+        # not a guessed ceiling). See docs/plans/done/single-node-task-size-accounting.md.
+        provider = get_cluster_provider(cluster.cluster_type)
+        limits = await provider.node_capacity(k8s_clients.get(cluster), cluster.provider_config)
 
         requested_cpu = _parse_cpu_cores(resource_requests.get("cpu", "1000m"))
         requested_memory = _parse_memory_gb(resource_requests.get("memory", "2Gi"))
         if requested_cpu > limits["max_cpu_cores"]:
-            raise HTTPException(status_code=400, detail=f"Requested CPU ({requested_cpu} cores) exceeds cluster limit ({limits['max_cpu_cores']} cores)")
+            raise HTTPException(status_code=400, detail=f"Requested CPU ({requested_cpu} cores) exceeds single-node capacity ({limits['max_cpu_cores']} cores)")
         if requested_memory > limits["max_memory_gb"]:
-            raise HTTPException(status_code=400, detail=f"Requested memory ({requested_memory} GB) exceeds cluster limit ({limits['max_memory_gb']} GB)")
+            raise HTTPException(status_code=400, detail=f"Requested memory ({requested_memory} GB) exceeds single-node capacity ({limits['max_memory_gb']} GB)")
         if cluster.max_runtime_seconds is not None and deadline_seconds > cluster.max_runtime_seconds:
             raise HTTPException(status_code=400, detail=f"Requested deadline ({deadline_seconds}s) exceeds cluster limit ({cluster.max_runtime_seconds}s)")
 

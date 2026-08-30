@@ -96,7 +96,10 @@ RBAC_ROLE_NAME = "ymerflow-backend-jobs"
 RBAC_CLUSTERROLE_NAME = "ymerflow-backend-kueue-reader"
 
 
-async def ensure_cluster_job_ready(k8s_client, namespace: str, quota_config: dict | None = None) -> None:
+async def ensure_cluster_job_ready(
+    k8s_client, namespace: str, quota_config: dict | None = None,
+    provider=None, provider_config: dict | None = None,
+) -> None:
     """Make `namespace` on whatever cluster `k8s_client` points at ready to run YmerFlow Jobs.
 
     Idempotent — safe to call repeatedly against the same cluster (e.g. on every
@@ -111,8 +114,18 @@ async def ensure_cluster_job_ready(k8s_client, namespace: str, quota_config: dic
         namespace: the YmerFlow jobs namespace to provision (`Cluster.namespace`).
         quota_config: optional explicit override of Kueue quota sizing, shaped
             `{"cpu_cores": float, "memory_gb": float}`. When omitted (the normal case), quota is
-            computed from live `list_node()` allocatable capacity, summed across every node,
-            minus a fixed headroom, floored at a 1-core/1-GiB minimum.
+            resolved in this order: the provider's `aggregate_capacity()` (its full *autoscaled*
+            ceiling, correct for a scale-to-zero pool), if a `provider` was passed and it returns
+            a value; otherwise the live `list_node()` allocatable capacity summed across every
+            present node, minus a fixed headroom, floored at a 1-core/1-GiB minimum.
+        provider: optional `ClusterProvider` for this cluster. When given (and no explicit
+            `quota_config`), its `aggregate_capacity(k8s_client, provider_config)` is consulted to
+            size the aggregate Kueue quota — so a scale-to-zero pool advertises its full autoscaled
+            aggregate instead of collapsing to the node-sum floor. A `None` return from
+            `aggregate_capacity()` means "decline," and node-sum sizing is used (correct for an
+            always-on single-node cluster).
+        provider_config: the `Cluster.provider_config` passed through to
+            `provider.aggregate_capacity()`; unused when `provider` is None.
 
     Raises:
         RuntimeError: on any provisioning failure that isn't a harmless "already exists" — a
@@ -121,6 +134,13 @@ async def ensure_cluster_job_ready(k8s_client, namespace: str, quota_config: dic
             CLAUDE.md's "never swallow errors" rule).
     """
     await k8s_client._ensure_initialized()
+
+    # Prefer the provider's autoscaled aggregate ceiling over summing currently-present nodes, so
+    # a scale-to-zero pool advertises its full aggregate rather than collapsing to the 1/1 floor.
+    # aggregate_capacity() returning None is a legitimate "decline, use node-sum" (the always-on
+    # single-node case), distinct from node_capacity()'s never-decline contract.
+    if quota_config is None and provider is not None:
+        quota_config = await provider.aggregate_capacity(k8s_client, provider_config or {})
 
     await _ensure_namespace(k8s_client, namespace)
     await _ensure_kueue_installed_and_ready(k8s_client)

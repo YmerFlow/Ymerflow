@@ -58,6 +58,69 @@ class ClusterProvider:
         decision 1."""
         raise NotImplementedError
 
+    async def node_capacity(self, k8s_client, provider_config: dict) -> dict:
+        """Return the largest single pod this cluster's jobs pool could ever admit, as
+        `{"max_cpu_cores": float, "max_memory_gb": float}`.
+
+        A Kubernetes pod is atomic — it must fit on **one** node — so this is deliberately
+        one node's allocatable capacity, never a sum/aggregate across nodes. It is exactly the
+        per-task ceiling the process editor's CPU/RAM sliders bind to and that submit-time
+        validation enforces (`backend/models/process.py`); a task larger than this can never be
+        scheduled and is rejected at submit rather than hanging unschedulable until its deadline.
+
+        Default implementation reads live nodes (`list_node()`) and returns the **max** (never the
+        sum) of their `status.allocatable`. This covers every always-on cluster type
+        (`same-as-backend`/minikube, which always have ≥1 live node) with no per-provider work.
+
+        A **scale-to-zero** provider (GKE/AKS node pool that may have zero nodes at query time)
+        MUST override this to return the single-node allocatable derived from its machine type /
+        VM SKU in `provider_config` — the same figure it uses to size its aggregate quota — since
+        the default path finds no nodes to read. There is deliberately **no** fallback default: a
+        provider that cannot answer **raises**, surfacing a real misconfiguration loudly rather
+        than serving a guessed ceiling (CLAUDE.md rule 8). This method must never return `None`
+        and never decline."""
+        await k8s_client._ensure_initialized()
+        from backend.services.k8s_client import (
+            API_REQUEST_TIMEOUT_SECONDS, _parse_cpu_cores, _parse_memory_gb,
+        )
+        nodes = await k8s_client.core_api.list_node(_request_timeout=API_REQUEST_TIMEOUT_SECONDS)
+        cpu_values = []
+        memory_values = []
+        for node in nodes.items:
+            allocatable = node.status.allocatable or {}
+            if "cpu" in allocatable:
+                cpu_values.append(_parse_cpu_cores(allocatable["cpu"]))
+            if "memory" in allocatable:
+                memory_values.append(_parse_memory_gb(allocatable["memory"]))
+        if not cpu_values or not memory_values:
+            raise RuntimeError(
+                f"{type(self).__name__}.node_capacity() found no nodes with readable allocatable "
+                f"capacity (namespace={k8s_client.namespace!r}). An always-on cluster should have "
+                f"≥1 live node; a scale-to-zero cluster type must override node_capacity() to report "
+                f"its SKU/machine-type capacity from provider_config instead of reading live nodes."
+            )
+        return {"max_cpu_cores": max(cpu_values), "max_memory_gb": max(memory_values)}
+
+    async def aggregate_capacity(self, k8s_client, provider_config: dict) -> dict | None:
+        """Return the cluster-wide **autoscaled** quota ceiling used to size the Kueue
+        `ClusterQueue` `nominalQuota`, shaped `{"cpu_cores": float, "memory_gb": float}` (the
+        `quota_config` shape `ensure_cluster_job_ready()` consumes), or `None` to decline.
+
+        This is the aggregate across the pool's full autoscaled node count (e.g.
+        `node_capacity × max_count`), so many small tasks can queue and drive the autoscaler up —
+        it is NOT a single-node figure. Returning `None` (the default) means "decline: fall
+        through to node-sum aggregate sizing," which is correct for an always-on single-node
+        cluster where the sum of present nodes already is the full ceiling.
+
+        A **scale-to-zero** provider SHOULD override this to return its full autoscaled aggregate,
+        otherwise its `ClusterQueue` collapses to the 1-core/1-GiB floor when zero nodes are
+        present (nothing can be admitted → the autoscaler never triggers → deadlock).
+
+        Unlike `node_capacity()`, `None` here is a legitimate, meaningful return (decline), not a
+        failure; a provider that genuinely fails to compute an aggregate it intended to supply
+        should **raise**, not return `None`."""
+        return None
+
     async def test_connection(self, provider_config: dict) -> None:
         """Raise a clear exception if this config can't actually reach a cluster.
         Default: resolve a client via connect(), then a cheap, timeout-bounded

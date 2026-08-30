@@ -220,7 +220,7 @@ Persist the FlowView canvas position for a process node, so the layout is rememb
 ### `available_clusters`
 `GET /projects/{project_id}/utilities/available-clusters`
 
-Return the clusters the current user may run a process on, each with live CPU/memory limits (read from the cluster's Kueue `ClusterQueue`) and its `max_runtime_seconds` ceiling (`null` = unbounded). Call this before `create_process` to discover valid cluster IDs and size `resource_requests`/`deadline_seconds` within the selected cluster's limits. Sorted by `sort_order`, the same order the value should be presented in.
+Return the clusters the current user may run a process on, each with live CPU/memory limits and its `max_runtime_seconds` ceiling (`null` = unbounded). Two distinct limits are returned per cluster, because a pod is atomic (it must fit on one node): `max_cpu_cores`/`max_memory_gb` are the **single-node** capacity — the ceiling a single task's `resource_requests` must stay within, and what `create_process` enforces — while `aggregate_max_cpu_cores`/`aggregate_max_memory_gb` are the cluster-wide autoscaled ceiling (read from the Kueue `ClusterQueue`, informational only). Size `resource_requests` against `max_cpu_cores`/`max_memory_gb`, not the aggregate. Call this before `create_process` to discover valid cluster IDs. Sorted by `sort_order`, the same order the value should be presented in.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -229,7 +229,7 @@ Return the clusters the current user may run a process on, each with live CPU/me
 | `memory` | string | No | Memory request to check allowance for, e.g. `"16Gi"`. |
 | `deadline_seconds` | integer | No | Accepted but currently unused server-side — only `cpu`/`memory` affect which clusters are returned. |
 
-**Returns:** Array of cluster objects — `{id, name, namespace, created_at, sort_order, active, max_runtime_seconds, provisioning_status, max_cpu_cores, max_memory_gb}`.
+**Returns:** Array of cluster objects — `{id, name, namespace, created_at, sort_order, active, max_runtime_seconds, provisioning_status, max_cpu_cores, max_memory_gb, aggregate_max_cpu_cores, aggregate_max_memory_gb}`. `max_cpu_cores`/`max_memory_gb` are single-node (per-task) capacity; `aggregate_max_*` are the cluster-wide autoscaled ceiling (informational).
 
 ---
 

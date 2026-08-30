@@ -151,7 +151,10 @@ async def admin_create_cluster(body: Dict, auth=Depends(require_admin), db: Asyn
         try:
             provider = get_cluster_provider(cluster.cluster_type)
             k8s_client = provider.connect(cluster.provider_config, cluster.namespace)
-            await ensure_cluster_job_ready(k8s_client, cluster.namespace)
+            await ensure_cluster_job_ready(
+                k8s_client, cluster.namespace,
+                provider=provider, provider_config=cluster.provider_config,
+            )
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Job-readiness provisioning failed: {e}")
     db.add(cluster)
@@ -280,7 +283,10 @@ async def cluster_register_callback(
     # row failed, commit, raise.
     try:
         k8s_client = provider.connect(provider_config, cluster.namespace)
-        await ensure_cluster_job_ready(k8s_client, cluster.namespace)
+        await ensure_cluster_job_ready(
+            k8s_client, cluster.namespace,
+            provider=provider, provider_config=provider_config,
+        )
     except Exception as e:
         cluster.provisioning_status = "failed"
         await db.commit()

@@ -353,6 +353,20 @@ export default function ProcessEditor() {
             <input type="range" className="form-range" min="0.5" max={maxMemory} step="0.5"
               value={memoryGb} onChange={e => setMemoryGb(parseFloat(e.target.value))} />
           </div>
+          {/* A single task runs in one pod, which must fit on one node, so its ceiling is the
+              cluster's single-node capacity (maxCpu/maxMemory). Only surface the aggregate when it
+              actually differs — on a single-node cluster the two numbers are equal and the split
+              would just be confusing. */}
+          {selectedCluster
+            && selectedCluster.aggregate_max_cpu_cores != null
+            && (selectedCluster.aggregate_max_cpu_cores !== maxCpu
+              || selectedCluster.aggregate_max_memory_gb !== maxMemory) && (
+            <div className="mb-3 text-muted small">
+              A single task can request at most <strong>{maxCpu}</strong> cores / <strong>{maxMemory}</strong> GB
+              (one node's capacity). This cluster can queue up to <strong>{selectedCluster.aggregate_max_cpu_cores}</strong> cores
+              / <strong>{selectedCluster.aggregate_max_memory_gb}</strong> GB in total across autoscaled nodes.
+            </div>
+          )}
           <div className="mb-3">
             <label className="form-label">Deadline (minutes)</label>
             <input type="number" className="form-control" min="1" {...(maxDeadlineMinutes != null ? { max: maxDeadlineMinutes } : {})}

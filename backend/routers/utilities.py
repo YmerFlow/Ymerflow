@@ -8,6 +8,7 @@ import projnames
 
 from backend.database import get_db
 from backend.services.k8s_client import k8s_clients, classify_workload
+from backend.services.cluster_providers import get_cluster_provider
 from backend.services.auth_service import get_current_user, AuthContext, resolve_project_for_read, ProjectReadAccess
 from backend.models.cluster import get_allowed_clusters
 from backend.models.storage_backend import get_allowed_storage_backends
@@ -32,22 +33,37 @@ async def available_clusters(
 ):
     """Return the clusters the current user may run on, each with live resource limits.
 
-    Combines the select_clusters hook's allowed-cluster set with a live Kueue ClusterQueue
-    lookup per cluster (CPU/memory limits are not stored — Kueue is a hard requirement for
-    job admission, so it's always live-queryable) and the stored max_runtime_seconds ceiling.
-    Sorted by sort_order, same order the process-creation dropdown should present.
+    Two distinct ceilings are returned per cluster because a pod is atomic — it must fit on one
+    node — so the number that bounds a single task is NOT the cluster-wide aggregate:
+
+    - `max_cpu_cores` / `max_memory_gb` — the **single-node** capacity (the largest pod this
+      cluster can ever schedule), from the provider's `node_capacity()`. These are the keys the
+      editor's sliders bind to and that submit-time validation enforces. There is no fallback: a
+      provider that can't report capacity raises, surfacing a real misconfiguration.
+    - `aggregate_max_cpu_cores` / `aggregate_max_memory_gb` — the cluster-wide autoscaled ceiling,
+      from the live Kueue ClusterQueue nominalQuota (display only), falling back to
+      DEFAULT_QUEUE_LIMITS when the ClusterQueue can't be read.
+
+    Combines the select_clusters hook's allowed-cluster set with these live lookups per cluster
+    and the stored max_runtime_seconds ceiling. Sorted by sort_order, same order the
+    process-creation dropdown should present.
     """
     resource_requests = {"cpu": cpu, "memory": memory} if cpu or memory else None
     clusters = await get_allowed_clusters(db, auth.user, access.project.id, resource_requests)
     out = []
     for cluster in clusters:
-        limits = await k8s_clients.get(cluster).get_cluster_queue_limits()
-        if limits is None:
-            limits = DEFAULT_QUEUE_LIMITS
+        k8s_client = k8s_clients.get(cluster)
+        aggregate = await k8s_client.get_cluster_queue_limits()
+        if aggregate is None:
+            aggregate = DEFAULT_QUEUE_LIMITS
+        provider = get_cluster_provider(cluster.cluster_type)
+        node_cap = await provider.node_capacity(k8s_client, cluster.provider_config)
         out.append({
             **cluster.to_dict(),
-            "max_cpu_cores": limits["max_cpu_cores"],
-            "max_memory_gb": limits["max_memory_gb"],
+            "max_cpu_cores": node_cap["max_cpu_cores"],
+            "max_memory_gb": node_cap["max_memory_gb"],
+            "aggregate_max_cpu_cores": aggregate["max_cpu_cores"],
+            "aggregate_max_memory_gb": aggregate["max_memory_gb"],
         })
     return out
 
