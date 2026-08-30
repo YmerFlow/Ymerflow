@@ -67,8 +67,15 @@ if [ "${DEPLOYMENT:-}" = "production" ] && [ -z "$_ENV_CLUSTER_CONFIG_JSON" ]; t
     fi
     echo "Loading enriched backend config cached by the last deploy (${DEPLOY_CONFIG_FILE})..." >&2
     # Same axis->env-var mapping prod/runall-production.sh's Step 3 eval uses, reading the cached
-    # file instead of a fresh bootstrap result.
-    eval "$(python3 -c '
+    # file instead of a fresh bootstrap result — PLUS the app_image_version (the backend/frontend
+    # tag the deploy actually built+pushed). Exporting APP_IMAGE_VERSION here means the resolution
+    # below reuses it instead of recomputing a content-addressed tag from current (possibly drifted)
+    # code — the recomputed tag would name a backend image that was never pushed, so the db-update
+    # Job would fail with ImagePullBackOff. app_image_version is required in this mode: a file
+    # without it predates prod/runall-production.sh recording it, so re-deploy (or re-cache) once.
+    # Capture-then-eval (NOT `eval "$(...)"` directly): eval always returns 0 on empty stdout, so a
+    # direct form would swallow the python exit code below. The assignment's `|| exit 1` propagates it.
+    _DEPLOY_EXPORTS=$(python3 -c '
 import json, sys, shlex
 
 with open(sys.argv[1]) as f:
@@ -87,8 +94,18 @@ for axis, (protocol_var, config_var) in axis_map.items():
     config_json = json.dumps(entry["config"])
     lines.append(f"export {protocol_var}={shlex.quote(protocol)}")
     lines.append(f"export {config_var}={shlex.quote(config_json)}")
+app_image_version = data.get("app_image_version")
+if not app_image_version:
+    sys.stderr.write(
+        "ERROR: .deploy-config.json has no \"app_image_version\" — it predates "
+        "prod/runall-production.sh recording the backend image tag. Re-deploy (or re-cache the "
+        "file) so a standalone build uses the pushed backend image instead of recomputing a tag "
+        "that was never pushed.\n")
+    sys.exit(1)
+lines.append(f"export APP_IMAGE_VERSION={shlex.quote(app_image_version)}")
 print("\n".join(lines))
-' "${DEPLOY_CONFIG_FILE}")"
+' "${DEPLOY_CONFIG_FILE}") || exit 1
+    eval "${_DEPLOY_EXPORTS}"
 fi
 
 # ── Materialize kubeconfig: point kubectl at the resolved cluster, never the ambient context ──
@@ -100,8 +117,13 @@ env/bin/python backend/bin/yf-materialize-kubeconfig > "$KUBECONFIG_FILE"
 export KUBECONFIG="$KUBECONFIG_FILE"
 
 # Content-addressed tag for the backend/frontend images (see docs/plans/versioned-app-image-tags.md).
-# Threaded through from prod/runall-production.sh's Step 10 invocation when this script runs as
-# its subprocess; resolved directly when this script runs standalone.
+# Threaded through from prod/runall-production.sh's Step 10 invocation when this script runs as its
+# subprocess. In the STANDALONE production case it was already exported above, straight from
+# .deploy-config.json's "app_image_version" (the tag the last deploy actually built+pushed) — this
+# script builds+pushes only the RUNNER image, never the backend, so it must NOT recompute the tag
+# from current (possibly drifted) code: that would name a backend image that was never pushed and
+# the db-update Job below would fail with ImagePullBackOff. The fallback here only fires for a dev
+# build (which builds+pushes its own backend at this very tag).
 APP_IMAGE_VERSION="${APP_IMAGE_VERSION:-$(env/bin/python backend/bin/yf-resolve-app-image-tag)}"
 
 echo "=== Building YmerFlow Runner Image for ${ENV_NAME} Environment ==="

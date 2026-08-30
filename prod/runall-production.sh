@@ -159,9 +159,20 @@ BOOTSTRAP_JSON=$(PYTHONPATH=. env/bin/python backend/bin/yf-bootstrap-provision)
 # just this deploy's own resolved config, cached, not any per-provider extraction logic. Written
 # here, right after resolution, so it always reflects the config THIS deploy actually used.
 DEPLOY_CONFIG_FILE="${PROJECT_ROOT}/.deploy-config.json"
-printf '%s\n' "${BOOTSTRAP_JSON}" > "${DEPLOY_CONFIG_FILE}"
+# Merge the app image tag (APP_IMAGE_VERSION, resolved above at the top of this script — the exact
+# content-addressed tag the backend+frontend images are built+pushed under in Step 5) into the cached
+# config as a top-level "app_image_version". A standalone docker/build.sh reuses this instead of
+# recomputing the tag from current code: it builds only the RUNNER image, so a recomputed tag would
+# point at a backend image that was never pushed and its db-update Job would ImagePullBackOff.
+python3 -c '
+import json, os, sys
+data = json.loads(sys.argv[1])
+data["app_image_version"] = os.environ["APP_IMAGE_VERSION"]
+with open(sys.argv[2], "w") as f:
+    f.write(json.dumps(data) + "\n")
+' "${BOOTSTRAP_JSON}" "${DEPLOY_CONFIG_FILE}"
 chmod 600 "${DEPLOY_CONFIG_FILE}"
-echo "  Cached enriched backend config to ${DEPLOY_CONFIG_FILE} (for standalone docker/build.sh)"
+echo "  Cached enriched backend config + app image tag ${APP_IMAGE_VERSION} to ${DEPLOY_CONFIG_FILE} (for standalone docker/build.sh)"
 
 # eval runs directly in this shell (not inside a subshell) so the `export` statements it emits
 # persist here, ready for Step 7's BACKEND_SECRET_ARGS assembly below. Do NOT wrap this eval in a
