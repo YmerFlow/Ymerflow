@@ -150,6 +150,19 @@ echo ""
 echo "Step 3: Bootstrap-provisioning configured backends..."
 BOOTSTRAP_JSON=$(PYTHONPATH=. env/bin/python backend/bin/yf-bootstrap-provision)
 
+# Persist the enriched {registry,storage,cluster} config (protocol + fully-bootstrapped config for
+# each axis, incl. secrets: minikube's real kubeconfig, a GKE sa_key, the registry password, ...) to
+# a host-local, gitignored, 0600 file. A later STANDALONE `docker/build.sh <env>` — run by hand to
+# rebuild just the runner image, NOT as this script's Step 10 child — re-reads it to reach the
+# already-running cluster/registry WITHOUT re-running any bootstrap() (which would restart/resize
+# the VM, re-mint credentials, redeploy the registry, ...). Uniform across every cluster type: it is
+# just this deploy's own resolved config, cached, not any per-provider extraction logic. Written
+# here, right after resolution, so it always reflects the config THIS deploy actually used.
+DEPLOY_CONFIG_FILE="${PROJECT_ROOT}/.deploy-config.json"
+printf '%s\n' "${BOOTSTRAP_JSON}" > "${DEPLOY_CONFIG_FILE}"
+chmod 600 "${DEPLOY_CONFIG_FILE}"
+echo "  Cached enriched backend config to ${DEPLOY_CONFIG_FILE} (for standalone docker/build.sh)"
+
 # eval runs directly in this shell (not inside a subshell) so the `export` statements it emits
 # persist here, ready for Step 7's BACKEND_SECRET_ARGS assembly below. Do NOT wrap this eval in a
 # command substitution — that would run it in a subshell and silently discard the exports.

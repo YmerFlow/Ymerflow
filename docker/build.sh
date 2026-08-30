@@ -40,6 +40,57 @@ fi
 [ -n "$_ENV_STORAGE_PROTOCOL" ] && STORAGE_PROTOCOL="$_ENV_STORAGE_PROTOCOL"
 [ -n "$_ENV_STORAGE_CONFIG_JSON" ] && STORAGE_CONFIG_JSON="$_ENV_STORAGE_CONFIG_JSON"
 
+# ── Standalone: load the enriched config the last deploy cached ───────────────────────────────
+# As a child of prod/runall-production.sh (its Step 10), that script has already
+# bootstrap-provisioned every axis (its Step 3) and exported the ENRICHED
+# REGISTRY_*/CLUSTER_*/STORAGE_* config into our environment — CLUSTER_CONFIG_JSON then already
+# carries e.g. minikube's real kubeconfig, REGISTRY_CONFIG_JSON its resolved addresses/creds.
+# Run STANDALONE (`./docker/build.sh <env>` by hand to rebuild just the runner image), we only have
+# config.env's RAW pre-bootstrap values — CLUSTER_TYPE=<type> with CLUSTER_CONFIG_JSON={} and no
+# kubeconfig — so yf-materialize-kubeconfig below dies with KeyError: 'kubeconfig' (and the
+# production registry step fails likewise).
+#
+# Re-read the enriched config that Step 3 of the LAST deploy cached to .deploy-config.json (see
+# prod/runall-production.sh) and export the same env vars its own eval does. This runs NO
+# bootstrap() — it never starts/resizes/restarts the cluster, re-mints a credential, or redeploys
+# anything; it just reuses this deploy's already-resolved config, uniformly for every cluster type.
+# Guarded on an empty INHERITED _ENV_CLUSTER_CONFIG_JSON (runall always passes a non-empty, enriched
+# one), so it never runs — and never overrides live values — in the runall-child path.
+if [ "${DEPLOYMENT:-}" = "production" ] && [ -z "$_ENV_CLUSTER_CONFIG_JSON" ]; then
+    DEPLOY_CONFIG_FILE="$(pwd)/.deploy-config.json"   # pwd == project root (cd'd at top of script)
+    if [ ! -f "${DEPLOY_CONFIG_FILE}" ]; then
+        echo "ERROR: ${DEPLOY_CONFIG_FILE} not found." >&2
+        echo "  It is written by prod/runall-production.sh on each deploy and holds the enriched" >&2
+        echo "  registry/cluster config a standalone docker/build.sh needs. Run a full deploy" >&2
+        echo "  (prod/runall-production.sh) once before building a runner image standalone." >&2
+        exit 1
+    fi
+    echo "Loading enriched backend config cached by the last deploy (${DEPLOY_CONFIG_FILE})..." >&2
+    # Same axis->env-var mapping prod/runall-production.sh's Step 3 eval uses, reading the cached
+    # file instead of a fresh bootstrap result.
+    eval "$(python3 -c '
+import json, sys, shlex
+
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+axis_map = {
+    "registry": ("REGISTRY_PROTOCOL", "REGISTRY_CONFIG_JSON"),
+    "storage": ("STORAGE_PROTOCOL", "STORAGE_CONFIG_JSON"),
+    "cluster": ("CLUSTER_TYPE", "CLUSTER_CONFIG_JSON"),
+}
+lines = []
+for axis, (protocol_var, config_var) in axis_map.items():
+    if axis not in data:
+        continue
+    entry = data[axis]
+    protocol = entry["protocol"]
+    config_json = json.dumps(entry["config"])
+    lines.append(f"export {protocol_var}={shlex.quote(protocol)}")
+    lines.append(f"export {config_var}={shlex.quote(config_json)}")
+print("\n".join(lines))
+' "${DEPLOY_CONFIG_FILE}")"
+fi
+
 # ── Materialize kubeconfig: point kubectl at the resolved cluster, never the ambient context ──
 # See docs/plans/base-infrastructure-via-cluster-provider.md, Design decision 1. Cheap/harmless
 # even when this script's kubectl-using (production) branch doesn't run.

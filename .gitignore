@@ -8,6 +8,10 @@ data_storage/
 k8s/secrets/*.yaml
 k8s/kueue/*.yaml
 config.env
+# Enriched backend config (registry/storage/cluster protocol+config, incl. secrets: kubeconfig
+# tokens/certs, GKE sa_key, registry password) persisted by prod/runall-production.sh on each
+# deploy and re-read by a standalone docker/build.sh. Host-local, never committed.
+.deploy-config.json
 frontend/.env
 *.egg-info
 debug-harness/config.json
