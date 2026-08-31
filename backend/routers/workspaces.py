@@ -1,18 +1,25 @@
+import asyncio
 import urllib.parse
 import uuid
+import fsspec
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from pathlib import Path
 import json
 
 from backend.database import get_db
-from backend.models import Workspace, WorkspaceVersion, Project, ProjectMember
+from backend.models import Workspace, WorkspaceVersion, Project, ProjectMember, Process, ProcessVersion
 from backend.services.auth_service import get_current_user, require_project_member, AuthContext
+from backend.services.storage_service import get_fsspec_storage_options
 from backend.config import settings
+
+# The stats sidecar mime key inside a dataset's `parts["files"]` map. Its JSON body carries
+# the dataset's column names — see backend/routers/datasets.py get_dataset for the structure.
+_STATS_MIME = "application/vnd.ymerflow.stats+json"
 
 router = APIRouter(prefix="/workspace", tags=["Workspaces"])
 
@@ -287,6 +294,12 @@ async def get_workspace_schema(verbose: bool = Query(False, include_in_schema=Fa
     `has_params` marks widgets whose node accepts a `layoutConfig`. PlotView is the
     only widget large enough to need the two layer tools above.
 
+    Some layoutConfig fields reference live project data via an `x-format` — to enumerate
+    valid values, call the matching completion tool with the project_id: `datasetPath` →
+    `complete_dataset_path`, `processVersion` → `complete_process_version_path`, `expression`
+    → `complete_column_path`. `current` in those paths is a placeholder for the viewer's
+    selected process.
+
     Returns 503 if widget schemas have not been generated yet — run:
     `cd frontend && npm run export-schemas`
     """
@@ -335,6 +348,12 @@ async def get_widget_schema(widget: str):
     top-level layoutConfig shape but collapses its `layers` union to the list of
     layer-type names — enumerate them with list_plot_layer_types and fetch each
     layer's parameters with get_plot_layer_schema.
+
+    A field marked `x-format` references live project data — enumerate valid values with the
+    matching completion tool (pass the project_id): `datasetPath` → `complete_dataset_path`,
+    `processVersion` → `complete_process_version_path`, `expression` → `complete_column_path`
+    (PlotView's `layoutConfig.transforms` use `expression`). `current` is a placeholder for
+    the viewer's selected process.
     """
     widget_schemas = _load_widget_schemas()
 
@@ -410,6 +429,12 @@ async def get_plot_layer_schema(widget: str, layer_type: str):
     A layer is an object with a single key naming its type — e.g.
     `{"ResistivityCurtain": {...these params...}}`. Returns that inner parameter
     schema (with any `$defs` it references).
+
+    Layer params often carry an `x-format` referencing live project data (e.g.
+    `ResistivityCurtain.dataset` is `x-format: datasetPath`) — enumerate valid values with the
+    matching completion tool (pass the project_id): `datasetPath` → `complete_dataset_path`,
+    `processVersion` → `complete_process_version_path`, `expression` → `complete_column_path`.
+    `current` is a placeholder for the viewer's selected process.
     """
     widget_schemas = _load_widget_schemas()
 
@@ -434,6 +459,277 @@ async def get_plot_layer_schema(widget: str, layer_type: str):
     if defs:
         param_schema["$defs"] = defs
     return param_schema
+
+
+# ── Layout-path completion (Python peer of DatasetColumnCombobox.buildOptions) ───────────────
+#
+# Three workspace-layout string fields carry an `x-format` that the frontend turns into a
+# live-data combobox; these endpoints are the headless/MCP equivalent, so an agent building a
+# layoutConfig can enumerate valid dotted paths instead of reverse-engineering the React
+# component. The grammar stays authoritative here on the server:
+#
+#   x-format: processVersion  →  complete_process_version_path  →  "current", "<proc>.<ver>"
+#   x-format: datasetPath     →  complete_dataset_path          →  "current.<ds>", "<proc>.<ver>.<ds>"
+#   x-format: expression      →  complete_column_path           →  "current.<ds>.<col>", "<proc>.<ver>.<ds>.<col>"
+#
+# `current` is a runtime placeholder — "whichever process/version the viewer has selected."
+# The server has no such selection, so `current.*` completions are derived from a concrete
+# process (see `example_process_id`) or, by default, the union across the whole project.
+
+
+async def _load_project_processes(project_id: str, db: AsyncSession) -> List[Process]:
+    """Load a project's processes with versions → datasets eagerly loaded.
+
+    Enough for every completion tool: fully-qualified paths come from
+    version/dataset names, and column mode reads each dataset's stats sidecar.
+    """
+    stmt = (
+        select(Process)
+        .options(selectinload(Process.versions).selectinload(ProcessVersion.datasets))
+        .where(Process.project_id == project_id)
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+def _matches(path: str, prefix_lower: str) -> bool:
+    """The same case-insensitive substring filter the UI combobox applies."""
+    return not prefix_lower or prefix_lower in path.lower()
+
+
+def _sorted_versions(process: Process) -> List[ProcessVersion]:
+    return sorted(process.versions, key=lambda v: v.version)
+
+
+def _resolve_example_version(
+    processes: List[Process], example_process_id: str, version: Optional[int]
+) -> ProcessVersion:
+    """Resolve `example_process_id` (+ optional version) to a concrete ProcessVersion whose
+    outputs stand in for `current.*`. Raises 404 if the process/version isn't in the project."""
+    process = next((p for p in processes if p.id == example_process_id), None)
+    if process is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"example_process_id '{example_process_id}' not found in this project",
+        )
+    versions = _sorted_versions(process)
+    if version is not None:
+        pv = next((v for v in versions if v.version == version), None)
+    else:
+        pv = versions[-1] if versions else None
+    if pv is None:
+        raise HTTPException(status_code=404, detail="Process version not found")
+    return pv
+
+
+def _current_dataset_names(
+    processes: List[Process], example_process_id: Optional[str], version: Optional[int]
+) -> List[str]:
+    """Dataset names that back the `current.*` completions.
+
+    With `example_process_id`, these are that process version's own output dataset names
+    ("if the viewer selects a process shaped like this one"). Without it, the union of all
+    distinct dataset names across the project (broad, still useful with zero args).
+    """
+    if example_process_id is not None:
+        pv = _resolve_example_version(processes, example_process_id, version)
+        return list(dict.fromkeys(ds.dataset_name for ds in pv.datasets))
+    names = {}
+    for process in processes:
+        for ver in process.versions:
+            for ds in ver.datasets:
+                names[ds.dataset_name] = None
+    return list(names.keys())
+
+
+def _current_datasets(
+    processes: List[Process], example_process_id: Optional[str], version: Optional[int]
+):
+    """`(dataset_name, Dataset)` pairs backing `current.*` for column completion.
+
+    With `example_process_id`, the example version's datasets. Without it, one
+    representative Dataset per distinct name (the last one seen), so each `current.<ds>`
+    still resolves to a real stats sidecar to read columns from.
+    """
+    if example_process_id is not None:
+        pv = _resolve_example_version(processes, example_process_id, version)
+        return [(ds.dataset_name, ds) for ds in pv.datasets]
+    by_name = {}
+    for process in processes:
+        for ver in process.versions:
+            for ds in ver.datasets:
+                by_name[ds.dataset_name] = ds
+    return list(by_name.items())
+
+
+def _dataset_stats_url(dataset) -> Optional[str]:
+    """The raw storage URL of a dataset's stats sidecar, or None if it has none.
+
+    Uses `dataset.parts` untranslated (storage URLs) since we read it backend-side with the
+    project's admin fsspec kwargs. Only the new parts format (`{"files": {...}}`) carries stats.
+    """
+    parts = dataset.parts or {}
+    files = parts.get("files")
+    if isinstance(files, dict):
+        return files.get(_STATS_MIME)
+    return None
+
+
+async def _dataset_columns(dataset, storage_options: dict) -> List[str]:
+    """Column names for a dataset, read from its stats sidecar.
+
+    Mirrors the JS combobox's notion of "columns": XYZ → `flightlines` + `layer_data` keys,
+    MAG → `columns` keys, grid → `variables` keys (see get_dataset for the sidecar schema).
+    A dataset with no stats sidecar (e.g. old-format) yields no columns.
+    """
+    stats_url = _dataset_stats_url(dataset)
+    if not stats_url:
+        return []
+
+    def _read():
+        with fsspec.open(stats_url, "r", **storage_options) as f:
+            return json.load(f)
+
+    try:
+        stats = await asyncio.to_thread(_read)
+    except FileNotFoundError:
+        return []
+
+    cols: List[str] = []
+    for key in ("flightlines", "layer_data", "columns", "variables"):
+        section = stats.get(key)
+        if isinstance(section, dict):
+            cols.extend(section.keys())
+    return cols
+
+
+def _stats_relevant(ds_path: str, prefix_lower: str) -> bool:
+    """Whether a dataset's stats are worth reading given `prefix` (the lazy-fetch guard).
+
+    A column path is `<ds_path>.<col>`. It can match `prefix` only if the dataset path is
+    compatible with the typed prefix — either the prefix falls within the dataset path
+    (`prefix ⊆ ds_path`, so every column qualifies) or the dataset path is a leading chunk of
+    what's been typed (`ds_path ⊆ prefix`, the mid-type `current.smooth_model.rh` case). An
+    unrelated prefix skips the dataset, so a narrow prefix doesn't fan out across the project.
+    """
+    if not prefix_lower:
+        return True
+    dl = ds_path.lower()
+    return prefix_lower in dl or dl in prefix_lower
+
+
+_EXAMPLE_PROCESS_DESC = (
+    "Optional process id whose outputs stand in for the `current` placeholder — pass one to "
+    "make `current.*` mean 'if the viewer selects a process shaped like this one'. When "
+    "omitted, `current.*` is the union across the whole project."
+)
+_EXAMPLE_VERSION_DESC = "Version of `example_process_id` to use for `current.*`; defaults to its latest."
+_PREFIX_DESC = "Case-insensitive substring filter applied to each candidate path (as the UI combobox does)."
+
+
+@router.get("-schema/complete/process-version", operation_id="complete_process_version_path")
+async def complete_process_version_path(
+    prefix: str = Query("", description=_PREFIX_DESC),
+    example_process_id: Optional[str] = Query(None, description=_EXAMPLE_PROCESS_DESC),
+    version: Optional[int] = Query(None, description=_EXAMPLE_VERSION_DESC),
+    project: Project = Depends(require_project_member),
+    db: AsyncSession = Depends(get_db),
+) -> List[str]:
+    """Enumerate valid values for a workspace-layout field marked `x-format: processVersion`.
+
+    Returns the bare `current` placeholder plus every `<processName>.<version>` in the
+    project. `example_process_id`/`version` are accepted for signature parity with the other
+    completion tools but don't affect the output here — `processVersion` fields only ever take
+    the bare `current` token or a fully-qualified `<proc>.<ver>`.
+    """
+    prefix_lower = prefix.lower()
+    processes = await _load_project_processes(project.id, db)
+
+    out: List[str] = []
+    if _matches("current", prefix_lower):
+        out.append("current")
+    for process in processes:
+        for ver in _sorted_versions(process):
+            path = f"{process.name}.{ver.version}"
+            if _matches(path, prefix_lower):
+                out.append(path)
+    return out
+
+
+@router.get("-schema/complete/dataset-path", operation_id="complete_dataset_path")
+async def complete_dataset_path(
+    prefix: str = Query("", description=_PREFIX_DESC),
+    example_process_id: Optional[str] = Query(None, description=_EXAMPLE_PROCESS_DESC),
+    version: Optional[int] = Query(None, description=_EXAMPLE_VERSION_DESC),
+    project: Project = Depends(require_project_member),
+    db: AsyncSession = Depends(get_db),
+) -> List[str]:
+    """Enumerate valid values for a workspace-layout field marked `x-format: datasetPath`.
+
+    Returns `current.<datasetName>` entries plus every fully-qualified
+    `<processName>.<version>.<datasetName>`. The `current.*` set comes from
+    `example_process_id`'s outputs when given, else the union of distinct dataset names across
+    the project (see `example_process_id`). Fully-qualified entries never depend on it.
+    """
+    prefix_lower = prefix.lower()
+    processes = await _load_project_processes(project.id, db)
+
+    out: List[str] = []
+    for ds_name in _current_dataset_names(processes, example_process_id, version):
+        path = f"current.{ds_name}"
+        if _matches(path, prefix_lower):
+            out.append(path)
+    for process in processes:
+        for ver in _sorted_versions(process):
+            for ds in ver.datasets:
+                path = f"{process.name}.{ver.version}.{ds.dataset_name}"
+                if _matches(path, prefix_lower):
+                    out.append(path)
+    return out
+
+
+@router.get("-schema/complete/column-path", operation_id="complete_column_path")
+async def complete_column_path(
+    prefix: str = Query("", description=_PREFIX_DESC),
+    example_process_id: Optional[str] = Query(None, description=_EXAMPLE_PROCESS_DESC),
+    version: Optional[int] = Query(None, description=_EXAMPLE_VERSION_DESC),
+    project: Project = Depends(require_project_member),
+    db: AsyncSession = Depends(get_db),
+) -> List[str]:
+    """Enumerate valid values for a workspace-layout field marked `x-format: expression`.
+
+    Returns `current.<datasetName>.<column>` and `<processName>.<version>.<datasetName>.<column>`
+    entries. Column names come from each dataset's stats sidecar (XYZ flightlines + layer_data,
+    MAG columns, grid variables). The `current.*` set follows `example_process_id` as in
+    `complete_dataset_path`. Sidecars are read lazily — only for datasets whose path is
+    compatible with `prefix` — so a narrow prefix stays cheap.
+    """
+    prefix_lower = prefix.lower()
+    processes = await _load_project_processes(project.id, db)
+    storage_options = await get_fsspec_storage_options(db, project.id)
+
+    out: List[str] = []
+
+    for ds_name, ds in _current_datasets(processes, example_process_id, version):
+        ds_path = f"current.{ds_name}"
+        if not _stats_relevant(ds_path, prefix_lower):
+            continue
+        for col in await _dataset_columns(ds, storage_options):
+            path = f"{ds_path}.{col}"
+            if _matches(path, prefix_lower):
+                out.append(path)
+
+    for process in processes:
+        for ver in _sorted_versions(process):
+            for ds in ver.datasets:
+                ds_path = f"{process.name}.{ver.version}.{ds.dataset_name}"
+                if not _stats_relevant(ds_path, prefix_lower):
+                    continue
+                for col in await _dataset_columns(ds, storage_options):
+                    path = f"{ds_path}.{col}"
+                    if _matches(path, prefix_lower):
+                        out.append(path)
+    return out
 
 
 @router.get("/app-url", operation_id="get_app_url")
@@ -515,6 +811,11 @@ async def create_workspace(
     object. Discover valid widget types with `get_workspace_schema`, then drill in
     with `get_widget_schema` (and, for PlotView, `list_plot_layer_types` /
     `get_plot_layer_schema`) before constructing the layout.
+
+    When a layoutConfig field carries an `x-format`, enumerate valid values with the matching
+    completion tool (pass the project_id): `datasetPath` → `complete_dataset_path`,
+    `processVersion` → `complete_process_version_path`, `expression` → `complete_column_path`.
+    `current` in those paths is a placeholder for the viewer's selected process.
 
     Returns the created workspace including its generated `id`.
     """
