@@ -181,6 +181,14 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
   const [selectedVersions, setSelectedVersions] = useState({});
 
   const selectedFilterTagIds = useMemo(() => new Set(savedFilterTagIds), [savedFilterTagIds]);
+  // Stable-by-value key for the active filter. Used in the layout effect deps
+  // instead of the Set itself: the Set gets a fresh identity every render (the
+  // `= []` default prop churns), but this string compares equal across renders,
+  // so it doesn't trigger a re-run/flicker loop.
+  const filterKey = useMemo(
+    () => [...selectedFilterTagIds].sort().join(','),
+    [selectedFilterTagIds]
+  );
 
   const { data: projectTags = [] } = useProjectTags(currentProject);
 
@@ -332,7 +340,6 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
 
     // Detect a change of the active tag filter so we can re-fit the view to
     // whatever is now visible (so the user never gets "lost" off-screen).
-    const filterKey = [...selectedFilterTagIds].sort().join(',');
     const filterChanged = prevFilterKeyRef.current !== null && prevFilterKeyRef.current !== filterKey;
     prevFilterKeyRef.current = filterKey;
 
@@ -429,7 +436,7 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
       // out far enough to fit large graphs.
       setTimeout(() => rfInstanceRef.current?.fitView({ padding: 0.2, duration: 300, minZoom: 0.05 }), 50);
     }
-  }, [processes, visibleProcessIds, visibleVersions, selectedVersions, selectedFilterTagIds, calculateDepths, handleVersionChange, handleNodeClick, activeProcess, setNodes, setEdges, getProcessStructure]);
+  }, [processes, visibleProcessIds, visibleVersions, selectedVersions, filterKey, calculateDepths, handleVersionChange, handleNodeClick, activeProcess, setNodes, setEdges, getProcessStructure]);
 
   return (
     <div style={{ width: "100%", height: isMobile ? "70vh" : "100%", position: "relative", display: "flex", flexDirection: "column" }}>
