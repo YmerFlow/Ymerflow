@@ -233,7 +233,7 @@ async def cluster_queues(
     return out
 
 
-@router.get("/utilities/available-storage-backends")
+@router.get("/utilities/available-storage-backends", operation_id="list_storage_backends", tags=["Projects"])
 async def available_storage_backends(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

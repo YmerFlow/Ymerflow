@@ -11,6 +11,7 @@ import logging
 
 from backend.database import get_db, async_session_maker
 from backend.models import Project, ProjectMember, ProjectInvite, User, Publication, Upload, Process
+from backend.models.api_key import api_key_projects
 from backend.models.storage_backend import get_allowed_storage_backends
 from backend.models.project_export import ProjectExport, ProjectImport
 from backend.services.auth_service import get_current_user, get_current_user_optional, require_project_member, AuthContext
@@ -21,7 +22,7 @@ from backend.services.project_import_service import run_import
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/projects", tags=["Projects"])
+router = APIRouter(prefix="/projects", tags=["ProjectManagement"])
 
 
 async def _setup_storage_background(project_id: str, force: bool = False):
@@ -40,7 +41,7 @@ async def _setup_storage_background(project_id: str, force: bool = False):
             await db.commit()
 
 
-@router.get("", operation_id="list_projects", summary="List accessible projects", tags=["ProjectDiscovery"])
+@router.get("", operation_id="list_projects", summary="List accessible projects", tags=["Projects"])
 async def list_projects(
     viewing_id: Optional[str] = None,
     auth: AuthContext | None = Depends(get_current_user_optional),
@@ -56,7 +57,8 @@ async def list_projects(
     findable).
 
     When authenticated via API key, own projects are restricted to the key's scoped
-    project. When unauthenticated, own projects and other findable publications are
+    set of projects (possibly empty — a fresh key sees none of its own until it calls
+    create_project). When unauthenticated, own projects and other findable publications are
     omitted entirely — only 'viewing_id' (if it resolves to a valid, anonymous-allowed
     publication) is returned, as a single-entry list.
     """
@@ -70,9 +72,11 @@ async def list_projects(
             .where(ProjectMember.user_id == auth.user.id)
             .order_by(Project.created_at)
         )
-        # When authenticated via API key, restrict to the key's scoped project
-        if auth.api_key_project_id is not None:
-            stmt = stmt.where(Project.id == auth.api_key_project_id)
+        # When authenticated via API key, restrict to the key's scoped projects.
+        # An empty set yields IN () → no rows: a zero-project key sees nothing of
+        # its own until it creates a project.
+        if auth.api_key_project_ids is not None:
+            stmt = stmt.where(Project.id.in_(auth.api_key_project_ids))
         result = await db.execute(stmt)
         own_projects = [p.to_dict() for p in result.scalars().all()]
         combined_ids = {p["id"] for p in own_projects}
@@ -126,7 +130,7 @@ async def list_projects(
     return result_list
 
 
-@router.post("", summary="Create a new project")
+@router.post("", operation_id="create_project", summary="Create a new project", tags=["Projects"])
 async def create_project(
     project: Dict,
     auth: AuthContext = Depends(get_current_user),
@@ -135,19 +139,32 @@ async def create_project(
     """Create a new project and provision its storage bucket.
 
     Body: { "name": "My Project", "storage_backend_id": "<id>" }. storage_backend_id is
-    required — call GET /utilities/available-storage-backends first to get the allowed set.
+    optional: if omitted and exactly one backend is allowed, that one is used; if several
+    are allowed, the call returns 400 whose detail lists the allowed backends
+    ({id, name}) so you can pick one. list_storage_backends() also returns the set.
+
+    When called with an API key, the new project is auto-added to that key's scope, so
+    a fresh (zero-project) key can bootstrap itself by calling create_project first.
 
     Returns the new project record including its id. Storage setup runs
     asynchronously; the project is immediately usable for submitting jobs.
     """
-    storage_backend_id = project.get("storage_backend_id")
-    if not storage_backend_id:
-        raise HTTPException(status_code=400, detail="storage_backend_id is required")
-
     allowed = await get_allowed_storage_backends(db, auth.user)
-    backend = next((b for b in allowed if b.id == storage_backend_id), None)
-    if backend is None:
-        raise HTTPException(status_code=400, detail=f"Storage backend {storage_backend_id} is not allowed for this request.")
+    storage_backend_id = project.get("storage_backend_id")
+
+    if storage_backend_id:
+        backend = next((b for b in allowed if b.id == storage_backend_id), None)
+        if backend is None:
+            raise HTTPException(status_code=400, detail=f"Storage backend {storage_backend_id} is not allowed for this request.")
+    elif len(allowed) == 1:
+        backend = allowed[0]
+    elif len(allowed) == 0:
+        raise HTTPException(status_code=400, detail="No storage backend is available for this request.")
+    else:
+        raise HTTPException(status_code=400, detail={
+            "message": "storage_backend_id is required — several backends are allowed. Pass one of the ids below.",
+            "available_backends": [{"id": b.id, "name": b.name} for b in allowed],
+        })
 
     project_id = str(uuid.uuid4())
     proj = Project(
@@ -166,6 +183,15 @@ async def create_project(
         joined_at=datetime.utcnow()
     )
     db.add(member)
+
+    # Auto-add the new project into the calling API key's scope. Because every MCP call
+    # is a fresh HTTP request with fresh auth, no in-memory AuthContext mutation is needed
+    # — the next tool call re-reads the key's projects and sees this one.
+    if auth.api_key_id is not None:
+        await db.execute(
+            api_key_projects.insert().values(api_key_id=auth.api_key_id, project_id=project_id)
+        )
+
     await db.commit()
     await db.refresh(proj)
 

@@ -52,7 +52,7 @@ function McpConfigCard({ apiKeys }) {
     <div>
       <h6 className="mb-2">MCP Server</h6>
       <p className="text-muted small mb-3">
-        Connect AI tools (Claude Code, opencode) to this project using the Model Context Protocol.
+        Connect AI tools (Claude Code, opencode) to your projects using the Model Context Protocol.
       </p>
 
       {/* URL row */}
@@ -123,6 +123,9 @@ export default function AccountPage() {
   const createKeyMutation = useCreateApiKey();
   const deleteKeyMutation = useDeleteApiKey();
   const { data: projects = [] } = useProjects();
+  // Only real projects the user is a member of are eligible to scope a key onto —
+  // read-only publication entries (read_only:true) are excluded.
+  const selectableProjects = projects.filter(p => !p.read_only);
 
   const [preferences, setPreferences] = useState({});
   const [email, setEmail] = useState('');
@@ -130,7 +133,7 @@ export default function AccountPage() {
 
   // New key form state
   const [newKeyLabel, setNewKeyLabel] = useState('');
-  const [newKeyProject, setNewKeyProject] = useState('');
+  const [newKeyProjects, setNewKeyProjects] = useState([]);  // subset of member projects; empty is valid
   const [newKeyExpiry, setNewKeyExpiry] = useState('');
   const [keyCreateError, setKeyCreateError] = useState('');
 
@@ -150,11 +153,6 @@ export default function AccountPage() {
     }
   }, [accountData]);
 
-  useEffect(() => {
-    if (projects.length > 0 && !newKeyProject) {
-      setNewKeyProject(projects[0].id);
-    }
-  }, [projects]);
 
   const handleSaveProfile = async () => {
     try {
@@ -179,17 +177,17 @@ export default function AccountPage() {
     e.preventDefault();
     setKeyCreateError('');
     if (!newKeyLabel.trim()) { setKeyCreateError('Label is required'); return; }
-    if (!newKeyProject) { setKeyCreateError('Project is required'); return; }
     try {
       const result = await createKeyMutation.mutateAsync({
         label: newKeyLabel.trim(),
-        projectId: newKeyProject,
+        projectIds: newKeyProjects,
         expiresAt: newKeyExpiry || null,
       });
       setRevealedKey(result.key);
       setCopiedKey(false);
       setCopiedFullConfig(false);
       setNewKeyLabel('');
+      setNewKeyProjects([]);
       setNewKeyExpiry('');
     } catch (err) {
       setKeyCreateError(err?.response?.data?.detail || 'Failed to create API key');
@@ -283,7 +281,7 @@ export default function AccountPage() {
           <Card.Body>
             <Card.Title>API Keys</Card.Title>
             <p className="text-muted small">
-              API keys grant programmatic access scoped to a single project. Treat them like passwords.
+              API keys grant programmatic access scoped to a set of your projects. Treat them like passwords.
             </p>
 
             {/* Create new key form */}
@@ -302,17 +300,35 @@ export default function AccountPage() {
                   />
                 </Form.Group>
                 <Form.Group>
-                  <Form.Label className="small mb-1">Project</Form.Label>
-                  <Form.Select
-                    size="sm"
-                    value={newKeyProject}
-                    onChange={e => setNewKeyProject(e.target.value)}
-                    style={{ width: 200 }}
+                  <Form.Label className="small mb-1">Projects</Form.Label>
+                  <div
+                    className="border rounded bg-white p-2"
+                    style={{ width: 220, maxHeight: 140, overflowY: 'auto' }}
                   >
-                    {projects.map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </Form.Select>
+                    {selectableProjects.length === 0 ? (
+                      <span className="text-muted small">No projects yet</span>
+                    ) : (
+                      selectableProjects.map(p => (
+                        <Form.Check
+                          key={p.id}
+                          type="checkbox"
+                          id={`newkey-project-${p.id}`}
+                          label={p.name}
+                          className="small"
+                          checked={newKeyProjects.includes(p.id)}
+                          onChange={e => setNewKeyProjects(prev =>
+                            e.target.checked
+                              ? [...prev, p.id]
+                              : prev.filter(id => id !== p.id)
+                          )}
+                        />
+                      ))
+                    )}
+                  </div>
+                  <Form.Text className="text-muted">
+                    Selecting none is valid — the key can then only list or create projects
+                    until it creates one.
+                  </Form.Text>
                 </Form.Group>
                 <Form.Group>
                   <Form.Label className="small mb-1">Expires (optional)</Form.Label>
@@ -340,7 +356,7 @@ export default function AccountPage() {
                 <thead>
                   <tr>
                     <th>Label</th>
-                    <th>Project</th>
+                    <th>Projects</th>
                     <th>Created</th>
                     <th>Expires</th>
                     <th>Last used</th>
@@ -353,7 +369,11 @@ export default function AccountPage() {
                     return (
                       <tr key={k.id}>
                         <td>{k.label}</td>
-                        <td>{k.project_name || k.project_id}</td>
+                        <td>
+                          {k.projects && k.projects.length > 0
+                            ? k.projects.map(p => p.name).join(', ')
+                            : <span className="text-muted">none yet</span>}
+                        </td>
                         <td>{new Date(k.created_at).toLocaleDateString()}</td>
                         <td>
                           {k.expires_at ? (

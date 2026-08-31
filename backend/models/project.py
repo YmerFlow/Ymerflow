@@ -29,7 +29,11 @@ class Project(Base):
     workspaces = relationship("Workspace", back_populates="project", cascade="all, delete-orphan")
     members = relationship("ProjectMember", back_populates="project", cascade="all, delete-orphan")
     invites = relationship("ProjectInvite", back_populates="project", cascade="all, delete-orphan")
-    api_keys = relationship("ApiKey", back_populates="project", cascade="all, delete-orphan")
+    api_keys = relationship(
+        "ApiKey",
+        secondary="api_key_projects",
+        back_populates="projects",
+    )
     publications = relationship("Publication", back_populates="project", cascade="all, delete-orphan")
 
     def to_dict(self):

@@ -26,7 +26,13 @@ security = HTTPBearer(auto_error=False)
 @dataclass
 class AuthContext:
     user: User
-    api_key_project_id: str | None = None
+    # None → JWT / not API-key-scoped → full access to the user's memberships.
+    # frozenset (possibly empty) → API-key-scoped to exactly those projects.
+    api_key_project_ids: frozenset[str] | None = None
+    # The API key's id when authenticated via an "apk_" key — lets create_project
+    # auto-add the newly-created project into this key's scope. None for JWT and
+    # upload-token sessions.
+    api_key_id: str | None = None
 
 
 def hash_password(password: str) -> str:
@@ -109,7 +115,7 @@ async def get_current_user(
             raise credentials_exception
 
         logger.info(f"Upload token auth: user '{user.username}', project '{project_id}'")
-        return AuthContext(user=user, api_key_project_id=project_id)
+        return AuthContext(user=user, api_key_project_ids=frozenset({project_id}), api_key_id=None)
 
     # API key path: tokens prefixed with "apk_"
     if token.startswith("apk_"):
@@ -117,7 +123,7 @@ async def get_current_user(
         key_hash = hash_api_key(token)
         stmt = (
             select(ApiKey)
-            .options(selectinload(ApiKey.user))
+            .options(selectinload(ApiKey.user), selectinload(ApiKey.projects))
             .where(ApiKey.key_hash == key_hash)
         )
         result = await db.execute(stmt)
@@ -136,8 +142,9 @@ async def get_current_user(
         # Mark as used; the endpoint's own commit will persist this
         api_key.last_used_at = datetime.utcnow()
 
-        logger.info(f"API key auth: user '{api_key.user.username}', project '{api_key.project_id}'")
-        return AuthContext(user=api_key.user, api_key_project_id=api_key.project_id)
+        project_ids = frozenset(p.id for p in api_key.projects)
+        logger.info(f"API key auth: user '{api_key.user.username}', projects {sorted(project_ids)}")
+        return AuthContext(user=api_key.user, api_key_project_ids=project_ids, api_key_id=api_key.id)
 
     # JWT path
     logger.info(f"Auth attempt - token: {token[:20]}..." if len(token) > 20 else f"Auth attempt - token: {token}")
@@ -158,7 +165,7 @@ async def get_current_user(
         raise credentials_exception
 
     logger.info(f"JWT auth: user '{username}'")
-    return AuthContext(user=user, api_key_project_id=None)
+    return AuthContext(user=user, api_key_project_ids=None, api_key_id=None)
 
 
 async def get_current_user_optional(
@@ -186,7 +193,7 @@ async def require_project_member(
     this exact project (dual-gate: membership AND key scope must both pass).
     """
     # Gate 1: API key scope (cheap, no DB round-trip)
-    if auth.api_key_project_id is not None and auth.api_key_project_id != project_id:
+    if auth.api_key_project_ids is not None and project_id not in auth.api_key_project_ids:
         raise HTTPException(status_code=403, detail="API key is not scoped to this project")
 
     # Gate 2: user membership
@@ -227,7 +234,7 @@ async def resolve_project_for_read(
     """
     # Try real membership first (same query as require_project_member, but a miss falls
     # through to the publication lookup below instead of raising).
-    if auth is not None and (auth.api_key_project_id is None or auth.api_key_project_id == project_id):
+    if auth is not None and (auth.api_key_project_ids is None or project_id in auth.api_key_project_ids):
         stmt = (
             select(Project)
             .join(ProjectMember, ProjectMember.project_id == Project.id)

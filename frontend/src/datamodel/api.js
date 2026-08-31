@@ -168,8 +168,8 @@ export async function getApiKeys() {
   return response.data;
 }
 
-export async function createApiKey(label, projectId, expiresAt = null) {
-  const body = { label, project_id: projectId };
+export async function createApiKey(label, projectIds, expiresAt = null) {
+  const body = { label, project_ids: projectIds || [] };
   if (expiresAt) body.expires_at = expiresAt;
   const response = await apiClient.post('/auth/api-keys', body);
   return response.data;

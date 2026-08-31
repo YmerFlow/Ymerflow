@@ -189,7 +189,7 @@ async def _require_workspace_member(workspace_id: str, auth: AuthContext, db: As
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    if auth.api_key_project_id is not None and auth.api_key_project_id != workspace.project_id:
+    if auth.api_key_project_ids is not None and workspace.project_id not in auth.api_key_project_ids:
         raise HTTPException(status_code=403, detail="API key is not scoped to this project")
 
     stmt = (

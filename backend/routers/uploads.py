@@ -153,32 +153,28 @@ async def upload_file(
 
 @router.post("/upload/request-token", operation_id="request_upload_token", summary="Request a short-lived upload token for large file uploads")
 async def request_upload_token(
+    project: Project = Depends(require_project_member),
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Issue a short-lived Bearer token (prefix upt_) for uploading large files via curl.
 
-    The token inherits the project scope of the current session (API key or JWT).
-    Use it when you need to hand off a large file upload to curl without passing
-    full session credentials:
+    Takes a required project_id query parameter identifying the project to upload into;
+    the caller must be a member of it, and (when using an API key) it must be in the key's
+    scope. Since an API key may now grant access to several projects, the project can no
+    longer be inferred and must be passed explicitly.
 
         curl -X POST "https://host/projects/{project_id}/upload?filename=survey.xyz" \\
           -H "Authorization: Bearer {token}" \\
           -H "Content-Type: application/octet-stream" \\
           --data-binary @/path/to/survey.xyz
 
-    The token is a signed JWT, expires after 1 hour, and is scoped to the same
-    project as the current session. No server-side state is required.
+    The token is a signed JWT, expires after 1 hour, and is scoped to the given project.
+    No server-side state is required.
     """
-    project_id = auth.api_key_project_id
-    if not project_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Upload tokens require a project-scoped session. Authenticate with an API key."
-        )
     payload = {
         "uid": auth.user.id,
-        "project_id": project_id,
+        "project_id": project.id,
         "token_type": "upload",
     }
     jwt_token = create_access_token(payload, expires_delta=timedelta(hours=1))

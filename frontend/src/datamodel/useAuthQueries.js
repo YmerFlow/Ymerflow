@@ -78,7 +78,7 @@ export function useApiKeys() {
 export function useCreateApiKey() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ label, projectId, expiresAt }) => createApiKey(label, projectId, expiresAt),
+    mutationFn: ({ label, projectIds, expiresAt }) => createApiKey(label, projectIds, expiresAt),
     onSuccess: () => {
       queryClient.invalidateQueries(['apiKeys']);
     }

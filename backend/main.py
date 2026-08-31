@@ -117,9 +117,10 @@ async def public_config():
     return {"hosted_version_text": settings.hosted_version_text}
 
 
-# Mount MCP server — exposes Processes, Datasets, Environments, and Uploads as MCP
-# tools at /mcp (Streamable HTTP transport). Auth via API key in the Authorization
-# header; each key is scoped to a single project so no project selection is needed.
+# Mount MCP server — exposes Projects, Processes, Datasets, Environments, Uploads and
+# Workspaces as MCP tools at /mcp (Streamable HTTP transport). Auth via API key in the
+# Authorization header; a key grants access to a *set* of projects (possibly empty), so
+# every per-project endpoint takes project_id as an explicit path parameter.
 #
 # Raw data download endpoints (dataset/data, dataset/geography, /files/, /uploads/{id})
 # are excluded from MCP via include_in_schema=False — they return binary content that
@@ -130,12 +131,18 @@ mcp = FastApiMCP(
     name="YmerFlow",
     description=(
         "Geophysics data processing platform. "
-        "Authenticate with an API key (Authorization: Bearer apk_<key>); "
-        "the key is already scoped to a project, but every endpoint still takes that same "
-        "project_id as an explicit path parameter — pass it on every call.\n"
+        "Authenticate with an API key (Authorization: Bearer apk_<key>). A key grants "
+        "access to a set of projects (possibly empty); every per-project endpoint takes "
+        "project_id as an explicit path parameter — pass one from the key's set on every call.\n"
         "Typical workflow:\n"
         "0. list_projects() — discover the project(s) this key can access; use an entry's 'id' as "
-        "project_id below. (Read-only publications may also appear, marked read_only:true.)\n"
+        "project_id below. (Read-only publications may also appear, marked read_only:true.) "
+        "If it returns none of your own projects, the key has an empty scope: call create_project() "
+        "to make one — a project you create is automatically added to the key's scope, so the very "
+        "next list_projects() will include it.\n"
+        "0a. create_project(name=..., [storage_backend_id=...]) — create a new project. "
+        "storage_backend_id is optional: omit it when only one backend is allowed; if several are, "
+        "the 400 error lists them (or call list_storage_backends() to see the set).\n"
         "0b. list_public_publications() — discover public (findable) read-only projects shared by "
         "others. Any 'id' it returns is a publication id usable as project_id in the read-only tools "
         "below (list_processes, get_process, get_process_logs, search_datasets, get_dataset); write "
@@ -164,6 +171,6 @@ mcp = FastApiMCP(
         "layer_type=...). `layout` on create_workspace is a JSON object (a node tree), never a "
         "JSON string. Then create_workspace(project_id, title=..., layout={...})."
     ),
-    include_tags=["ProjectDiscovery", "Processes", "Datasets", "Environments", "Uploads", "Workspaces"],
+    include_tags=["Projects", "Processes", "Datasets", "Environments", "Uploads", "Workspaces"],
 )
 mcp.mount_http()
