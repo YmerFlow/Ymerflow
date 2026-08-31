@@ -188,6 +188,7 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
   const lastProcessStructure = useRef(null);
   const rfInstanceRef = useRef(null);
   const prevProcessCountRef = useRef(0);
+  const prevFilterKeyRef = useRef(null);
 
   useEffect(() => {
     userPositionedNodes.current = {};
@@ -329,6 +330,12 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
     const newProcessAdded = processes.length > prevProcessCountRef.current;
     prevProcessCountRef.current = processes.length;
 
+    // Detect a change of the active tag filter so we can re-fit the view to
+    // whatever is now visible (so the user never gets "lost" off-screen).
+    const filterKey = [...selectedFilterTagIds].sort().join(',');
+    const filterChanged = prevFilterKeyRef.current !== null && prevFilterKeyRef.current !== filterKey;
+    prevFilterKeyRef.current = filterKey;
+
     const depths = calculateDepths();
     const layerMap = {};
     processes.forEach(p => {
@@ -416,10 +423,13 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
     setNodes(newNodes);
     setEdges(newEdges);
 
-    if (newProcessAdded && rfInstanceRef.current) {
-      setTimeout(() => rfInstanceRef.current?.fitView({ padding: 0.2, duration: 300 }), 50);
+    if ((newProcessAdded || filterChanged) && rfInstanceRef.current) {
+      // fitView only considers non-hidden nodes, so after a filter change this
+      // frames exactly the currently visible processes. minZoom lets it zoom
+      // out far enough to fit large graphs.
+      setTimeout(() => rfInstanceRef.current?.fitView({ padding: 0.2, duration: 300, minZoom: 0.05 }), 50);
     }
-  }, [processes, visibleProcessIds, visibleVersions, selectedVersions, calculateDepths, handleVersionChange, handleNodeClick, activeProcess, setNodes, setEdges, getProcessStructure]);
+  }, [processes, visibleProcessIds, visibleVersions, selectedVersions, selectedFilterTagIds, calculateDepths, handleVersionChange, handleNodeClick, activeProcess, setNodes, setEdges, getProcessStructure]);
 
   return (
     <div style={{ width: "100%", height: isMobile ? "70vh" : "100%", position: "relative", display: "flex", flexDirection: "column" }}>
@@ -445,6 +455,7 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
           onNodesChange={handleNodesChangeWithTracking}
           onEdgesChange={onEdgesChange}
           onInit={(instance) => { rfInstanceRef.current = instance; }}
+          minZoom={0.05}
           fitView
         >
           <Background />
