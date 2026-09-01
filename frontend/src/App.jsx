@@ -110,6 +110,7 @@ function buildWidgets() {
 }
 
 function MenuBarWithComponents() {
+  const { isAuthenticated } = useContext(AuthContext);
   useRegisterMenuComponent(["_brandLogo"], BrandLogo, 0);
   useRegisterMenuComponent(["_projectDropdown"], ProjectDropdown, -2);
   useRegisterMenuComponent(["_workspaceMenu"], WorkspaceMenu, 2);
@@ -117,7 +118,8 @@ function MenuBarWithComponents() {
 
   return <>
     {hooks.run_jsx.menu_registrars({ context: 'in' })}
-    <UserMenu />
+    {/* No user menu for anonymous visitors (e.g. read-only publication links). */}
+    {isAuthenticated && <UserMenu />}
     <MenuBar />
   </>;
 }

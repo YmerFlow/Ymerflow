@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useState, useRef } from 'react';
 import { Dropdown, Form } from 'react-bootstrap';
+import { AuthContext } from './AuthContext';
 import { LayoutContext } from './flexout/LayoutContext';
 import { ProcessContext } from './ProcessContext';
 import { useWorkspaces, useWorkspace, useSaveWorkspace, useSaveWorkspaceVersion, usePublicWorkspaces } from './datamodel/useQueries';
@@ -98,12 +99,14 @@ function WorkspaceList({ onSelect }) {
 // "Save" — write the current layout back as a NEW version of the currently-loaded workspace.
 // The label names the target workspace and disables itself when nothing is loaded/editable.
 function SaveCurrentWorkspaceItem({ layoutRef, onSaved }) {
+  const { isAuthenticated } = useContext(AuthContext);
   const { currentProject: proj, selectedEnvironment, setSelectedEnvironment, projects } = useContext(ProcessContext);
   const { data: current } = useWorkspace(selectedEnvironment, proj);
   // Editability is membership in the workspace's home project, not whether that project
   // happens to be the currently-open one. The `!p.read_only` guard excludes pinned
   // read-only publication entries in `projects` — those aren't real memberships.
-  const canEdit = !!current && projects.some(p => p.id === current.project_id && !p.read_only);
+  // Anonymous visitors (read-only publication links) can never save.
+  const canEdit = isAuthenticated && !!current && projects.some(p => p.id === current.project_id && !p.read_only);
   const saveVersion = useSaveWorkspaceVersion(current?.project_id);
 
   const handleSave = async () => {
@@ -205,6 +208,7 @@ function PublicWorkspaceSearch({ onSelect }) {
 }
 
 export default function WorkspaceMenu() {
+  const { isAuthenticated } = useContext(AuthContext);
   const { layout } = useContext(LayoutContext);
   const { currentProject, selectedEnvironment } = useContext(ProcessContext);
   const { data: current } = useWorkspace(selectedEnvironment, currentProject);
@@ -246,13 +250,21 @@ export default function WorkspaceMenu() {
           <WorkspaceList onSelect={() => setMenuOpen(false)} />
           <Dropdown.Divider />
           <SaveCurrentWorkspaceItem layoutRef={layoutRef} onSaved={() => setMenuOpen(false)} />
-          <button type="button" className="dropdown-item" onClick={handleSaveAsNew}>
+          <button
+            type="button"
+            className="dropdown-item"
+            onClick={handleSaveAsNew}
+            disabled={!isAuthenticated}
+            title={!isAuthenticated ? 'Log in to save workspaces' : undefined}
+          >
             Save As New Workspace...
           </button>
           <button
             type="button"
             className="dropdown-item"
             onClick={() => { setShowSharingModal(true); setMenuOpen(false); }}
+            disabled={!isAuthenticated}
+            title={!isAuthenticated ? 'Log in to publish workspaces' : undefined}
           >
             Publish Workspaces...
           </button>
