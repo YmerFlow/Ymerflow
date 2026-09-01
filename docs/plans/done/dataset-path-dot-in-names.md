@@ -111,6 +111,17 @@ A single shared helper, then apply it at the encode boundaries and encoded-compa
 5. **`frontend/src/datamodel/processRef.js`** — `resolveProcessRef`: match the process by
    `encodeSeg(p.name) === procName`.
 
+6. **`backend/routers/workspaces.py` — MCP path-completion tools** (added during
+   implementation). `complete_process_version_path`, `complete_dataset_path`, and
+   `complete_column_path` construct the *same* dot-joined paths and are what agents use to
+   build workspace layout configs, so they must emit identically-encoded strings. Added a
+   Python `_encode_seg(s)` = `str(s).replace('.', ',')` — a byte-for-byte mirror of the JS
+   `encodeSeg` — and applied it to every `process.name`/`dataset_name` segment at path
+   construction (never to version numbers or the column tail). The backend only ever
+   *constructs* paths (frontend resolves them), so no decode side is needed. `_stats_relevant`
+   / `_matches` compare against the encoded `ds_path`, consistent with the encoded `prefix` an
+   agent types.
+
 ## What stays untouched
 
 - **gladly-plot** — no fork, no version bump. It only ever sees internally-consistent encoded

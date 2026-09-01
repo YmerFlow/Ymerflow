@@ -7,14 +7,17 @@
 //
 // Returns { processId, version, process, versionObj } or null when the reference
 // cannot be resolved (no active process, or a stale/removed reference).
+import { encodeSeg } from './datasetPath';
+
 export function resolveProcessRef(value, activeProcess, processes) {
   let processId, version;
   if (!value || value === 'current') {
     if (!activeProcess) return null;
     ({ processId, version } = activeProcess);
   } else {
+    // procName segment is encoded — match back in encoded space.
     const [procName, verStr] = value.split('.');
-    const proc = (processes || []).find(p => p.name === procName);
+    const proc = (processes || []).find(p => encodeSeg(p.name) === procName);
     if (!proc) return null;
     processId = proc.id;
     version = parseInt(verStr, 10);

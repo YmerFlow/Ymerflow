@@ -4,6 +4,7 @@ import { ProcessContext } from '../../ProcessContext';
 import { PlotGroupContext } from '../../PlotGroupContext';
 import { registerQuantityKinds } from './quantityKinds';
 import { loadDataset } from '../../datamodel/dataset';
+import { encodeSeg } from '../../datamodel/datasetPath';
 import { getKeys, resolveDataPath } from './colorUtils.js';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import './elements/index.js';
@@ -66,10 +67,12 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
 
     for (const dsPath of pathsToLoad) {
       if (lazilyLoadedData.has(dsPath)) continue;
-      const [procName, verStr, dsName] = dsPath.split('.');
-      const proc = processes.find(p => p.name === procName);
+      // dsPath segments are encoded — match back to real objects in encoded space.
+      const [procNameSeg, verStr, dsNameSeg] = dsPath.split('.');
+      const proc = processes.find(p => encodeSeg(p.name) === procNameSeg);
       const ver = (proc?.versions || []).find(v => String(v.version) === verStr);
-      const dsUrl = ver?.outputs?.[dsName];
+      const dsKey = Object.keys(ver?.outputs || {}).find(k => encodeSeg(k) === dsNameSeg);
+      const dsUrl = dsKey != null ? ver.outputs[dsKey] : undefined;
       if (!dsUrl) continue;
 
       const dsId = dsUrl.split('/').pop();
@@ -268,8 +271,14 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
     const dc = datasetCollection;
     const currentGroup = dc ? dc.toDataGroup() : new DataGroup({});
     const dataForPlot = new DataGroup({ current: currentGroup });
+    // fetchedData is keyed by raw dataset name; custom layers resolve encoded paths
+    // (current.<encodeSeg(dsName)>...) so mirror it under encoded keys.
+    const encodedCurrent = {};
+    for (const [dsName, raw] of Object.entries(fetchedData || {})) {
+      encodedCurrent[encodeSeg(dsName)] = raw;
+    }
     Object.assign(dataForPlot, {
-      current: fetchedData,
+      current: encodedCurrent,
       _currentSounding: currentSounding,
       _inMemoryDiffs: inMemoryDiffs,
     });

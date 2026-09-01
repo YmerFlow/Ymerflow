@@ -9,6 +9,7 @@ import { Data, DataGroup, registerAxisQuantityKind, parseCrsCode, crsToQkX, crsT
 // dataset types are resolved lazily through the plugin registry instead (see createDatasetInstance).
 import { getDatasetClass } from './datasetRegistry';
 import { cacheNamespace } from './cacheNamespace';
+import { encodeSeg } from './datasetPath';
 
 // ── Shared fetch semaphore ────────────────────────────────────────────────────
 // All dataset types (XYZ, Mag, JSON, webxtile, …) share this pool so the total
@@ -905,17 +906,27 @@ export class DatasetCollectionAdapter {
     this._datasets = datasetObjects || {};
   }
 
+  // prefixedCol is an encoded path: "<encodeSeg(name)>.<col…>". Split at the first
+  // dot to isolate the (dot-free) encoded dataset segment; the column tail keeps its
+  // own intentional dot-nesting (e.g. "grid.x").
   _parse(prefixedCol) {
     const dot = prefixedCol.indexOf('.');
     if (dot === -1) return [null, prefixedCol];
     return [prefixedCol.slice(0, dot), prefixedCol.slice(dot + 1)];
   }
 
+  // Resolve an encoded dataset segment back to the raw-keyed dataset object.
+  _findDataset(nameSeg) {
+    if (nameSeg == null) return undefined;
+    const entry = Object.entries(this._datasets).find(([n]) => encodeSeg(n) === nameSeg);
+    return entry?.[1];
+  }
+
   columns() {
     const cols = [];
     for (const [name, ds] of Object.entries(this._datasets)) {
       if (ds && typeof ds.columns === 'function') {
-        for (const col of ds.columns()) cols.push(`${name}.${col}`);
+        for (const col of ds.columns()) cols.push(`${encodeSeg(name)}.${col}`);
       }
     }
     if (cols.length === 0) cols.push('No dataset');
@@ -942,14 +953,14 @@ export class DatasetCollectionAdapter {
           if (domain != null) domainData[col] = domain;
         }
       }
-      raw[name] = { data: colData, quantity_kinds: qkData, domains: domainData };
+      raw[encodeSeg(name)] = { data: colData, quantity_kinds: qkData, domains: domainData };
     }
     return new DataGroup(raw);
   }
 
   getData(prefixedCol) {
     const [name, col] = this._parse(prefixedCol);
-    const ds = this._datasets[name];
+    const ds = this._findDataset(name);
     if (!ds) return undefined;
     const result = ds.getData(col);
     if (result == null) return undefined;
@@ -968,7 +979,7 @@ export class DatasetCollectionAdapter {
 
   getQuantityKind(prefixedCol) {
     const [name, col] = this._parse(prefixedCol);
-    const qk = this._datasets[name]?.getQuantityKind(col);
+    const qk = this._findDataset(name)?.getQuantityKind(col);
     if (qk !== undefined) return qk;
     // No explicit mapping — use the unprefixed column name as the quantity kind
     // and ensure it is registered so gladly displays a proper label and so the
@@ -979,7 +990,7 @@ export class DatasetCollectionAdapter {
 
   getDomain(prefixedCol) {
     const [name, col] = this._parse(prefixedCol);
-    return this._datasets[name]?.getDomain(col);
+    return this._findDataset(name)?.getDomain(col);
   }
 }
 

@@ -475,6 +475,13 @@ async def get_plot_layer_schema(widget: str, layer_type: str):
 # `current` is a runtime placeholder — "whichever process/version the viewer has selected."
 # The server has no such selection, so `current.*` completions are derived from a concrete
 # process (see `example_process_id`) or, by default, the union across the whole project.
+#
+# Path segments are dot-joined, so any literal '.' in a process or dataset name is encoded to
+# ',' (see `_encode_seg`) to keep each name a single dot-free segment — e.g. a process named
+# "INV (ar 1.0)" appears as "INV (ar 1,0)" in every path. Version numbers and column names keep
+# their real dots. These encoded strings are stored verbatim in workspace layout configs; the
+# frontend resolves them the same way, so completions and stored paths stay byte-for-byte in
+# sync. Use the returned values as-is; do not hand-write a path with a raw '.' inside a name.
 
 
 async def _load_project_processes(project_id: str, db: AsyncSession) -> List[Process]:
@@ -490,6 +497,20 @@ async def _load_project_processes(project_id: str, db: AsyncSession) -> List[Pro
     )
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+def _encode_seg(s: str) -> str:
+    """Encode a single procName/datasetName segment for a dot-joined path.
+
+    Dataset paths are dot-joined (`<proc>.<ver>.<ds>[.<col…>]`) and every consumer
+    (frontend and gladly's Data._resolve) splits on '.' positionally, so a literal dot
+    inside a name segment mis-segments the path. Replacing '.' with ',' keeps each name
+    a single dot-free segment. MUST stay byte-for-byte identical to the frontend's
+    `encodeSeg` (frontend/src/datamodel/datasetPath.js) — these paths are stored in
+    workspace layout configs and resolved there. Only name segments are encoded;
+    version numbers and the column tail keep their real dots.
+    """
+    return str(s).replace(".", ",")
 
 
 def _matches(path: str, prefix_lower: str) -> bool:
@@ -650,7 +671,7 @@ async def complete_process_version_path(
         out.append("current")
     for process in processes:
         for ver in _sorted_versions(process):
-            path = f"{process.name}.{ver.version}"
+            path = f"{_encode_seg(process.name)}.{ver.version}"
             if _matches(path, prefix_lower):
                 out.append(path)
     return out
@@ -676,13 +697,13 @@ async def complete_dataset_path(
 
     out: List[str] = []
     for ds_name in _current_dataset_names(processes, example_process_id, version):
-        path = f"current.{ds_name}"
+        path = f"current.{_encode_seg(ds_name)}"
         if _matches(path, prefix_lower):
             out.append(path)
     for process in processes:
         for ver in _sorted_versions(process):
             for ds in ver.datasets:
-                path = f"{process.name}.{ver.version}.{ds.dataset_name}"
+                path = f"{_encode_seg(process.name)}.{ver.version}.{_encode_seg(ds.dataset_name)}"
                 if _matches(path, prefix_lower):
                     out.append(path)
     return out
@@ -711,7 +732,7 @@ async def complete_column_path(
     out: List[str] = []
 
     for ds_name, ds in _current_datasets(processes, example_process_id, version):
-        ds_path = f"current.{ds_name}"
+        ds_path = f"current.{_encode_seg(ds_name)}"
         if not _stats_relevant(ds_path, prefix_lower):
             continue
         for col in await _dataset_columns(ds, storage_options):
@@ -722,7 +743,7 @@ async def complete_column_path(
     for process in processes:
         for ver in _sorted_versions(process):
             for ds in ver.datasets:
-                ds_path = f"{process.name}.{ver.version}.{ds.dataset_name}"
+                ds_path = f"{_encode_seg(process.name)}.{ver.version}.{_encode_seg(ds.dataset_name)}"
                 if not _stats_relevant(ds_path, prefix_lower):
                     continue
                 for col in await _dataset_columns(ds, storage_options):
