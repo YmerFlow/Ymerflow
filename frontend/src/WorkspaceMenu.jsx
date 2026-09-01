@@ -68,7 +68,7 @@ function WorkspaceList({ onSelect }) {
   const { currentProject: proj, selectedEnvironment } = useContext(ProcessContext);
   const { data: workspaces = [] } = useWorkspaces(proj);
   const isOwned = workspaces.some(w => w.id === selectedEnvironment);
-  const { data: pinned } = useWorkspace(selectedEnvironment, { enabled: !!selectedEnvironment && !isOwned });
+  const { data: pinned } = useWorkspace(selectedEnvironment, proj, { enabled: !!selectedEnvironment && !isOwned });
   const { data: publicWorkspaces = [] } = usePublicWorkspaces();
 
   const rows = [];
@@ -99,7 +99,7 @@ function WorkspaceList({ onSelect }) {
 // The label names the target workspace and disables itself when nothing is loaded/editable.
 function SaveCurrentWorkspaceItem({ layoutRef, onSaved }) {
   const { currentProject: proj, selectedEnvironment, setSelectedEnvironment, projects } = useContext(ProcessContext);
-  const { data: current } = useWorkspace(selectedEnvironment);
+  const { data: current } = useWorkspace(selectedEnvironment, proj);
   // Editability is membership in the workspace's home project, not whether that project
   // happens to be the currently-open one. The `!p.read_only` guard excludes pinned
   // read-only publication entries in `projects` — those aren't real memberships.
@@ -207,7 +207,7 @@ function PublicWorkspaceSearch({ onSelect }) {
 export default function WorkspaceMenu() {
   const { layout } = useContext(LayoutContext);
   const { currentProject, selectedEnvironment } = useContext(ProcessContext);
-  const { data: current } = useWorkspace(selectedEnvironment);
+  const { data: current } = useWorkspace(selectedEnvironment, currentProject);
   const saveWorkspace = useSaveWorkspace(currentProject);
   const layoutRef = useRef(layout);
   const [showSharingModal, setShowSharingModal] = useState(false);

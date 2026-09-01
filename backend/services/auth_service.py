@@ -224,13 +224,20 @@ class ProjectReadAccess:
     publication: Publication | None = None
 
 
-async def resolve_project_for_read(
+async def try_resolve_project_for_read(
     project_id: str,
-    auth: AuthContext | None = Depends(get_current_user_optional),
-    db: AsyncSession = Depends(get_db)
-) -> ProjectReadAccess:
-    """Dependency for pure-read endpoints: resolves project_id as either a real project
-    (real membership required) or a Publication id (read-only, optionally anonymous).
+    auth: AuthContext | None,
+    db: AsyncSession,
+) -> ProjectReadAccess | None:
+    """Pure (dependency-free) resolver for read access to a project.
+
+    Resolves `project_id` as either a real project (real membership required) or a Publication
+    id (read-only, optionally anonymous), returning a `ProjectReadAccess` on success or `None`
+    when the caller has no read access for any reason (unknown id, or a non-anonymous
+    publication accessed anonymously). The `resolve_project_for_read` dependency wraps this and
+    maps `None` to the appropriate 404/401; other callers (e.g. `_can_read_workspace`) use the
+    boolean-ish result directly. Keeping the "real-membership-or-publication, honor
+    allow_anonymous" logic here means it lives in exactly one place.
     """
     # Try real membership first (same query as require_project_member, but a miss falls
     # through to the publication lookup below instead of raising).
@@ -253,9 +260,31 @@ async def resolve_project_for_read(
     pub_result = await db.execute(pub_stmt)
     publication = pub_result.scalar_one_or_none()
     if publication is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+        return None
 
     if not publication.allow_anonymous and auth is None:
-        raise HTTPException(status_code=401, detail="Authentication required to view this publication")
+        return None
 
     return ProjectReadAccess(project=publication.project, read_only=True, publication=publication)
+
+
+async def resolve_project_for_read(
+    project_id: str,
+    auth: AuthContext | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+) -> ProjectReadAccess:
+    """Dependency for pure-read endpoints: resolves project_id as either a real project
+    (real membership required) or a Publication id (read-only, optionally anonymous).
+    """
+    access = await try_resolve_project_for_read(project_id, auth, db)
+    if access is not None:
+        return access
+
+    # No read access — distinguish "non-anonymous publication accessed anonymously" (401)
+    # from "unknown id / not a member" (404). Only the error path re-checks the publication.
+    pub_stmt = select(Publication).where(Publication.id == project_id)
+    publication = (await db.execute(pub_stmt)).scalar_one_or_none()
+    if publication is not None and not publication.allow_anonymous and auth is None:
+        raise HTTPException(status_code=401, detail="Authentication required to view this publication")
+
+    raise HTTPException(status_code=404, detail="Project not found")

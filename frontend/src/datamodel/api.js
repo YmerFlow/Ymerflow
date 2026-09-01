@@ -599,8 +599,13 @@ export async function getPublicWorkspaces() {
   return response.data;
 }
 
-export async function getWorkspace(workspaceId) {
-  const response = await apiClient.get(`/workspace/${workspaceId}`);
+export async function getWorkspace(workspaceId, projectId) {
+  // projectId is the current viewing context (a real project id or a publication id). The
+  // backend uses it to grant a publication viewer read access to the project's non-public
+  // workspaces; omit it for a plain global-public fetch (e.g. the `default` workspace).
+  const response = await apiClient.get(`/workspace/${workspaceId}`, {
+    params: projectId ? { project_id: projectId } : {},
+  });
   return response.data;
 }
 

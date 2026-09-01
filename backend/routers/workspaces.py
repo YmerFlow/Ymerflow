@@ -13,7 +13,15 @@ import json
 
 from backend.database import get_db
 from backend.models import Workspace, WorkspaceVersion, Project, ProjectMember, Process, ProcessVersion
-from backend.services.auth_service import get_current_user, require_project_member, AuthContext
+from backend.services.auth_service import (
+    get_current_user,
+    get_current_user_optional,
+    require_project_member,
+    resolve_project_for_read,
+    try_resolve_project_for_read,
+    AuthContext,
+    ProjectReadAccess,
+)
 from backend.services.storage_service import get_fsspec_storage_options
 from backend.config import settings
 
@@ -204,10 +212,49 @@ async def _require_workspace_member(workspace_id: str, auth: AuthContext, db: As
     return workspace
 
 
+async def _can_read_workspace(
+    workspace: Workspace,
+    project_id: Optional[str],
+    auth: Optional[AuthContext],
+    db: AsyncSession,
+) -> bool:
+    """Whether the caller may read `workspace`, allowed if ANY of:
+
+    A. Globally public — `workspace.is_public` (covers superpublic, which implies is_public):
+       anyone, including anonymous.
+    B. Member — an authenticated caller who is a ProjectMember of the workspace's home project.
+    C. Publication-scoped — a `project_id` viewing context was supplied and resolves (as a real
+       membership or a publication the caller may read) to the workspace's own home project. This
+       is what carries a publication's read access down to the project's private workspaces, for
+       both anonymous and logged-in viewers.
+    """
+    # A. Globally public.
+    if workspace.is_public:
+        return True
+
+    # B. Member of the workspace's home project.
+    if auth is not None:
+        stmt = (
+            select(Project)
+            .join(ProjectMember, ProjectMember.project_id == Project.id)
+            .where(Project.id == workspace.project_id, ProjectMember.user_id == auth.user.id)
+        )
+        if (await db.execute(stmt)).scalar_one_or_none() is not None:
+            return True
+
+    # C. Publication-scoped: the viewing context must resolve to this workspace's own project.
+    if project_id is not None:
+        access = await try_resolve_project_for_read(project_id, auth, db)
+        if access is not None and access.project.id == workspace.project_id:
+            return True
+
+    return False
+
+
 @router.get("s", operation_id="list_workspaces")
 async def list_workspaces(
     project_id: str,
-    project: Project = Depends(require_project_member),
+    access: ProjectReadAccess = Depends(resolve_project_for_read),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -215,11 +262,15 @@ async def list_workspaces(
 
     Returns each workspace's metadata and full version history. Use this to discover
     what layouts exist in the project before fetching a specific version.
+
+    `project_id` accepts either a real project id (real membership required) or a read-only
+    publication id (readable by whatever audience the publication permits, including anonymous
+    when it allows it) — a publication link carries all of its project's workspaces read-only.
     """
     stmt = (
         select(Workspace)
         .options(*_WORKSPACE_LOAD_OPTIONS)
-        .where(Workspace.project_id == project_id)
+        .where(Workspace.project_id == access.project.id)
     )
     result = await db.execute(stmt)
     workspaces = result.scalars().all()
@@ -229,16 +280,17 @@ async def list_workspaces(
 
 @router.get("s/public", operation_id="list_public_workspaces")
 async def list_public_workspaces(
-    auth: AuthContext = Depends(get_current_user),
+    auth: Optional[AuthContext] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """
     List every workspace that has been marked public, across all projects.
 
-    Any authenticated user can browse this list — it's the "public gallery" used to
-    discover workspaces worth forking into your own project. Each entry includes its
-    home project's name and full version list (so callers can pick a specific version
-    to fork rather than always taking the latest).
+    Anyone — including anonymous (not-logged-in) visitors — can browse this list. It's the
+    public gallery backing the workspace search: open a public workspace to view it read-only,
+    then fork-on-save (which does require membership) copies it into your own project. Each
+    entry includes its home project's name and full version list (so callers can pick a
+    specific version to fork rather than always taking the latest).
     """
     stmt = select(Workspace).options(*_WORKSPACE_LOAD_OPTIONS).where(Workspace.is_public == True)  # noqa: E712
     result = await db.execute(stmt)
@@ -786,16 +838,21 @@ def get_app_url(
 @router.get("/{workspace_id}", operation_id="get_workspace")
 async def get_workspace(
     workspace_id: str,
-    auth: AuthContext = Depends(get_current_user),
+    project_id: Optional[str] = None,
+    auth: Optional[AuthContext] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Get a workspace, including its full version history.
 
-    Returns 404 unless the workspace is public or the caller is a member of its
-    home project. Each entry in `versions` holds a recursive JSON layout tree with
-    `id`, `widget`, optional `children`, and widget-specific `layoutConfig` — call
-    `get_workspace_schema` first to understand valid node structures and widget types.
+    Returns 404 unless the workspace is readable by the caller — it is public, the caller is a
+    member of its home project, or a `project_id` viewing context (a real project id or a
+    publication id) was supplied that resolves to the workspace's own home project. The optional
+    `project_id` carries the current viewing context so a publication link (anonymous or
+    logged-in) can read the project's non-public workspaces. Each entry in `versions` holds a
+    recursive JSON layout tree with `id`, `widget`, optional `children`, and widget-specific
+    `layoutConfig` — call `get_workspace_schema` first to understand valid node structures and
+    widget types.
     """
     stmt = select(Workspace).options(*_WORKSPACE_LOAD_OPTIONS).where(Workspace.id == workspace_id)
     result = await db.execute(stmt)
@@ -804,15 +861,8 @@ async def get_workspace(
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    if not workspace.is_public:
-        stmt = (
-            select(Project)
-            .join(ProjectMember, ProjectMember.project_id == Project.id)
-            .where(Project.id == workspace.project_id, ProjectMember.user_id == auth.user.id)
-        )
-        result = await db.execute(stmt)
-        if not result.scalar_one_or_none():
-            raise HTTPException(status_code=404, detail="Workspace not found")
+    if not await _can_read_workspace(workspace, project_id, auth, db):
+        raise HTTPException(status_code=404, detail="Workspace not found")
 
     return workspace.to_dict(project_name=workspace.project.name if workspace.project else None)
 

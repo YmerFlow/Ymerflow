@@ -15,9 +15,9 @@ import { useWorkspace } from './datamodel/useQueries';
 //
 // Renders null.
 function WorkspaceLayoutSync() {
-  const { selectedEnvironment, selectedEnvironmentVersion } = useContext(ProcessContext);
+  const { selectedEnvironment, selectedEnvironmentVersion, currentProject } = useContext(ProcessContext);
   const { updateLayout } = useContext(LayoutContext);
-  const { data: workspace } = useWorkspace(selectedEnvironment);
+  const { data: workspace } = useWorkspace(selectedEnvironment, currentProject);
 
   const lastAppliedKey = useRef(null);   // `${wsId}@${version}` or 'none'
 

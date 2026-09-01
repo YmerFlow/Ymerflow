@@ -76,7 +76,7 @@ export const queryKeys = {
   projectTags: (projectId) => ['projectTags', projectId],
   workspaces: (projectId) => ['workspaces', projectId],
   publicWorkspaces: ['publicWorkspaces'],
-  workspace: (id) => ['workspace', id],
+  workspace: (id, projectId) => ['workspace', id, projectId ?? null],
   systems: (projectId) => ['systems', projectId],
 };
 
@@ -509,10 +509,14 @@ export function usePublicWorkspaces() {
   });
 }
 
-export function useWorkspace(workspaceId, options = {}) {
+// projectId is the current viewing context (a real project id or a publication id). It's
+// threaded to the backend so a publication viewer can read the project's non-public workspaces,
+// and included in the query key so a global fetch and a publication-scoped fetch of the same
+// workspace don't collide in cache. Pass nothing for a plain global-public fetch (e.g. 'default').
+export function useWorkspace(workspaceId, projectId = null, options = {}) {
   return useQuery({
-    queryKey: queryKeys.workspace(workspaceId),
-    queryFn: () => getWorkspace(workspaceId),
+    queryKey: queryKeys.workspace(workspaceId, projectId),
+    queryFn: () => getWorkspace(workspaceId, projectId),
     enabled: !!workspaceId,
     staleTime: 30 * 1000,
     ...options,

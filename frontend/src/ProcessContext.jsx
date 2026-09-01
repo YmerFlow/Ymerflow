@@ -212,7 +212,7 @@ export function ProcessProvider({ children }) {
   const { data: environments = EMPTY_ARRAY, isLoading: environmentsLoading, error: environmentsError } = useEnvironments();
   // Needed by setCurrentProject below to decide whether the currently-selected workspace
   // (which may be owned by a different project, or public) should carry across a project switch.
-  const { data: currentWorkspace } = useWorkspace(selectedEnvironment);
+  const { data: currentWorkspace } = useWorkspace(selectedEnvironment, currentProject);
 
   // InUse diff state
   const [inUseDiffState, dispatchInUseDiff] = useReducer(inUseDiffReducer, { diffs: {}, history: {} });
