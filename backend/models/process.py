@@ -309,14 +309,12 @@ class Process(Base):
 
         await db.commit()
 
-        # Broadcast QUEUED state to connected clients
+        # Broadcast a bare refetch signal to connected clients. The payload carries no
+        # process/project ids or output URLs — the sole frontend consumer ignores the body
+        # and just refetches through the access-checked REST endpoints. See
+        # docs/plans/done/ws-data-leak-fixes.md.
         from backend.services.websocket_service import ws_manager
-        state_update = {
-            "process_id": process.id,
-            "version": new_version,
-            "state": ProcessState.QUEUED.value
-        }
-        await ws_manager.broadcast_state(state_update)
+        await ws_manager.broadcast_state({"refetch": True})
 
         # Schedule background task — balance check, dependency resolution, K8s submission
         asyncio.create_task(version_obj.run_task(username))
@@ -480,7 +478,6 @@ class ProcessVersion(Base):
         """
         import logging
         from backend.services.websocket_service import ws_manager
-        from backend.services.storage_service import translate_urls_in_dict
 
         logger = logging.getLogger(__name__)
 
@@ -489,34 +486,13 @@ class ProcessVersion(Base):
 
         await db.commit()
 
-        # Broadcast state change to all connected clients
-        state_update = {
-            "process_id": self.process_id,
-            "version": self.version,
-            "state": new_state.value
-        }
-
-        # Include outputs in broadcast when transitioning to DONE
-        if new_state == ProcessState.DONE and self.datasets:
-            # Build outputs list from datasets
-            state_update["outputs"] = [dataset.to_dict() for dataset in self.datasets]
-
-        # Use provided project_id or get from relationship (if already loaded)
-        if project_id is None:
-            # Only access relationship if it's already loaded (avoid lazy loading)
-            if 'process' in self.__dict__:
-                project_id = self.process.project_id
-            else:
-                # Fetch project_id directly without loading full relationship
-                result = await db.execute(
-                    select(Process.project_id).where(Process.id == self.process_id)
-                )
-                project_id = result.scalar_one()
-
-        state_update = translate_urls_in_dict(state_update, to_storage=False)
-
-        logger.info(f"Broadcasting state update: {state_update}")
-        await ws_manager.broadcast_state(state_update)
+        # Broadcast a bare refetch signal. The socket is a global, unauthenticated fan-out, so
+        # it must never carry process/project ids, dataset ids, or output /files/ URLs — the
+        # sole frontend consumer ignores the body and refetches through the access-checked
+        # REST endpoints instead. `project_id` is kept in the signature for the later
+        # per-project scoping work. See docs/plans/done/ws-data-leak-fixes.md.
+        logger.info(f"Broadcasting state refetch signal: {self.process_id} v{self.version}")
+        await ws_manager.broadcast_state({"refetch": True})
 
     async def add_log_entry(self, db: AsyncSession, message: str):
         """Add a log entry and broadcast to connected clients"""
@@ -962,13 +938,10 @@ class ProcessVersion(Base):
                 dependencies = await Dataset.resolve_dependencies(db, raw_dependencies)
                 process_version.dependencies = dependencies
 
-                # Broadcast so the frontend refreshes and shows the resolved dependency edges
+                # Broadcast a bare refetch signal so the frontend refreshes and shows the
+                # resolved dependency edges (payload-free — see the note in update_state).
                 from backend.services.websocket_service import ws_manager
-                await ws_manager.broadcast_state({
-                    "process_id": process.id,
-                    "version": process_version.version,
-                    "state": ProcessState.QUEUED.value
-                })
+                await ws_manager.broadcast_state({"refetch": True})
 
                 # --- Ensure storage credentials are ready before job launch ---
                 from backend.services.storage_credentials import ensure_ready, get_strategy

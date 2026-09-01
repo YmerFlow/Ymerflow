@@ -102,6 +102,9 @@ function ProcessLog({ processRef }) {
     {
       enabled: shouldStreamLogs && !!processId && version !== null && version !== undefined,
       name: `Process Logs (${processId}/${version})`,
+      // First-message auth: the logs socket requires the bearer token as its first message
+      // (backend closes with 1008 otherwise). event.target is the just-opened, OPEN socket.
+      onOpen: (event) => event.target.send(JSON.stringify({ token: localStorage.getItem('auth_token') })),
       onMessage: (logEntry) => {
         setLogs(prev => {
           // Only create new object if this is actually a new log entry

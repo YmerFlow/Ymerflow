@@ -196,7 +196,7 @@ async def run_export(project_id: str, export_id: str):
         try:
             export_row.state = "running"
             await db.commit()
-            await ws_manager.broadcast_state({"type": "project_export", "id": export_id, "state": "running"})
+            await ws_manager.broadcast_state({"refetch": True})
 
             manifest, file_copy_jobs = await _build_manifest(db, project_id)
 
@@ -235,7 +235,7 @@ async def run_export(project_id: str, export_id: str):
             export_row.file_url = zip_storage_url
             export_row.completed_at = datetime.utcnow()
             await db.commit()
-            await ws_manager.broadcast_state({"type": "project_export", "id": export_id, "state": "done"})
+            await ws_manager.broadcast_state({"refetch": True})
 
         except Exception as e:
             logger.error(f"Project export failed: {export_id} - {e}", exc_info=True)
@@ -248,6 +248,6 @@ async def run_export(project_id: str, export_id: str):
                         row.state = "failed"
                         row.error = str(e)
                         await fresh_db.commit()
-                await ws_manager.broadcast_state({"type": "project_export", "id": export_id, "state": "failed"})
+                await ws_manager.broadcast_state({"refetch": True})
             except Exception as inner_e:
                 logger.error(f"Failed to record export failure for {export_id}: {inner_e}", exc_info=True)

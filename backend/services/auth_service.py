@@ -72,47 +72,37 @@ def decode_access_token(token: str) -> dict:
         return None
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_db)
-) -> AuthContext:
-    """Get the current authenticated user from JWT token or API key.
+async def authenticate_token(token: str, db: AsyncSession) -> AuthContext | None:
+    """Resolve a raw bearer token to an AuthContext, or None if it is missing/invalid/expired.
 
-    Returns AuthContext with the user and, when authenticated via API key,
-    the project the key is scoped to.
+    Handles all three token shapes — JWT, 'apk_' API key, and 'upt_' upload token — and is the
+    injectable core of get_current_user: it takes the raw token string rather than the
+    HTTPBearer(Request) credentials, so it can also be called from a @router.websocket handler
+    that reads the token as its first message (see docs/plans/done/ws-data-leak-fixes.md).
+
+    Never logs the raw token. Returns None on any invalid credential (so callers decide how to
+    surface the failure); lets unexpected errors propagate (CLAUDE.md rule 8).
     """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header missing",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    token = credentials.credentials
+    if not token:
+        return None
 
     # Upload token path: tokens prefixed with "upt_"
     if token.startswith("upt_"):
         jwt_part = token[4:]
         payload = decode_access_token(jwt_part)
         if payload is None or payload.get("token_type") != "upload":
-            raise credentials_exception
+            return None
 
         uid = payload.get("uid")
         project_id = payload.get("project_id")
         if uid is None or project_id is None:
-            raise credentials_exception
+            return None
 
         stmt = select(User).where(User.id == uid)
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
         if user is None:
-            raise credentials_exception
+            return None
 
         logger.info(f"Upload token auth: user '{user.username}', project '{project_id}'")
         return AuthContext(user=user, api_key_project_ids=frozenset({project_id}), api_key_id=None)
@@ -130,14 +120,10 @@ async def get_current_user(
         api_key = result.scalar_one_or_none()
 
         if api_key is None:
-            raise credentials_exception
+            return None
 
         if api_key.expires_at is not None and api_key.expires_at < datetime.utcnow():
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="API key has expired",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            return None
 
         # Mark as used; the endpoint's own commit will persist this
         api_key.last_used_at = datetime.utcnow()
@@ -147,25 +133,49 @@ async def get_current_user(
         return AuthContext(user=api_key.user, api_key_project_ids=project_ids, api_key_id=api_key.id)
 
     # JWT path
-    logger.info(f"Auth attempt - token: {token[:20]}..." if len(token) > 20 else f"Auth attempt - token: {token}")
-
     payload = decode_access_token(token)
     if payload is None:
-        raise credentials_exception
+        return None
 
     username: str = payload.get("sub")
     if username is None:
-        raise credentials_exception
+        return None
 
     stmt = select(User).where(User.username == username)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
     if user is None:
-        raise credentials_exception
+        return None
 
     logger.info(f"JWT auth: user '{username}'")
     return AuthContext(user=user, api_key_project_ids=None, api_key_id=None)
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+) -> AuthContext:
+    """Get the current authenticated user from JWT token or API key.
+
+    Returns AuthContext with the user and, when authenticated via API key,
+    the project the key is scoped to.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header missing",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    auth = await authenticate_token(credentials.credentials, db)
+    if auth is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return auth
 
 
 async def get_current_user_optional(
@@ -215,6 +225,28 @@ async def require_project_member(
         raise HTTPException(status_code=403, detail="This is a read-only publication link — cannot write")
 
     raise HTTPException(status_code=403, detail="Not a member of this project")
+
+
+async def _is_project_member(db: AsyncSession, project_id: str, auth: AuthContext) -> bool:
+    """True iff `auth` has REAL membership of `project_id` (and, for API-key auth, the key is
+    scoped to it) — the same dual-gate as require_project_member, minus the HTTP raising.
+
+    Real membership ONLY: this never falls back to the publication/anonymous read path, so
+    publication and anonymous viewers get no live logs feed (operator decision — see
+    docs/plans/done/ws-data-leak-fixes.md). Used by the authenticated logs WebSocket.
+    """
+    # Gate 1: API key scope (cheap, no DB round-trip)
+    if auth.api_key_project_ids is not None and project_id not in auth.api_key_project_ids:
+        return False
+
+    # Gate 2: real user membership
+    stmt = (
+        select(Project.id)
+        .join(ProjectMember, ProjectMember.project_id == Project.id)
+        .where(Project.id == project_id, ProjectMember.user_id == auth.user.id)
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none() is not None
 
 
 @dataclass

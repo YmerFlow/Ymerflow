@@ -4,11 +4,13 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
+import asyncio
+import json
 import logging
 
 from backend.database import get_db
 from backend.models import Process, ProcessVersion, ProcessLog, Project, Environment
-from backend.services.auth_service import get_current_user, AuthContext, require_project_member, resolve_project_for_read, ProjectReadAccess, redact_project_id
+from backend.services.auth_service import get_current_user, AuthContext, require_project_member, resolve_project_for_read, ProjectReadAccess, redact_project_id, authenticate_token, _is_project_member
 from backend.services.websocket_service import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -511,12 +513,47 @@ async def update_process_position(
 
 @router.websocket("/ws/process/{process_id}/logs")
 async def process_logs_websocket(websocket: WebSocket, process_id: str, version: Optional[int] = None):
-    """WebSocket endpoint for streaming process logs"""
+    """WebSocket endpoint for streaming process logs.
+
+    Authenticated via first-message auth: the client accepts the socket, then must send
+    {"token": "<bearer token>"} as its first message. The token is validated and the caller
+    must be a REAL member of the process's project. Unlike the state socket (whose body is
+    stripped to a bare refetch signal), the log lines ARE the payload here, so the socket
+    needs real auth rather than a slimmed body. See docs/plans/done/ws-data-leak-fixes.md.
+    """
+    from backend.database import async_session_maker
+
     await websocket.accept()
+
+    # First-message auth: the token travels in the first client message, never in the URL
+    # (query params leak into proxy logs / browser history) or an Authorization header
+    # (browsers can't set one on `new WebSocket()`). The wait_for timeout stops a client that
+    # never authenticates from holding the socket open forever.
+    try:
+        raw = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+    except (asyncio.TimeoutError, WebSocketDisconnect):
+        await websocket.close(code=1008)
+        return
+
+    try:
+        token = json.loads(raw).get("token")
+    except (ValueError, TypeError, AttributeError):
+        token = None
+
+    async with async_session_maker() as db:
+        auth = await authenticate_token(token, db) if token else None
+        project_id = None
+        if auth is not None:
+            project_id = (await db.execute(
+                select(Process.project_id).where(Process.id == process_id)
+            )).scalar_one_or_none()
+        if auth is None or project_id is None or not await _is_project_member(db, project_id, auth):
+            await websocket.close(code=1008)
+            return
+
     await ws_manager.connect_logs(process_id, websocket)
 
     try:
-        from backend.database import async_session_maker
         async with async_session_maker() as db:
             stmt = select(ProcessLog).where(ProcessLog.process_id == process_id)
             if version is not None:

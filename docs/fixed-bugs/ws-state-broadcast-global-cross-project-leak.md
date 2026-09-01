@@ -1,5 +1,33 @@
 # Bug: `/ws/processes/updates` broadcasts every project's process state (and output ids/URLs) to every connected client, with no authentication
 
+## Resolution (FIXED — 2026-09-02)
+
+Both data-disclosure holes are closed by
+[`docs/plans/done/ws-data-leak-fixes.md`](../plans/done/ws-data-leak-fixes.md):
+
+- **State broadcast (this bug).** Every `broadcast_state(...)` call site now sends a bare
+  `{"refetch": true}` signal — no `process_id`, `version`, `state`, `outputs`, dataset ids,
+  real `project_id`s, or `/files/` URLs ever go on the wire. The sole frontend consumer
+  (`ProcessContext.jsx` `handleWebSocketMessage`) already ignored the body and just refetches
+  through the access-checked REST endpoints, so behaviour is unchanged. Sites fixed:
+  `backend/models/process.py` (`create_queued`, `update_state` — the `outputs` block and its
+  `translate_urls_in_dict` call are deleted — and `run_task`),
+  `backend/services/project_import_service.py`, `backend/services/project_export_service.py`.
+- **Logs socket (the Notes item below).** `/ws/process/{process_id}/logs` now authenticates
+  via first-message auth (`backend/routers/processes.py`): it reads a `{"token": …}` first
+  message (with an `asyncio.wait_for` timeout), validates it via the new
+  `authenticate_token()` helper, and requires **real** membership of the process's project via
+  the new `_is_project_member()` helper (both in `backend/services/auth_service.py`) — no
+  publication/anonymous fallback. `ProcessLog.jsx`/`ProcessProgress.jsx` send the token on
+  open; `useWebSocket.js` does not reconnect on close code `1008`.
+
+**Residual (not a leak).** The state socket is still an unauthenticated, unscoped fan-out, so
+every client refetches on every global event — but the payload is now empty, so there is
+nothing to disclose. That remaining concern is purely **performance** and is deferred to
+[`docs/plans/ws-state-socket-scoping.md`](../plans/ws-state-socket-scoping.md), which will
+authenticate and per-project-scope the channel. The original text below is retained for
+history.
+
 ## Severity
 
 **Medium–High** — a global, cross-tenant information-disclosure bug. Unlike

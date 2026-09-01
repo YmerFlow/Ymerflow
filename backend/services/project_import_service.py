@@ -321,7 +321,7 @@ async def run_import(import_id: str):
 
             import_row.state = "running"
             await db.commit()
-            await ws_manager.broadcast_state({"type": "project_import", "id": import_id, "state": "running"})
+            await ws_manager.broadcast_state({"refetch": True})
 
             upload = (await db.execute(select(Upload).where(Upload.id == import_row.upload_id))).scalar_one_or_none()
             if upload is None:
@@ -343,9 +343,7 @@ async def run_import(import_id: str):
             import_row.state = "done"
             import_row.completed_at = datetime.utcnow()
             await db.commit()
-            await ws_manager.broadcast_state({
-                "type": "project_import", "id": import_id, "state": "done", "project_id": target_project_id,
-            })
+            await ws_manager.broadcast_state({"refetch": True})
 
     except Exception as e:
         logger.error(f"Project import failed: {import_id} - {e}", exc_info=True)
@@ -380,6 +378,6 @@ async def run_import(import_id: str):
                         await db.delete(proj)
 
                 await db.commit()
-            await ws_manager.broadcast_state({"type": "project_import", "id": import_id, "state": "failed"})
+            await ws_manager.broadcast_state({"refetch": True})
         except Exception as inner_e:
             logger.error(f"Failed to record import failure for {import_id}: {inner_e}", exc_info=True)

@@ -155,6 +155,9 @@ function ProcessProgress() {
     {
       enabled: shouldStreamLogs && !!processId && version !== null && version !== undefined,
       name: `Process Progress (${processId}/${version})`,
+      // First-message auth: the logs socket requires the bearer token as its first message
+      // (backend closes with 1008 otherwise). event.target is the just-opened, OPEN socket.
+      onOpen: (event) => event.target.send(JSON.stringify({ token: localStorage.getItem('auth_token') })),
       onMessage: (logEntry) => {
         const entry = extractStatusEntry(logEntry);
         if (entry) setPlotData(prev => [...prev, entry]);
