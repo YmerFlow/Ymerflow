@@ -8,7 +8,7 @@ import logging
 
 from backend.database import get_db
 from backend.models import Process, ProcessVersion, ProcessLog, Project, Environment
-from backend.services.auth_service import get_current_user, AuthContext, require_project_member, resolve_project_for_read, ProjectReadAccess
+from backend.services.auth_service import get_current_user, AuthContext, require_project_member, resolve_project_for_read, ProjectReadAccess, redact_project_id
 from backend.services.websocket_service import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -148,7 +148,7 @@ async def list_processes(
     result = await db.execute(stmt)
     processes = result.scalars().all()
 
-    return [p.to_dict(verbose=verbose) for p in processes]
+    return redact_project_id([p.to_dict(verbose=verbose) for p in processes], access)
 
 
 @router.get("/projects/{project_id}/process/{process_id}", operation_id="get_process", summary="Get a single process by ID")
@@ -194,7 +194,7 @@ async def get_process(
     if not process or process.project_id != access.project.id:
         raise HTTPException(status_code=404, detail="Process not found")
 
-    return process.to_dict(verbose=verbose, include_versions=True)
+    return redact_project_id(process.to_dict(verbose=verbose, include_versions=True), access)
 
 
 async def _load_process_version(
@@ -251,7 +251,7 @@ async def get_process_version(
     exist. Returns 404 if the process or the requested version is not found.
     """
     pv = await _load_process_version(db, access.project.id, process_id, version)
-    return pv.to_detail_dict(access.project.id)
+    return redact_project_id(pv.to_detail_dict(access.project.id), access)
 
 
 @router.get(
@@ -280,11 +280,11 @@ async def get_process_version_outputs(
     segment) and call get_dataset, then use the 'url' field from that response.
     """
     pv = await _load_process_version(db, access.project.id, process_id, version)
-    return {
+    return redact_project_id({
         "version": pv.version,
         "state": pv.state.value,
         "outputs": pv.build_outputs(access.project.id),
-    }
+    }, access)
 
 
 @router.get("/projects/{project_id}/process/{process_id}/logs", operation_id="get_process_logs", summary="Get job execution logs")

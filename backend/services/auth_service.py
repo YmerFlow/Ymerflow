@@ -224,6 +224,32 @@ class ProjectReadAccess:
     publication: Publication | None = None
 
 
+def _deep_str_replace(payload, old: str, new: str):
+    """Recursively walk a JSON-shaped payload (dicts/lists/primitives) and substring-replace
+    `old` with `new` in every string. Returns a new structure; does not mutate in place."""
+    if isinstance(payload, dict):
+        return {k: _deep_str_replace(v, old, new) for k, v in payload.items()}
+    if isinstance(payload, list):
+        return [_deep_str_replace(item, old, new) for item in payload]
+    if isinstance(payload, str):
+        return payload.replace(old, new)
+    return payload
+
+
+def redact_project_id(payload, access: ProjectReadAccess):
+    """When serving through a publication link, swap the real project id for the publication id
+    everywhere it appears — project_id JSON fields, /projects/<id>/... metadata URLs, and
+    /files/<bucket_prefix><id>/... file URLs — so a viewer handed only a publication id never
+    sees the underlying real project id. No-op for real-membership reads.
+
+    The replaced value is a full uuid4, so a plain substring replace is safe: it cannot
+    plausibly appear as a substring of any non-id field in a JSON metadata response. See
+    docs/plans/done/publication-link-id-opacity.md."""
+    if not access.read_only or access.publication is None:
+        return payload
+    return _deep_str_replace(payload, access.project.id, access.publication.id)
+
+
 async def try_resolve_project_for_read(
     project_id: str,
     auth: AuthContext | None,

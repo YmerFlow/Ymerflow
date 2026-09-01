@@ -98,7 +98,13 @@ class ProjectInvite(Base):
 class Publication(Base):
     __tablename__ = "publications"
 
-    id = Column(String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
+    # "pub-"-prefixed so the id is self-describing everywhere it appears (URL path segment,
+    # project_id field after redaction, and the bucket segment of a file URL). A real project id
+    # is a bare uuid4 and never starts with "pub-", so ^pub- unambiguously distinguishes the two —
+    # this lets the /files/ proxy detect the publication case with a cheap regex instead of a
+    # speculative DB lookup. String(255) has room (not a String(36) UUID column); the entropy is
+    # still a real uuid4. See docs/plans/done/publication-link-id-opacity.md.
+    id = Column(String(255), primary_key=True, default=lambda: "pub-" + str(uuid.uuid4()))
     project_id = Column(String(255), ForeignKey("projects.id", ondelete="CASCADE"),
                          nullable=False, index=True)
     findable = Column(Boolean, nullable=False, default=False)
