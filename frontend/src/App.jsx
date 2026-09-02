@@ -331,14 +331,18 @@ function AuthenticatedApp() {
   if (currentFullscreen) {
     return <currentFullscreen.Component />;
   }
-  // Restore fullscreen page after post-login redirect (path stored before auth)
+  // Restore the pre-login destination stashed before auth (App.jsx:274, and the billing
+  // invite bounce). Consume it exactly once and navigate there, so the restore is
+  // URL-driven and self-clearing: the target URL resolves through the normal fullscreen
+  // / route checks on the next render. Works for any stashed path — fullscreen plugin
+  // pages and ordinary /app/... project URLs alike — and can never linger into a later
+  // session, because it is always removed here the first time an authenticated render
+  // reaches this point.
   const pendingPath = sessionStorage.getItem('pendingPath');
   if (pendingPath) {
-    const pendingFullscreen = fullscreenPages.find(p => pendingPath.startsWith(p.path));
-    if (pendingFullscreen) {
-      return <pendingFullscreen.Component />;
-    }
     sessionStorage.removeItem('pendingPath');
+    const here = location.pathname + location.search + location.hash;
+    if (pendingPath !== here) return <Navigate to={pendingPath} replace />;
   }
 
   // Show invite page when arriving at an invite URL while already logged in,

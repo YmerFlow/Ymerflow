@@ -72,6 +72,11 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('auth_user');
     // Clear token from API client
     setAuthToken(null);
+    // Drop any pre-login destination stash so it can't cross into the next user's session
+    // in this tab. (Restore already consumes pendingPath on the first authenticated render;
+    // this is belt-and-suspenders and also covers the project-invite token.)
+    sessionStorage.removeItem('pendingPath');
+    sessionStorage.removeItem('pendingInviteToken');
     // Drop the departing user's cached queries so a logged-out (or next) user
     // never sees them; observers refetch under the absent/new token.
     queryClient.clear();
