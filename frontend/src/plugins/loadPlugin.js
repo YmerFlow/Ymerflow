@@ -51,6 +51,16 @@ export async function loadPlugins(plugins) {
     await Promise.all(
       (plugins || []).map(p =>
         loadRemote(`${p.name}/index`)
+          .then(mod => {
+            // New contract: a plugin registers its hooks in an exported init() that the host
+            // calls on EVERY load. This is what makes re-registration survive the resetHooks()
+            // that runs on each in-tab auth transition — a cached ESM remoteEntry is never
+            // re-evaluated by the browser, so relying on module-top-level side effects loses the
+            // hooks after the first load. Legacy plugins that registered at import time (no init
+            // export) keep working via that side effect. See
+            // docs/plans/done/plugin-init-function-registration.md.
+            if (mod && typeof mod.init === 'function') mod.init()
+          })
           .catch(e => console.warn(`Failed to load plugin ${p.name}:`, e))
       )
     )
