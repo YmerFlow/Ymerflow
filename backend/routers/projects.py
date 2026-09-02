@@ -184,6 +184,12 @@ async def create_project(
     )
     db.add(member)
 
+    # Flush the pending ORM inserts (project, member) so the projects row exists before
+    # the Core api_key_projects insert below. A Core Table.insert() passed to
+    # db.execute() does NOT autoflush pending ORM objects, so without this the
+    # association insert hits a foreign-key violation on fk_api_key_projects_project_id.
+    await db.flush()
+
     # Auto-add the new project into the calling API key's scope. Because every MCP call
     # is a fresh HTTP request with fresh auth, no in-memory AuthContext mutation is needed
     # — the next tool call re-reads the key's projects and sees this one.
