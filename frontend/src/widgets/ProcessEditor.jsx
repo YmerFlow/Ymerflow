@@ -172,7 +172,16 @@ export default function ProcessEditor() {
 
   // First plugin that registers resource_cost_display wins; null if billing is not active.
   const CostDisplay = useMemo(() => hooks.run.resource_cost_display()[0]?.Component ?? null, []);
-  const schema = localType ? types[localType]?.schema : null;
+  // Strip the top-level title/description before handing the schema to the form:
+  // the ProcessTypeSelect card already shows them, so RJSF's form header would
+  // just duplicate what's right above it. Only the top level is stripped —
+  // per-field title/description (nested in `properties`) must stay.
+  const rawSchema = localType ? types[localType]?.schema : null;
+  const schema = useMemo(() => {
+    if (!rawSchema) return null;
+    const { title, description, ...rest } = rawSchema;
+    return rest;
+  }, [rawSchema]);
 
   if (activeProcess && (!process || !versionObj)) return null;
 

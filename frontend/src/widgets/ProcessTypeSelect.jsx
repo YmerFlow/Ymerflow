@@ -87,7 +87,17 @@ export default function ProcessTypeSelect({ types = {}, value, disabled = false,
             overflowY: "auto",
           }}
         >
-          <div className="list-group list-group-flush">
+          {/* Responsive card grid: auto-fill + minmax lets the number of
+              columns grow with the available dropdown width (1 column when
+              narrow, 2–3+ when there is room). */}
+          <div
+            className="p-2"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+              gap: "0.5rem",
+            }}
+          >
             {Object.keys(types).map((name) => {
               const t = types[name];
               const description = typeDescription(t);
@@ -96,13 +106,14 @@ export default function ProcessTypeSelect({ types = {}, value, disabled = false,
                 <button
                   key={name}
                   type="button"
-                  className={`list-group-item list-group-item-action text-start ${active ? "active" : ""}`}
+                  className={`card text-start h-100 border ${active ? "border-primary bg-primary-subtle" : ""}`}
                   onClick={() => select(name)}
+                  style={{ cursor: "pointer" }}
                 >
-                  <div className="fw-bold">{typeTitle(name, t)}</div>
-                  {description && (
-                    <div className={`small ${active ? "" : "text-muted"}`}>{description}</div>
-                  )}
+                  <div className="card-body p-2">
+                    <div className="fw-bold">{typeTitle(name, t)}</div>
+                    {description && <div className="text-muted small">{description}</div>}
+                  </div>
                 </button>
               );
             })}
