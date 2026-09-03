@@ -47,6 +47,12 @@ export default function ProcessTypeSelect({ types = {}, value, disabled = false,
     setOpen(false);
   };
 
+  // Cards are ordered alphabetically by their display title (case-insensitive),
+  // falling back to the machine name via typeTitle.
+  const sortedNames = Object.keys(types).sort((a, b) =>
+    typeTitle(a, types[a]).localeCompare(typeTitle(b, types[b]), undefined, { sensitivity: "base" })
+  );
+
   return (
     <div ref={rootRef} style={{ position: "relative" }}>
       <div
@@ -80,7 +86,11 @@ export default function ProcessTypeSelect({ types = {}, value, disabled = false,
             position: "absolute",
             top: "100%",
             left: 0,
-            width: "100%",
+            // Grow wider than the (often narrow) form column and overlap the
+            // content to the right rather than being clamped to the container
+            // width; the high z-index keeps it above the form/right column.
+            width: "max(100%, 44rem)",
+            maxWidth: "90vw",
             zIndex: 1050,
             marginTop: "0.25rem",
             maxHeight: "400px",
@@ -98,7 +108,7 @@ export default function ProcessTypeSelect({ types = {}, value, disabled = false,
               gap: "0.5rem",
             }}
           >
-            {Object.keys(types).map((name) => {
+            {sortedNames.map((name) => {
               const t = types[name];
               const description = typeDescription(t);
               const active = name === value;
