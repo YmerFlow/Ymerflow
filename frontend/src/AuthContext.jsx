@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { setAuthToken } from './datamodel/api';
+import { setAuthToken, getUserAccount } from './datamodel/api';
 import { queryClient } from './datamodel/queryClient';
 
 export const AuthContext = createContext();
@@ -87,6 +87,45 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('auth_user', JSON.stringify(updatedUser));
   }, []);
 
+  // Re-read the current user from the server and fold it into the cached copy.
+  //
+  // The user object is cached in localStorage at login and restored on every
+  // page load, but the backend reads the User row fresh on every request — so
+  // anything granted server-side after login (is_admin, plan/contract state,
+  // preferences changed elsewhere) stayed invisible here until logout/login,
+  // and nothing told the user to do that. See Ymerflow#84.
+  //
+  // Merge rather than replace: login may have stored fields /auth/account does
+  // not return, and those should survive a refresh.
+  const refreshUser = useCallback(async () => {
+    if (!localStorage.getItem('auth_token')) return;
+    try {
+      const fresh = await getUserAccount();
+      setUser((prev) => {
+        const merged = { ...(prev || {}), ...fresh };
+        localStorage.setItem('auth_user', JSON.stringify(merged));
+        return merged;
+      });
+    } catch (err) {
+      // A 401 means the stored token is no longer valid: the cached user is a
+      // ghost, so log out rather than keep showing it. Any other failure
+      // (network, 5xx) leaves the cached copy in place — stale beats blank.
+      if (err?.response?.status === 401) logout();
+    }
+  }, [logout]);
+
+  // Refresh once whenever a session becomes active - both a localStorage
+  // restore on page load and an explicit login - and again each time the
+  // window regains focus, which is when a grant made in another tab or by an
+  // admin is most likely to have happened.
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    refreshUser();
+    const onFocus = () => { refreshUser(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isAuthenticated, refreshUser]);
+
   const contextValue = useMemo(
     () => ({
       user,
@@ -96,9 +135,10 @@ export const AuthProvider = ({ children }) => {
       login,
       logout,
       updateUser,
+      refreshUser,
       consumeJustAuthenticated
     }),
-    [user, token, isAuthenticated, authReady, login, logout, updateUser, consumeJustAuthenticated]
+    [user, token, isAuthenticated, authReady, login, logout, updateUser, refreshUser, consumeJustAuthenticated]
   );
 
   return (
