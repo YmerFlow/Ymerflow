@@ -49,6 +49,12 @@ import { API, getPublicationInfo } from './datamodel/api';
 // Expose API URL for plugins that need to call the backend
 if (typeof window !== 'undefined') window.__ymerflow_api = API;
 
+// Expose the shared query cache so plugins (e.g. billing) can invalidate host
+// queries whose results depend on plugin-owned state — e.g. after a billing
+// contract activates, the availableStorageBackends / availableClusters /
+// clusterQueues lists (empty while there was no contract) must be refetched.
+if (typeof window !== 'undefined') window.__ymerflow_queryClient = queryClient;
+
 // ── Register built-in dataset types ──────────────────────────────────────────
 // These run at module load time (side effects) so the registry is populated
 // before any component renders.
