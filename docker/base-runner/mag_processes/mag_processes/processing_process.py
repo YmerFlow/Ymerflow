@@ -39,6 +39,10 @@ class MagProcessing:
 
         return {
             "type": "object",
+            "title": "Process Magnetic",
+            "description": "Apply a configurable AirMagTools filter pipeline (levelling, "
+                           "de-spiking, corrections, etc.) to a magnetic survey dataset, producing "
+                           "a processed MagData dataset.",
             "properties": {
                 "input_data": {
                     "type": "string",

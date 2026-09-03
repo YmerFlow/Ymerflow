@@ -37,6 +37,9 @@ class Forward:
 
         return {
             "type": "object",
+            "title": "Forward Model TEM",
+            "description": "Compute the synthetic airborne TEM response of a resistivity model "
+                           "(from an inversion or model simulator) for a chosen system geometry.",
             "properties": {
                 "input_model": {
                     "type": "string",

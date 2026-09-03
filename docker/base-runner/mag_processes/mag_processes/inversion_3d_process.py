@@ -76,6 +76,9 @@ class MagInversion3D:
     def schema(cls):
         return {
             "type": "object",
+            "title": "3D Magnetic Inversion",
+            "description": "Run a full 3D inversion of gridded magnetic fields, producing a 3D "
+                           "susceptibility or magnetization-vector model volume.",
             "properties": {
                 "input_data": {
                     "type": "string",

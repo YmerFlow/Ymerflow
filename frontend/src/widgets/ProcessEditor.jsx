@@ -8,6 +8,7 @@ import { getProcessVersion, getLatestVersion, getLatestProcessType } from '../da
 import { LayoutContext } from '../flexout/LayoutContext';
 import { AuthContext } from '../AuthContext';
 import TagSelector from './FlowView/TagSelector';
+import ProcessTypeSelect from './ProcessTypeSelect';
 import { hooks } from '../plugins/hooks';
 
 function useActivateProcessLog() {
@@ -282,13 +283,13 @@ export default function ProcessEditor() {
           {localEnvironment && (
             <div className="mb-3">
               <label className="form-label">Process Type: </label>
-              <select
-                className="form-select" value={localType || ""} disabled={typesLoading}
-                onChange={e => { setLocalType(e.target.value); if (!isExisting) setFormData({}); }}
-              >
-                <option value="">{typesLoading ? "Loading..." : "Select type..."}</option>
-                {Object.keys(types).map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
+              <ProcessTypeSelect
+                types={types}
+                value={localType}
+                disabled={typesLoading}
+                loading={typesLoading}
+                onChange={t => { setLocalType(t); if (!isExisting) setFormData({}); }}
+              />
             </div>
           )}
         </div>

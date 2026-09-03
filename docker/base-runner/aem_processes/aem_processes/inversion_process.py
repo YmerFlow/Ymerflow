@@ -38,6 +38,9 @@ class Inversion:
 
         return {
             "type": "object",
+            "title": "Invert TEM",
+            "description": "Run a SimPEG-based 1D inversion of a processed airborne TEM dataset, "
+                           "producing a layered resistivity model and synthetic response.",
             "properties": {
                 "input_data": {
                     "type": "string",

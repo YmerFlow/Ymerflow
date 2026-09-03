@@ -16,6 +16,10 @@ class LibaarhusXYZImporter:
         """Return JSON Schema for import parameters."""
         return {
             "type": "object",
+            "title": "Import SkyTEM (XYZ/GEX)",
+            "description": "Import airborne TEM data from Aarhus Workbench XYZ files with a GEX "
+                           "system description (and optional ALC column mapping). Produces an XYZ "
+                           "dataset ready for processing and inversion.",
             "properties": {
                 "xyzfile": {
                     "type": "string",
