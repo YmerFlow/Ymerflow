@@ -9,6 +9,7 @@ import { LayoutContext } from '../flexout/LayoutContext';
 import { AuthContext } from '../AuthContext';
 import TagSelector from './FlowView/TagSelector';
 import ProcessTypeSelect from './ProcessTypeSelect';
+import EnvironmentSelect from './EnvironmentSelect';
 import { hooks } from '../plugins/hooks';
 
 function useActivateProcessLog() {
@@ -278,17 +279,6 @@ export default function ProcessEditor() {
             </div>
           )}
 
-          <div className="mb-3">
-            <label className="form-label">Environment: </label>
-            <select
-              className="form-select" value={localEnvironment || ""} disabled={environmentsLoading}
-              onChange={e => setLocalEnvironment(e.target.value)}
-            >
-              <option value="">{environmentsLoading ? "Loading..." : "Select environment..."}</option>
-              {environments.map(env => <option key={env.id} value={env.id}>{env.name}</option>)}
-            </select>
-          </div>
-
           {localEnvironment && (
             <div className="mb-3">
               <label className="form-label">Process Type: </label>
@@ -326,6 +316,16 @@ export default function ProcessEditor() {
               </Card.Footer>
             )}
           </Card>
+          <div className="mt-3">
+            <label className="form-label">Software version: </label>
+            <EnvironmentSelect
+              environments={environments}
+              value={localEnvironment}
+              disabled={environmentsLoading}
+              loading={environmentsLoading}
+              onChange={id => setLocalEnvironment(id)}
+            />
+          </div>
           <div className="mt-3">
             <label className="form-label">Tags: </label>
             {isExisting ? (
