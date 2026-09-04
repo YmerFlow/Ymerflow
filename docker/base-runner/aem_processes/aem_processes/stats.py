@@ -90,7 +90,15 @@ def compute_xyz_stats(xyz):
     if hasattr(xyz, "model_info") and xyz.model_info:
         crs = xyz.model_info.get("projection")
         if crs is not None:
-            stats["crs"] = crs
+            # Written as an int at import, but model_info round-trips through the
+            # file as a float — 32610 becomes 32610.0 — so the reported type
+            # otherwise depends on whether the dataset has been through a dump.
+            # Coerce where possible; pass through rather than raise, since a
+            # cosmetic field should not fail a dataset write.
+            try:
+                stats["crs"] = int(crs)
+            except (TypeError, ValueError):
+                stats["crs"] = crs
 
     flightlines_stats = {}
     for col in fl.columns:
