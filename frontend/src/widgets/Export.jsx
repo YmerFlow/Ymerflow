@@ -4,6 +4,36 @@ import { Collapse } from 'react-bootstrap';
 import { getDataset } from '../datamodel/api';
 import { resolveProcessRef } from '../datamodel/processRef';
 
+// The parts structure keys files by MIME type, which is an implementation detail — show a
+// readable name instead, falling back to the raw MIME type for kinds not listed here.
+const MIME_DISPLAY_NAMES = {
+  'application/x-aarhusxyz-msgpack': 'AEM data (msgpack)',
+  'application/x-magdata-msgpack': 'Magnetic data (msgpack)',
+  'application/x-webxtile': 'Gridded tiles (webxtile)',
+  'application/geo+json': 'Geometry (GeoJSON)',
+  'application/json': 'JSON document',
+  'application/vnd.ymerflow.stats+json': 'Statistics (JSON)',
+  'text/x-aarhusxyz': 'AEM data (Aarhus XYZ text)',
+  'text/x-aarhusxyz-gex': 'System description (GEX)',
+  'text/csv': 'Table (CSV)',
+  'text/plain': 'Text',
+  'model/vnd.vtk': '3D model (VTK)',
+  'model/gltf-binary': '3D model (GLB)',
+  'application/geopackage+sqlite3': 'GeoPackage',
+  'image/tiff': 'GeoTIFF',
+  'application/zip': 'Zip archive',
+  'application/x-esri-shape': 'Shapefile',
+  'application/gml+xml': 'GML',
+  'application/vnd.google-earth.kml+xml': 'KML',
+  'application/vnd.google-earth.kmz': 'KMZ',
+  'application/pdf': 'PDF',
+  'application/octet-stream': 'Binary file',
+};
+
+function mimeDisplayName(mimeType) {
+  return MIME_DISPLAY_NAMES[mimeType] || mimeType || 'File';
+}
+
 export default function Export({ processRef }) {
   const { activeProcess, processes, currentProject } = useContext(ProcessContext);
   const [expandedNodes, setExpandedNodes] = useState({});
@@ -139,8 +169,8 @@ function DatasetNode({ dataset, expandedNodes, toggleNode }) {
         )}
         {!hasContent && <span style={{ width: '24px', display: 'inline-block' }}></span>}
         <strong>{dataset.dataset_name}</strong>
-        <span className="ms-2 text-muted">
-          ({dataset.mime_type})
+        <span className="ms-2 text-muted" title={dataset.mime_type}>
+          ({mimeDisplayName(dataset.mime_type)})
         </span>
       </div>
 
@@ -236,12 +266,19 @@ function PartNode({ partName, partData, parentId, expandedNodes, toggleNode }) {
   );
 }
 
+// Ask the /files/ endpoint to serve the file as a download rather than inline. The server
+// keys Content-Disposition off this query string, so a click saves the file instead of
+// rendering it in the browser.
+function downloadUrl(url) {
+  return url + (url.includes('?') ? '&' : '?') + 'content-disposition=attachment';
+}
+
 function FileNode({ mimeType, url }) {
   return (
     <div className="ms-3 mb-1">
       <i className="fa fa-file-o me-2" style={{ width: '12px' }}></i>
-      <a href={url} target="_blank" rel="noopener noreferrer" className="text-decoration-none">
-        {mimeType}
+      <a href={downloadUrl(url)} target="_blank" rel="noopener noreferrer" className="text-decoration-none" title={mimeType}>
+        {mimeDisplayName(mimeType)}
       </a>
     </div>
   );

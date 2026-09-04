@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, cast, String
 from sqlalchemy.orm import selectinload
 import asyncio
+import mimetypes
+import re
 import fsspec
 
 from backend.database import get_db
@@ -272,8 +274,66 @@ async def get_dataset_part_geography(
     )
 
 
+FILE_MIME_TYPES = {
+    ".msgpack": "application/x-aarhusxyz-msgpack",
+    ".geojson": "application/geo+json",
+    ".json": "application/json",
+    ".csv": "text/csv",
+    ".txt": "text/plain",
+    ".xyz": "text/x-aarhusxyz",
+    ".gex": "text/x-aarhusxyz-gex",
+    ".vtk": "model/vnd.vtk",
+    ".glb": "model/gltf-binary",
+    ".gpkg": "application/geopackage+sqlite3",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+    ".zip": "application/zip",
+    ".shp": "application/x-esri-shape",
+    ".shx": "application/x-esri-shape-index",
+    ".dbf": "application/x-dbf",
+    ".prj": "text/plain",
+    ".cpg": "text/plain",
+    ".gml": "application/gml+xml",
+    ".kml": "application/vnd.google-earth.kml+xml",
+    ".kmz": "application/vnd.google-earth.kmz",
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+}
+
+TEXT_MIME_TYPES = {"application/geo+json", "application/json", "text/csv", "text/plain"}
+
+
+def _sanitize_filename_part(name: str) -> str:
+    return re.sub(r'[^A-Za-z0-9._-]+', '_', name).strip('._-')
+
+
+async def _download_filename(db: AsyncSession, path: str) -> str:
+    """Compose a download name from the dataset name and part, since every dataset file on
+    disk is called root.msgpack / root.geojson / <part>.msgpack."""
+    basename = path.rsplit('/', 1)[-1]
+    match = re.search(r'/datasets/([^/]+)/', path)
+    if not match:
+        return _sanitize_filename_part(basename) or "download"
+
+    result = await db.execute(select(Dataset.dataset_name).where(Dataset.id == match.group(1)))
+    dataset_name = _sanitize_filename_part(result.scalar_one_or_none() or "")
+    if not dataset_name:
+        return _sanitize_filename_part(basename) or "download"
+
+    stem, _, ext = basename.partition('.')
+    suffix = f".{ext}" if ext else ""
+    stem = _sanitize_filename_part(stem)
+    if not stem or stem == "root":
+        return f"{dataset_name}{suffix}"
+    return f"{dataset_name}_{stem}{suffix}"
+
+
 @router.get("/files/{path:path}", include_in_schema=False)
-async def get_file(path: str, db: AsyncSession = Depends(get_db)):
+async def get_file(
+    path: str,
+    content_disposition: str | None = Query(None, alias="content-disposition"),
+    db: AsyncSession = Depends(get_db),
+):
     """Unified file endpoint for datasets and uploads (frontend / curl use only).
 
     Auth-free: any /files/ URL can be fetched with a plain curl — no token needed.
@@ -284,6 +344,11 @@ async def get_file(path: str, db: AsyncSession = Depends(get_db)):
     with that backend's admin fsspec kwargs and the correct URL scheme (s3/gs/…). This is trusted,
     backend-side I/O — the proxy may read across projects because the backend enforces access
     itself (the endpoint is intentionally auth-free; the URL is the capability).
+
+    Files are served inline by default. Add `?content-disposition=attachment` to the URL to
+    have the browser download the file instead, named after its dataset and part. The export
+    widget appends this so its links download; plot/map views omit it and fetch inline. (fetch()
+    ignores Content-Disposition anyway, so the choice only matters for a click/navigation.)
 
     Examples:
         /files/project-bucket/processes/proc-123/datasets/ds-456/root.msgpack
@@ -309,33 +374,29 @@ async def get_file(path: str, db: AsyncSession = Depends(get_db)):
     rest = path.split("/", 1)[1] if "/" in path else ""
     storage_url = f"{real_base}/{rest}" if rest else real_base
 
-    # Determine MIME type based on file extension
-    mime_type = "application/octet-stream"
-    if path.endswith('.msgpack'):
-        mime_type = "application/x-aarhusxyz-msgpack"
-    elif path.endswith('.geojson'):
-        mime_type = "application/geo+json"
-    elif path.endswith('.json'):
-        mime_type = "application/json"
-    elif path.endswith('.csv'):
-        mime_type = "text/csv"
-    elif path.endswith('.txt'):
-        mime_type = "text/plain"
+    # Determine MIME type based on file extension. Our list is authoritative (it carries the
+    # domain-specific types mimetypes doesn't know); fall back to the stdlib guess, then octet-stream.
+    basename = path.rsplit('/', 1)[-1]
+    extension = f".{basename.rsplit('.', 1)[-1].lower()}" if '.' in basename else ''
+    mime_type = (
+        FILE_MIME_TYPES.get(extension)
+        or mimetypes.guess_type(basename)[0]
+        or "application/octet-stream"
+    )
 
     # Read file from storage (backend-side admin credentials)
     storage_options = await get_fsspec_storage_options(db, project.id)
     try:
-        mode = 'r' if mime_type in ("application/geo+json", "application/json", "text/csv", "text/plain") else 'rb'
+        mode = 'r' if mime_type in TEXT_MIME_TYPES else 'rb'
         def _read():
             with fsspec.open(storage_url, mode, **storage_options) as f:
                 return f.read()
         data = await asyncio.to_thread(_read)
 
-        # Determine if this is a download (uploads) or inline (datasets)
+        # The caller opts into a download via ?content-disposition=attachment; default is inline.
         headers = {}
-        if '/uploads/' in path:
-            # Extract filename from path
-            filename = path.split('/')[-1]
+        if content_disposition == "attachment":
+            filename = await _download_filename(db, path)
             headers["Content-Disposition"] = f'attachment; filename="{filename}"'
 
         return Response(
