@@ -486,7 +486,11 @@ class K8sClient:
         """
         await self._ensure_initialized()
         try:
-            custom_api = client.CustomObjectsApi()
+            # Build from this client's own ApiClient — NOT a bare CustomObjectsApi(), which would
+            # pick up the process-wide default Configuration (last cluster to call
+            # load_kube_config_from_dict/load_incluster_config wins) and query the wrong cluster
+            # with the wrong credentials. self.core_api.api_client carries this cluster's config.
+            custom_api = client.CustomObjectsApi(self.core_api.api_client)
             cq = await custom_api.get_cluster_custom_object(
                 group="kueue.x-k8s.io",
                 version="v1beta2",
@@ -519,7 +523,10 @@ class K8sClient:
         not fail the whole cross-cluster request).
         """
         await self._ensure_initialized()
-        custom_api = client.CustomObjectsApi()
+        # Build from this client's own ApiClient — NOT a bare CustomObjectsApi(), which would pick
+        # up the process-wide default Configuration and query the wrong cluster with the wrong
+        # credentials. self.core_api.api_client carries this cluster's config.
+        custom_api = client.CustomObjectsApi(self.core_api.api_client)
         resp = await custom_api.list_namespaced_custom_object(
             group="kueue.x-k8s.io",
             version="v1beta2",
