@@ -263,11 +263,18 @@ function PartNode({ partName, partData, parentId, expandedNodes, toggleNode }) {
   );
 }
 
+// Ask the /files/ endpoint to serve the file as a download rather than inline. The server
+// keys Content-Disposition off this query string, so a click saves the file instead of
+// rendering it in the browser.
+function downloadUrl(url) {
+  return url + (url.includes('?') ? '&' : '?') + 'content-disposition=attachment';
+}
+
 function FileNode({ mimeType, url }) {
   return (
     <div className="ms-3 mb-1">
       <i className="fa fa-file-o me-2" style={{ width: '12px' }}></i>
-      <a href={url} target="_blank" rel="noopener noreferrer" className="text-decoration-none" title={mimeType}>
+      <a href={downloadUrl(url)} target="_blank" rel="noopener noreferrer" className="text-decoration-none" title={mimeType}>
         {mimeDisplayName(mimeType)}
       </a>
     </div>

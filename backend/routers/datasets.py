@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, cast, String
@@ -299,25 +299,6 @@ FILE_MIME_TYPES = {
     ".png": "image/png",
 }
 
-# Fetched programmatically by the frontend (plot and map views), so they must not be
-# handed to the browser as a download. Everything else gets Content-Disposition: attachment.
-# Types the frontend fetches programmatically. Content-Disposition is ignored by
-# fetch()/XHR — browsers act on it only for navigations — so this list is not what
-# makes those loads work. It is what keeps a click from downloading a file whose
-# only audience is the plot or the map.
-#
-# application/json is deliberately absent. JsonDataset does fetch it, and fetch()
-# ignores the header, so marking it an attachment is safe. A QC report is a
-# deliverable someone hands to a client; rendering it inline makes the one output
-# most likely to be wanted as a file the one output that cannot be clicked into
-# existence.
-INLINE_MIME_TYPES = {
-    "application/x-aarhusxyz-msgpack",
-    "application/x-magdata-msgpack",
-    "application/x-webxtile",
-    "application/geo+json",
-}
-
 TEXT_MIME_TYPES = {"application/geo+json", "application/json", "text/csv", "text/plain"}
 
 
@@ -347,7 +328,11 @@ async def _download_filename(db: AsyncSession, path: str) -> str:
 
 
 @router.get("/files/{path:path}", include_in_schema=False)
-async def get_file(path: str, db: AsyncSession = Depends(get_db)):
+async def get_file(
+    path: str,
+    content_disposition: str | None = Query(None, alias="content-disposition"),
+    db: AsyncSession = Depends(get_db),
+):
     """Unified file endpoint for datasets and uploads (frontend / curl use only).
 
     Auth-free: any /files/ URL can be fetched with a plain curl — no token needed.
@@ -359,8 +344,10 @@ async def get_file(path: str, db: AsyncSession = Depends(get_db)):
     backend-side I/O — the proxy may read across projects because the backend enforces access
     itself (the endpoint is intentionally auth-free; the URL is the capability).
 
-    Files whose MIME type the frontend fetches itself (INLINE_MIME_TYPES) are served inline;
-    every other kind is served as an attachment named after its dataset and part.
+    Files are served inline by default. Add `?content-disposition=attachment` to the URL to
+    have the browser download the file instead, named after its dataset and part. The export
+    widget appends this so its links download; plot/map views omit it and fetch inline. (fetch()
+    ignores Content-Disposition anyway, so the choice only matters for a click/navigation.)
 
     Examples:
         /files/project-bucket/processes/proc-123/datasets/ds-456/root.msgpack
@@ -395,10 +382,9 @@ async def get_file(path: str, db: AsyncSession = Depends(get_db)):
                 return f.read()
         data = await asyncio.to_thread(_read)
 
-        # Serve inline only what the frontend fetches itself; anything a user clicks downloads
+        # The caller opts into a download via ?content-disposition=attachment; default is inline.
         headers = {}
-        inline = '/uploads/' not in path and mime_type in INLINE_MIME_TYPES
-        if not inline:
+        if content_disposition == "attachment":
             filename = await _download_filename(db, path)
             headers["Content-Disposition"] = f'attachment; filename="{filename}"'
 
