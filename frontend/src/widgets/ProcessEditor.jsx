@@ -50,7 +50,7 @@ const newestEnvironmentId = (environments) => {
 export default function ProcessEditor() {
   const {
     processes, activeProcess, setActiveProcess, invalidateProject,
-    selectedEnvironment, environments, environmentsLoading, currentProject,
+    environments, environmentsLoading, currentProject,
     newProcessToken, newProcessDefaults
   } = useContext(ProcessContext);
   const { user } = useContext(AuthContext);
@@ -61,7 +61,7 @@ export default function ProcessEditor() {
   const isExisting = !!process && !!versionObj;
 
   const [processName, setProcessName] = useState("");
-  const [localEnvironment, setLocalEnvironment] = useState(newestEnvironmentId(environments) || selectedEnvironment || null);
+  const [localEnvironment, setLocalEnvironment] = useState(newestEnvironmentId(environments) || null);
   const [localType, setLocalType] = useState(null);
   const [formData, setFormData] = useState({});
   const [selectedTags, setSelectedTags] = useState([]);
@@ -118,7 +118,7 @@ export default function ProcessEditor() {
       setLocalType(newProcessDefaults.type ?? null);   // e.g. 'import_skytem'
     } else {
       // No existing config: default to the newest available environment.
-      setLocalEnvironment(newestEnvironmentId(environments) || selectedEnvironment || null);
+      setLocalEnvironment(newestEnvironmentId(environments) || null);
       setLocalType(null);
     }
     setFormData({});
@@ -316,8 +316,8 @@ export default function ProcessEditor() {
               </Card.Footer>
             )}
           </Card>
-          <div className="mt-3">
-            <label className="form-label">Software version: </label>
+          <div className="mt-3 d-flex align-items-center">
+            <label className="form-label mb-0 me-2">Software version: </label>
             <EnvironmentSelect
               environments={environments}
               value={localEnvironment}
