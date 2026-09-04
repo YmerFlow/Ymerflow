@@ -21,7 +21,9 @@ function AppBootstrap() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const targetProjectId = currentProject ?? projects[0]?.id ?? null;
+  // Only the user's own projects auto-select — super-public publications (read_only) are
+  // merged into `projects` but shouldn't be picked as the landing project.
+  const targetProjectId = currentProject ?? projects.find(p => !p.read_only)?.id ?? null;
   const { data: projectWorkspaces = [], isLoading: pwLoading } = useWorkspaces(targetProjectId);
   const { data: defaultWorkspace } = useWorkspace('default');
   const { data: publicWorkspaces = [], isLoading: pubLoading } = usePublicWorkspaces();
