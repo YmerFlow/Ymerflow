@@ -3,6 +3,9 @@
    ========================================================================== */
 
 :root {
+  --topbar-h: 56px;
+  --brand-gradient: linear-gradient(180deg, #050914, #091B2C);
+  --brand-blue: #2269A7;
   --sidebar-w: 268px;
   --sidebar-bg: #1b2737;
   --sidebar-text: #b8cfe0;
@@ -36,8 +39,131 @@ body {
   color: var(--body-text);
   background: var(--body-bg);
   display: flex;
+  flex-direction: column;
   min-height: 100vh;
   line-height: 1.6;
+}
+
+/* ── Top bar ─────────────────────────────────────────────────────────────── */
+
+#topbar {
+  height: var(--topbar-h);
+  background: var(--brand-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex-shrink: 0;
+}
+
+.topbar-logo {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+}
+.topbar-logo img {
+  height: 28px;
+  width: auto;
+  display: block;
+}
+
+/* Mirrors the app's logged-out MenuBar: a Bootstrap navbar-dark on the brand
+   gradient — plain light nav links, standard light dropdown, all centered. */
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+/* Left group: logo followed by the "Company" dropdown. */
+.topbar-nav-left {
+  gap: 12px;
+}
+
+/* Shared look for both plain links and the dropdown toggle button. */
+.topbar-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.55);   /* Bootstrap navbar-dark link color */
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.5;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.topbar-nav-link:hover,
+.topbar-nav-link:focus {
+  color: rgba(255, 255, 255, 0.85);
+  outline: none;
+}
+
+/* GitHub icon link — icon only, sits at the far right of the bar. */
+.topbar-github { padding: 6px 8px; }
+.topbar-github svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+/* Dropdown (e.g. "Company") */
+.topbar-dropdown {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.topbar-caret {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+.topbar-dropdown.open .topbar-caret { transform: rotate(180deg); }
+
+.topbar-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 180px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--body-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(5, 9, 20, 0.22);
+  display: none;
+  z-index: 30;
+}
+.topbar-dropdown.open .topbar-dropdown-menu { display: block; }
+
+.topbar-dropdown-menu a {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 5px;
+  color: var(--body-text);
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.12s;
+}
+.topbar-dropdown-menu a:hover {
+  background: var(--code-bg);
+  color: var(--body-text);
+}
+
+/* ── Layout row (sidebar + content + toc) ────────────────────────────────── */
+
+#layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
@@ -50,8 +176,8 @@ body {
   display: flex;
   flex-direction: column;
   position: sticky;
-  top: 0;
-  height: 100vh;
+  top: var(--topbar-h);
+  height: calc(100vh - var(--topbar-h));
   overflow-y: auto;
   overflow-x: hidden;
   flex-shrink: 0;
@@ -59,50 +185,9 @@ body {
   scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
 
-/* Sidebar header */
-#sidebar-header {
-  position: relative;
-  border-bottom: 1px solid var(--sidebar-border);
-  flex-shrink: 0;
-}
 
-#site-logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 18px 62px 18px 16px;
-  text-decoration: none;
-  color: #fff;
-  font-weight: 700;
-  font-size: 1.05rem;
-  letter-spacing: -0.01em;
-}
-#site-logo img {
-  width: 34px;
-  height: 34px;
-  object-fit: cover;
-  border-radius: 5px;
-  flex-shrink: 0;
-}
-#site-logo:hover { color: #fff; }
-
-#github-link {
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  color: #fff;
-  text-decoration: none;
-}
-#github-link svg {
-  width: 34px;
-  height: 34px;
-}
-#github-link:hover { opacity: 0.75; }
-
-/* Nav list */
-nav { flex: 1; padding: 10px 0 16px; }
+/* Nav list — scoped to the sidebar so it doesn't stretch the top-bar <nav>. */
+#sidebar nav { flex: 1; padding: 10px 0 16px; }
 
 .nav-list {
   list-style: none;
@@ -200,8 +285,8 @@ nav { flex: 1; padding: 10px 0 16px; }
   border-left: 1px solid var(--border);
   padding: 52px 20px 80px 24px;
   position: sticky;
-  top: 0;
-  height: 100vh;
+  top: var(--topbar-h);
+  height: calc(100vh - var(--topbar-h));
   overflow-y: auto;
   overflow-x: hidden;
   flex-shrink: 0;
@@ -395,7 +480,7 @@ article dd { margin-left: 20px; color: var(--muted); }
 }
 
 @media (max-width: 640px) {
-  body { flex-direction: column; }
+  #layout { flex-direction: column; }
   #sidebar {
     position: static;
     width: 100%;
@@ -404,6 +489,8 @@ article dd { margin-left: 20px; color: var(--muted); }
     max-height: 50vh;
   }
   #content { padding: 24px 20px 48px; }
+  #topbar { padding: 0 14px; }
+  .topbar-nav { gap: 14px; }
 }
 
 /* ── Feature card grid ───────────────────────────────────────────────────── */

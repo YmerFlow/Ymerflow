@@ -58,9 +58,9 @@ async def _build_manifest(db, project_id: str):
     stmt = (
         select(Process)
         .options(
-            selectinload(Process.environment),
             selectinload(Process.versions).selectinload(ProcessVersion.datasets),
             selectinload(Process.versions).selectinload(ProcessVersion.tags),
+            selectinload(Process.versions).selectinload(ProcessVersion.environment),
         )
         .where(Process.project_id == project_id)
         .order_by(Process.created_at)
@@ -76,17 +76,17 @@ async def _build_manifest(db, project_id: str):
     process_entries = []
 
     for process in processes:
-        env = process.environment
-        if env is not None and env.id not in environments_by_id:
-            environments_by_id[env.id] = {
-                "id": env.id,
-                "name": env.name,
-                "docker_image": env.docker_image,
-                "process_types": env.process_types,
-            }
-
         version_entries = []
         for version in sorted(process.versions, key=lambda v: v.version):
+            # type/environment are per-version now — collect the environment set from versions.
+            env = version.environment
+            if env is not None and env.id not in environments_by_id:
+                environments_by_id[env.id] = {
+                    "id": env.id,
+                    "name": env.name,
+                    "docker_image": env.docker_image,
+                    "process_types": env.process_types,
+                }
             logs = (await db.execute(
                 select(ProcessLog)
                 .where(ProcessLog.process_id == process.id, ProcessLog.version == version.version)
@@ -119,6 +119,8 @@ async def _build_manifest(db, project_id: str):
 
             version_entries.append({
                 "version": version.version,
+                "type": version.type,
+                "environment_id": version.environment_id,
                 "state": state,
                 "parameters": version.parameters,
                 "dependencies": version.dependencies,
@@ -133,8 +135,7 @@ async def _build_manifest(db, project_id: str):
         process_entries.append({
             "id": process.id,
             "name": process.name,
-            "type": process.type,
-            "environment_id": process.environment_id,
+            # type/environment_id are per-version now (inside version_entries), not process-level.
             "flow_x": process.flow_x,
             "flow_y": process.flow_y,
             "versions": version_entries,
@@ -169,7 +170,10 @@ async def _build_manifest(db, project_id: str):
             })
 
     manifest = {
-        "format_version": 2,
+        # v3: type/environment_id moved from process-level into each version entry
+        # (docs/plans/done/move-type-environment-to-processversion.md). Import stays back-compatible
+        # with v1/v2 (process-level) manifests via a presence check — see project_import_service.
+        "format_version": 3,
         "exported_at": datetime.utcnow().isoformat(),
         "project": {"name": project.name},
         "environments": list(environments_by_id.values()),
@@ -192,7 +196,7 @@ async def run_export(project_id: str, export_id: str):
         try:
             export_row.state = "running"
             await db.commit()
-            await ws_manager.broadcast_state({"type": "project_export", "id": export_id, "state": "running"})
+            await ws_manager.broadcast_state({"refetch": True})
 
             manifest, file_copy_jobs = await _build_manifest(db, project_id)
 
@@ -231,7 +235,7 @@ async def run_export(project_id: str, export_id: str):
             export_row.file_url = zip_storage_url
             export_row.completed_at = datetime.utcnow()
             await db.commit()
-            await ws_manager.broadcast_state({"type": "project_export", "id": export_id, "state": "done"})
+            await ws_manager.broadcast_state({"refetch": True})
 
         except Exception as e:
             logger.error(f"Project export failed: {export_id} - {e}", exc_info=True)
@@ -244,6 +248,6 @@ async def run_export(project_id: str, export_id: str):
                         row.state = "failed"
                         row.error = str(e)
                         await fresh_db.commit()
-                await ws_manager.broadcast_state({"type": "project_export", "id": export_id, "state": "failed"})
+                await ws_manager.broadcast_state({"refetch": True})
             except Exception as inner_e:
                 logger.error(f"Failed to record export failure for {export_id}: {inner_e}", exc_info=True)

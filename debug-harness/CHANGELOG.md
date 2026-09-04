@@ -29,7 +29,7 @@ STORAGE_ENDPOINT=http://localhost:9000
 MINIO_ROOT_USER=minioadmin
 MINIO_ROOT_PASSWORD=minioadmin
 STORAGE_PROTOCOL=s3
-STORAGE_BUCKET_PREFIX=nagelfluh-project-
+STORAGE_BUCKET_PREFIX=ymerflow-project-
 ```
 
 **Result**: Debug harness will use `minioadmin` credentials automatically! 🎉

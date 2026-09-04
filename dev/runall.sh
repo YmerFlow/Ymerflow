@@ -31,6 +31,13 @@ fi
 # not need to be a real public IP/DNS name.
 export REGISTRY_PUBLIC_HOST="${REGISTRY_PUBLIC_HOST:-$(hostname -I | awk '{print $1}')}"
 
+# Direct (bootstrap-only) registry address — see docs/plans/registry-public-vs-direct-address.md.
+# In pure local dev this equals the public address above (both default to the host's LAN IP /
+# 30500), so the public/direct split is inert; exported here only so the handler's bootstrap()
+# always has an explicit direct address even when an operator sets a real public REGISTRY_PUBLIC_HOST.
+export REGISTRY_DIRECT_HOST="${REGISTRY_DIRECT_HOST:-$(hostname -I | awk '{print $1}')}"
+export REGISTRY_DIRECT_PORT="${REGISTRY_DIRECT_PORT:-30500}"
+
 echo "=========================================="
 echo "YmerFlow Development Environment Setup"
 echo "=========================================="

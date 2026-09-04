@@ -63,6 +63,10 @@ class MagEquivSource:
     def schema(cls):
         return {
             "type": "object",
+            "title": "Equivalent Source (Magnetic)",
+            "description": "Fit an equivalent-source model to a processed magnetic survey and grid "
+                           "it to a regular surface, producing gridded Bx/By/Bz/TMI fields for 3D "
+                           "inversion.",
             "properties": {
                 "input_data": {
                     "type": "string",

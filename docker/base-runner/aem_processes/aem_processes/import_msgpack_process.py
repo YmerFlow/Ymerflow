@@ -14,6 +14,10 @@ class MsgpackImporter:
         """Return JSON Schema for import parameters."""
         return {
             "type": "object",
+            "title": "Import YmerFlow AEM (msgpack)",
+            "description": "Import airborne TEM data from a YmerFlow XYZ msgpack container with an "
+                           "embedded GEX (e.g. from the AEM Model Simulator). Produces an XYZ "
+                           "dataset ready for processing and inversion.",
             "properties": {
                 "msgpack_file": {
                     "type": "string",

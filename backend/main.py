@@ -20,6 +20,8 @@ from backend.routers import (
     plugin_assets_router,
     internal_router,
     admin_router,
+    stats_router,
+    nav_router,
 )
 
 # Configure logging
@@ -89,6 +91,8 @@ app.include_router(plugins_router)
 app.include_router(plugin_assets_router)
 app.include_router(internal_router)
 app.include_router(admin_router)
+app.include_router(stats_router)
+app.include_router(nav_router)
 
 
 @app.get("/")
@@ -113,9 +117,10 @@ async def public_config():
     return {"hosted_version_text": settings.hosted_version_text}
 
 
-# Mount MCP server — exposes Processes, Datasets, Environments, and Uploads as MCP
-# tools at /mcp (Streamable HTTP transport). Auth via API key in the Authorization
-# header; each key is scoped to a single project so no project selection is needed.
+# Mount MCP server — exposes Projects, Processes, Datasets, Environments, Uploads and
+# Workspaces as MCP tools at /mcp (Streamable HTTP transport). Auth via API key in the
+# Authorization header; a key grants access to a *set* of projects (possibly empty), so
+# every per-project endpoint takes project_id as an explicit path parameter.
 #
 # Raw data download endpoints (dataset/data, dataset/geography, /files/, /uploads/{id})
 # are excluded from MCP via include_in_schema=False — they return binary content that
@@ -126,21 +131,46 @@ mcp = FastApiMCP(
     name="YmerFlow",
     description=(
         "Geophysics data processing platform. "
-        "Authenticate with an API key (Authorization: Bearer apk_<key>); "
-        "the key is already scoped to a project, but every endpoint still takes that same "
-        "project_id as an explicit path parameter — pass it on every call.\n"
+        "Authenticate with an API key (Authorization: Bearer apk_<key>). A key grants "
+        "access to a set of projects (possibly empty); every per-project endpoint takes "
+        "project_id as an explicit path parameter — pass one from the key's set on every call.\n"
         "Typical workflow:\n"
+        "0. list_projects() — discover the project(s) this key can access; use an entry's 'id' as "
+        "project_id below. (Read-only publications may also appear, marked read_only:true.) "
+        "If it returns none of your own projects, the key has an empty scope: call create_project() "
+        "to make one — a project you create is automatically added to the key's scope, so the very "
+        "next list_projects() will include it.\n"
+        "0a. create_project(name=..., [storage_backend_id=...]) — create a new project. "
+        "storage_backend_id is optional: omit it when only one backend is allowed; if several are, "
+        "the 400 error lists them (or call list_storage_backends() to see the set).\n"
+        "0b. list_public_publications() — discover public (findable) read-only projects shared by "
+        "others. Any 'id' it returns is a publication id usable as project_id in the read-only tools "
+        "below (list_processes, get_process, get_process_logs, search_datasets, get_dataset); write "
+        "tools like create_process reject it.\n"
         "1. list_environments(include_schemas=false) — discover environments and process type names.\n"
         "2. get_environment_process_type(env_id, type_name) — fetch schema for the specific type.\n"
         "3. For local files: upload_file(project_id, ...) (JSON+base64 for small files); or "
-        "request_upload_token then curl -H 'Authorization: Bearer upt_...' -F file=@path "
-        "/projects/{project_id}/upload for large files.\n"
+        "request_upload_token then curl -H 'Authorization: Bearer upt_...' "
+        "-H 'Content-Type: application/octet-stream' --data-binary @path "
+        "'/projects/{project_id}/upload?filename=path' for large files.\n"
         "4. create_process(project_id, ...) — submit a job; save the returned id and version number.\n"
-        "5. get_process(project_id, process_id) — poll until versions[-1].state is 'done' or 'failed'.\n"
-        "6. get_dataset(project_id, dataset_id) — resolve output URLs from versions[-1].outputs.\n"
-        "7. curl '{url}' — download results; /files/ URLs need no authentication.\n"
-        "Use describe_dataset before downloading to check columns, record counts, and bbox."
+        "5. get_process(project_id, process_id) — returns the process plus short version rows; "
+        "poll until versions[-1].state is 'done' or 'failed'. (list_processes gives one short row "
+        "per process; get_process drills into one process's versions.)\n"
+        "6. get_process_version(project_id, process_id[, version]) — full detail (parameters, "
+        "resources, cluster) for one version, defaulting to the latest. "
+        "get_process_version_outputs(project_id, process_id[, version]) — that version's output "
+        "dataset URLs (also defaults to latest).\n"
+        "7. get_dataset(project_id, dataset_id) — resolve each output URL to its downloadable file "
+        "'url' (extract the dataset id — the last path segment — from an outputs URL).\n"
+        "8. curl '{url}' — download results; /files/ URLs need no authentication.\n"
+        "Use get_dataset before downloading to check columns, record counts, and bbox.\n"
+        "Workspaces (saved layouts/dashboards): get_workspace_schema() returns a terse widget "
+        "index; drill in with get_widget_schema(widget=...), and for PlotView with "
+        "list_plot_layer_types(widget='PlotView') then get_plot_layer_schema(widget='PlotView', "
+        "layer_type=...). `layout` on create_workspace is a JSON object (a node tree), never a "
+        "JSON string. Then create_workspace(project_id, title=..., layout={...})."
     ),
-    include_tags=["Processes", "Datasets", "Environments", "Uploads", "Workspaces"],
+    include_tags=["Projects", "Processes", "Datasets", "Environments", "Uploads", "Workspaces"],
 )
 mcp.mount_http()

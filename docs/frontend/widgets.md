@@ -42,7 +42,7 @@ function buildWidgets() {
   const map = Object.fromEntries(
     hooks.run.widgets().map(({ name, component }) => [name, component])
   );
-  window.__nagelfluh_widgets = map;
+  window.__ymerflow_widgets = map;
   return map;
 }
 ```
@@ -654,3 +654,28 @@ function PlotView({ id, layoutConfig, parentUpdate }) {
   // ...
 }
 ```
+
+## Plugin render hooks
+
+Beyond `widgets`, the host exposes named render hooks that plugins fill via `registerHook(...)`.
+One worth documenting explicitly is the Process Editor's cost display.
+
+### `resource_cost_display`
+
+`ProcessEditor.jsx` resolves the first registered provider and renders its `Component` in two
+places — the always-visible card footer and the resource-configuration modal — passing:
+
+```jsx
+<CostDisplay
+  cpuCores={number}
+  memoryGb={number}
+  deadlineMinutes={number}
+  accountData={user}                 // AuthContext.user (carries current_plan/usage/balance); may be null
+  variant={"summary" | "detailed"}   // "summary" in the footer, "detailed" in the modal
+/>
+```
+
+`accountData` and `variant` are **optional and additive** — a provider that ignores them still
+works. The host does not interpret `current_plan`/`usage`/`balance`; it merely forwards them (a
+billing plugin populates them server-side). `variant` only says *where* the component is rendering;
+the plugin decides what each level contains.

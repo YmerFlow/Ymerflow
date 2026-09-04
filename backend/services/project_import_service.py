@@ -156,7 +156,13 @@ async def _do_import(db, import_row: ProjectImport, manifest: dict, zf: zipfile.
 
     # --- Pass 1: create Process/ProcessVersion/Dataset rows with placeholder ids, compute
     # final blob destinations (pure string work, no I/O yet) ---
-    dataset_id_map = {}
+    # (old_process_id, old_version, dataset_name) -> new_dataset_id. Dependencies are stored/exported
+    # in the *resolved* shape (source_process_id/source_process_version/source_dataset_name, see
+    # Dataset.resolve_dependencies), which carries no dataset id — so pass 2 remaps them via this key.
+    resolved_dep_map = {}
+    # new_dataset_id -> (new_process_id, version, dataset_name), so pass 2 can write dependencies
+    # back in the resolved shape the frontend FlowView and Dataset.resolve_dependencies both expect.
+    new_dataset_info = {}
     dataset_url_map = {}  # new_dataset_id -> new HTTP url
     file_copy_jobs = []  # (zip_path, dest_storage_url)
     pending_versions = []  # (ProcessVersion row, src_dependencies, src_parameters_http)
@@ -165,18 +171,23 @@ async def _do_import(db, import_row: ProjectImport, manifest: dict, zf: zipfile.
         new_process = Process(
             id=str(uuid.uuid4()),
             name=proc["name"],
-            type=proc["type"],
-            environment_id=env_id_map[proc["environment_id"]],
             project_id=project.id,
             flow_x=proc.get("flow_x"),
             flow_y=proc.get("flow_y"),
         )
         db.add(new_process)
 
+        # D6 back-compat: v3 manifests carry type/environment_id inside each version; v1/v2
+        # manifests carry them once at process level — fall back to those for every version.
+        proc_level_type = proc.get("type")
+        proc_level_env = proc.get("environment_id")
+
         for version in proc.get("versions", []):
             version_row = ProcessVersion(
                 process_id=new_process.id,
                 version=version["version"],
+                type=version.get("type", proc_level_type),
+                environment_id=env_id_map[version.get("environment_id", proc_level_env)],
                 parameters=version["parameters"],  # rewritten in pass 2
                 state=ProcessState(version["state"]),
                 dependencies=[],  # rewritten in pass 2
@@ -208,7 +219,8 @@ async def _do_import(db, import_row: ProjectImport, manifest: dict, zf: zipfile.
 
             for ds in version.get("datasets", []):
                 new_dataset_id = str(uuid.uuid4())
-                dataset_id_map[ds["id"]] = new_dataset_id
+                resolved_dep_map[(proc["id"], version["version"], ds["dataset_name"])] = new_dataset_id
+                new_dataset_info[new_dataset_id] = (new_process.id, version["version"], ds["dataset_name"])
 
                 def _rewrite(node):
                     if isinstance(node, dict):
@@ -244,14 +256,25 @@ async def _do_import(db, import_row: ProjectImport, manifest: dict, zf: zipfile.
         params = copy.deepcopy(src_parameters)
         new_dependencies = []
         for dep in src_dependencies:
-            new_dataset_id = dataset_id_map.get(dep["source_dataset_id"])
+            # Dependencies are stored/exported in the resolved shape (see Dataset.resolve_dependencies):
+            # {source_process_id, source_process_version, source_dataset_name, target_param_name}.
+            new_dataset_id = resolved_dep_map.get((
+                dep.get("source_process_id"),
+                dep.get("source_process_version"),
+                dep.get("source_dataset_name"),
+            ))
             if new_dataset_id is None:
                 continue  # dataset wasn't part of the export (shouldn't happen)
             new_url = dataset_url_map.get(new_dataset_id)
             if new_url is not None:
                 _set_path_value(params, dep["target_param_name"], new_url)
+            # Store in the resolved shape (matches Dataset.resolve_dependencies and what the frontend
+            # FlowView reads to draw process-graph edges) rather than the raw source_dataset_id shape.
+            new_process_id, new_version, new_dataset_name = new_dataset_info[new_dataset_id]
             new_dependencies.append({
-                "source_dataset_id": new_dataset_id,
+                "source_process_id": new_process_id,
+                "source_process_version": new_version,
+                "source_dataset_name": new_dataset_name,
                 "target_param_name": dep["target_param_name"],
             })
         version_row.dependencies = new_dependencies
@@ -298,7 +321,7 @@ async def run_import(import_id: str):
 
             import_row.state = "running"
             await db.commit()
-            await ws_manager.broadcast_state({"type": "project_import", "id": import_id, "state": "running"})
+            await ws_manager.broadcast_state({"refetch": True})
 
             upload = (await db.execute(select(Upload).where(Upload.id == import_row.upload_id))).scalar_one_or_none()
             if upload is None:
@@ -320,9 +343,7 @@ async def run_import(import_id: str):
             import_row.state = "done"
             import_row.completed_at = datetime.utcnow()
             await db.commit()
-            await ws_manager.broadcast_state({
-                "type": "project_import", "id": import_id, "state": "done", "project_id": target_project_id,
-            })
+            await ws_manager.broadcast_state({"refetch": True})
 
     except Exception as e:
         logger.error(f"Project import failed: {import_id} - {e}", exc_info=True)
@@ -357,6 +378,6 @@ async def run_import(import_id: str):
                         await db.delete(proj)
 
                 await db.commit()
-            await ws_manager.broadcast_state({"type": "project_import", "id": import_id, "state": "failed"})
+            await ws_manager.broadcast_state({"refetch": True})
         except Exception as inner_e:
             logger.error(f"Failed to record import failure for {import_id}: {inner_e}", exc_info=True)

@@ -17,14 +17,23 @@ class Project(Base):
     storage_access_key = Column(String(255), nullable=True)
     storage_secret_key = Column(Text, nullable=True)
     storage_backend_id = Column(String(36), ForeignKey("storage_backends.id"), nullable=True)
+    # Attribution for the admin stats dashboard (docs/plans/admin-stats-dashboard.md). Nullable:
+    # historical/system rows have no known creator and re-bucket as "(unknown)". SET NULL so
+    # deleting a user never cascades away their projects.
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     storage_backend = relationship("StorageBackend")
+    created_by_user = relationship("User", foreign_keys=[created_by])
     processes = relationship("Process", back_populates="project", cascade="all, delete-orphan")
     datasets = relationship("Dataset", back_populates="project", cascade="all, delete-orphan")
     workspaces = relationship("Workspace", back_populates="project", cascade="all, delete-orphan")
     members = relationship("ProjectMember", back_populates="project", cascade="all, delete-orphan")
     invites = relationship("ProjectInvite", back_populates="project", cascade="all, delete-orphan")
-    api_keys = relationship("ApiKey", back_populates="project", cascade="all, delete-orphan")
+    api_keys = relationship(
+        "ApiKey",
+        secondary="api_key_projects",
+        back_populates="projects",
+    )
     publications = relationship("Publication", back_populates="project", cascade="all, delete-orphan")
 
     def to_dict(self):
@@ -89,7 +98,13 @@ class ProjectInvite(Base):
 class Publication(Base):
     __tablename__ = "publications"
 
-    id = Column(String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
+    # "pub-"-prefixed so the id is self-describing everywhere it appears (URL path segment,
+    # project_id field after redaction, and the bucket segment of a file URL). A real project id
+    # is a bare uuid4 and never starts with "pub-", so ^pub- unambiguously distinguishes the two —
+    # this lets the /files/ proxy detect the publication case with a cheap regex instead of a
+    # speculative DB lookup. String(255) has room (not a String(36) UUID column); the entropy is
+    # still a real uuid4. See docs/plans/done/publication-link-id-opacity.md.
+    id = Column(String(255), primary_key=True, default=lambda: "pub-" + str(uuid.uuid4()))
     project_id = Column(String(255), ForeignKey("projects.id", ondelete="CASCADE"),
                          nullable=False, index=True)
     findable = Column(Boolean, nullable=False, default=False)

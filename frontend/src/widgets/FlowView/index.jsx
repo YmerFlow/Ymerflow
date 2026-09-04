@@ -9,6 +9,7 @@ import ProcessNode from './ProcessNode';
 import TagFilterBar from './TagFilterBar';
 import { getLatestVersion, getProcessVersion, updateProcessPosition } from '../../datamodel/api';
 import { useProjectTags } from '../../datamodel/useQueries';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 // ---- Pure helper functions ----
 
@@ -169,6 +170,7 @@ function initialise(processes, visibleVersions, activeProcess) {
 // ---- Component ----
 
 export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilterTagIds = [], ...nodeProps }) {
+  const isMobile = useIsMobile();
   const {
     processes, setProcesses, activeProcess, setActiveProcess, startNewProcess, currentProject, isLoading
   } = useContext(ProcessContext);
@@ -179,6 +181,14 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
   const [selectedVersions, setSelectedVersions] = useState({});
 
   const selectedFilterTagIds = useMemo(() => new Set(savedFilterTagIds), [savedFilterTagIds]);
+  // Stable-by-value key for the active filter. Used in the layout effect deps
+  // instead of the Set itself: the Set gets a fresh identity every render (the
+  // `= []` default prop churns), but this string compares equal across renders,
+  // so it doesn't trigger a re-run/flicker loop.
+  const filterKey = useMemo(
+    () => [...selectedFilterTagIds].sort().join(','),
+    [selectedFilterTagIds]
+  );
 
   const { data: projectTags = [] } = useProjectTags(currentProject);
 
@@ -186,6 +196,7 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
   const lastProcessStructure = useRef(null);
   const rfInstanceRef = useRef(null);
   const prevProcessCountRef = useRef(0);
+  const prevFilterKeyRef = useRef(null);
 
   useEffect(() => {
     userPositionedNodes.current = {};
@@ -327,6 +338,11 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
     const newProcessAdded = processes.length > prevProcessCountRef.current;
     prevProcessCountRef.current = processes.length;
 
+    // Detect a change of the active tag filter so we can re-fit the view to
+    // whatever is now visible (so the user never gets "lost" off-screen).
+    const filterChanged = prevFilterKeyRef.current !== null && prevFilterKeyRef.current !== filterKey;
+    prevFilterKeyRef.current = filterKey;
+
     const depths = calculateDepths();
     const layerMap = {};
     processes.forEach(p => {
@@ -414,13 +430,16 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
     setNodes(newNodes);
     setEdges(newEdges);
 
-    if (newProcessAdded && rfInstanceRef.current) {
-      setTimeout(() => rfInstanceRef.current?.fitView({ padding: 0.2, duration: 300 }), 50);
+    if ((newProcessAdded || filterChanged) && rfInstanceRef.current) {
+      // fitView only considers non-hidden nodes, so after a filter change this
+      // frames exactly the currently visible processes. minZoom lets it zoom
+      // out far enough to fit large graphs.
+      setTimeout(() => rfInstanceRef.current?.fitView({ padding: 0.2, duration: 300, minZoom: 0.05 }), 50);
     }
-  }, [processes, visibleProcessIds, visibleVersions, selectedVersions, calculateDepths, handleVersionChange, handleNodeClick, activeProcess, setNodes, setEdges, getProcessStructure]);
+  }, [processes, visibleProcessIds, visibleVersions, selectedVersions, filterKey, calculateDepths, handleVersionChange, handleNodeClick, activeProcess, setNodes, setEdges, getProcessStructure]);
 
   return (
-    <div style={{ width: "100%", height: "100%", position: "relative", display: "flex", flexDirection: "column" }}>
+    <div style={{ width: "100%", height: isMobile ? "70vh" : "100%", position: "relative", display: "flex", flexDirection: "column" }}>
       <TagFilterBar
         projectTags={projectTags}
         selectedTagIds={selectedFilterTagIds}
@@ -443,6 +462,7 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
           onNodesChange={handleNodesChangeWithTracking}
           onEdgesChange={onEdgesChange}
           onInit={(instance) => { rfInstanceRef.current = instance; }}
+          minZoom={0.05}
           fitView
         >
           <Background />

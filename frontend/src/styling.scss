@@ -1,6 +1,119 @@
+// ── Fonts (self-hosted Sofia Sans, no CDN) ───────────────────────────────────
+@import "@fontsource/sofia-sans/400.css";
+@import "@fontsource/sofia-sans/600.css";
+@import "@fontsource/sofia-sans/700.css";
+
+// ── 1. Bootstrap functions (needed before variable overrides) ────────────────
+@import "bootstrap/scss/functions";
+
+// ── 2. Brand palette (from deps/StyleGuide/YmerFlow) ─────────────────────────
+$brand-black:   #050914;
+$brand-white:   #F6F6F6;
+$brand-gray:    #878787;
+
+$blue-900:      #091B2C;
+$blue-800:      #003550;
+$blue-600:      #165096;
+$blue-500:      #2269A7;
+$blue-400:      #4FB7D1;
+$blue-300:      #A1D2F0;
+$blue-200:      #BEDEF5;
+
+$brown-900:     #2E2418;
+$brown-800:     #3F3222;
+$brown-600:     #745E50;   // PRIMARY
+$brown-500:     #8C7159;
+$brown-300:     #B7A590;
+$brown-200:     #C7C5C5;
+
+$brand-gradient: linear-gradient(180deg, #{$brand-black}, #{$blue-900});
+
+// ── 3. Bootstrap variable overrides ──────────────────────────────────────────
+$primary:        $brown-600;            // brown — primary CTAs
+$secondary:      $blue-500;             // blue  — "normal stuff"
+$body-color:     $brand-black;
+$body-bg:        $brand-white;
+
+// Chrome uses blue, not the brown primary:
+$link-color:               $blue-500;
+$link-hover-color:         $blue-600;
+$border-color:             $blue-200;   // subtle blue borders
+$input-border-color:       $blue-300;
+$input-focus-border-color: $blue-500;
+$focus-ring-color:         rgba($blue-500, .25);
+$component-active-bg:      $blue-600;    // selected/active list items, etc.
+
+// Semantic colors — deliberately muted to sit in the earthy palette (~brown's
+// saturation) rather than clashing with it. Warning is intentionally kept in the
+// muted-tan family (user sign-off, see docs/plans/done/brand-restyle-colorscheme-logo.md
+// §4): it reads quietly and sits close to $brown-300 — a chosen trade-off in
+// favour of palette cohesion over maximal alarm. success/danger use light button
+// text, warning uses dark (Bootstrap defaults); all pass WCAG AA.
+$success: #4E6B54;   // muted green   (AA on white text, 5.9:1)
+$danger:  #8A5A57;   // muted brick   (AA on white text, 5.7:1)
+$warning: #A99366;   // muted tan/amber (AA on dark text, 6.7:1)
+$info:    $blue-400;
+
+// Typography
+$font-family-sans-serif: "Sofia Sans", system-ui, -apple-system, "Segoe UI",
+                         Roboto, sans-serif;
+$headings-font-weight:   600;   // Semibold headings
+
+// ── 4. Bootstrap core ────────────────────────────────────────────────────────
+@import "bootstrap/scss/variables";
+@import "bootstrap/scss/maps";
+@import "bootstrap/scss/mixins";
 @import "bootstrap/scss/bootstrap";
+
+// ── 5. FontAwesome ───────────────────────────────────────────────────────────
 @import "@fortawesome/fontawesome-free/scss/fontawesome";
 @import "@fortawesome/fontawesome-free/scss/solid";
+
+// ── App toolbar: brand gradient (applied here so flexout/ stays brand-free) ──
+.navbar.bg-dark {
+  background: $brand-gradient !important;   // overrides Bootstrap .bg-dark
+}
+
+// ── Landing page (non-logged-in front page) ─────────────────────────────────
+.landing-page {
+  // Full-bleed dark gradient background; override Bootstrap Container max-width
+  // so the gradient covers the whole viewport, then re-constrain the content.
+  &.container { max-width: 100%; }
+  background: $brand-gradient;
+  min-height: 100vh;
+
+  > .w-100 {
+    max-width: 1140px;
+    margin: 0 auto;
+  }
+
+  // Intro text above the cards reads light against the dark gradient.
+  .landing-intro {
+    color: $brand-white;
+
+    p {
+      font-size: 1.15rem;
+    }
+  }
+
+  // Cards keep their white background but get a blue outline.
+  .card {
+    border-color: $blue-500;
+  }
+}
+
+// ── flexout tab drag-drop indicator ──────────────────────────────────────────
+// flexout/ toggles the .tab-drop-target class but hardcodes no color; the accent
+// comes from --flexout-drop-indicator, themed here (generic fallback: currentColor).
+.tabset-tabs .nav-item {
+  border-left: 2px solid transparent;   // reserve space so the indicator adds no shift
+}
+.tabset-tabs .nav-item.tab-drop-target {
+  border-left-color: var(--flexout-drop-indicator, currentColor);
+}
+:root {
+  --flexout-drop-indicator: #{$blue-500};
+}
 
 .pane-header {
   @extend .fs-6;
@@ -21,18 +134,18 @@
 
   &.active {
     font-weight: 600;
-    background-color: #212529 !important;
-    color: #fff !important;
-    border-color: #212529 !important;
+    background-color: $dark !important;
+    color: $brand-white !important;
+    border-color: $dark !important;
   }
 
   &:not(.active) {
-    background-color: #f8f9fa;
-    color: #6c757d;
+    background-color: $gray-100;
+    color: $gray-600;
 
     &:hover {
-      background-color: #e9ecef;
-      border-color: #dee2e6;
+      background-color: $gray-200;
+      border-color: $border-color;
     }
   }
 }
@@ -43,9 +156,9 @@
     margin-left: 1rem;
     margin-bottom: 0.75rem;
     padding: 0.75rem;
-    border: 1px solid #dee2e6;
+    border: 1px solid $border-color;
     border-radius: 0.375rem;
-    background-color: #f8f9fa;
+    background-color: $gray-100;
 
     .array-item-toolbox {
       .btn {
@@ -60,9 +173,9 @@
   margin-left: 1rem;
   margin-bottom: 1rem;
   padding: 0.75rem;
-  border: 1px solid #dee2e6;
+  border: 1px solid $border-color;
   border-radius: 0.375rem;
-  background-color: #f8f9fa;
+  background-color: $gray-100;
 
   > .form-group {
     margin-bottom: 0.75rem;
@@ -77,12 +190,12 @@
   cursor: help;
 
   i {
-    color: #6c757d;
+    color: $gray-600;
     font-size: 0.875rem;
     transition: color 0.2s;
 
     &:hover {
-      color: #0d6efd;
+      color: $link-color;
     }
   }
 
@@ -95,8 +208,8 @@
     transform: translateX(-50%);
     margin-bottom: 0.5rem;
     padding: 0.5rem 0.75rem;
-    background-color: #212529;
-    color: white;
+    background-color: $dark;
+    color: $brand-white;
     font-size: 0.875rem;
     font-weight: normal;
     line-height: 1.4;
@@ -117,7 +230,7 @@
       left: 50%;
       transform: translateX(-50%);
       border: 0.375rem solid transparent;
-      border-top-color: #212529;
+      border-top-color: $dark;
     }
   }
 
@@ -142,9 +255,9 @@
   padding: 0;
   font-size: inherit;
   line-height: 1;
-  color: #6c757d;
+  color: $gray-600;
 
-  &:hover { color: #212529; }
+  &:hover { color: $dark; }
 }
 
 // Inline title editor inside a tab button — must not add any height
@@ -175,8 +288,8 @@
 }
 
 .pane-menu-dropdown {
-  background: #fff;
-  border: 1px solid #dee2e6;
+  background: $white;
+  border: 1px solid $border-color;
   border-radius: 0.375rem;
   min-width: 160px;
   box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.15);
@@ -186,7 +299,7 @@
     display: flex;
     gap: 0.25rem;
     padding: 0.25rem;
-    border-bottom: 1px solid #dee2e6;
+    border-bottom: 1px solid $border-color;
   }
 
   .pane-menu-widget-list {
@@ -203,8 +316,8 @@
       cursor: pointer;
       font-size: 0.8125rem;
 
-      &:hover { background-color: #f8f9fa; }
-      &.active { background-color: #e9ecef; font-weight: 600; }
+      &:hover { background-color: $gray-100; }
+      &.active { background-color: $gray-200; font-weight: 600; }
     }
   }
 }
@@ -230,7 +343,7 @@
 
 .split-pane {
   overflow: auto;
-  border: 1px solid #999999;
+  border: 1px solid $border-color;
   border-radius: 5px;
 }
 
@@ -245,11 +358,11 @@
 // Process Editor - Resource Configuration Card
 .card {
   .card-header {
-    background-color: #f8f9fa;
-    border-bottom: 1px solid #dee2e6;
+    background-color: $gray-100;
+    border-bottom: 1px solid $border-color;
 
     .btn-link {
-      color: #6c757d;
+      color: $gray-600;
       text-decoration: none;
 
       i {
@@ -257,13 +370,13 @@
       }
 
       &:hover {
-        color: #0d6efd;
+        color: $link-color;
       }
     }
   }
 
   .card-footer {
-    background-color: #f8f9fa;
+    background-color: $gray-100;
     font-size: 0.9rem;
   }
 }
@@ -282,7 +395,99 @@
   }
 
   &:hover, &:focus {
-    color: #0d6efd;
+    color: $link-color;
     text-decoration: underline;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Mobile-only layout classes. These are emitted only by the mobile render
+// branches (gated on useIsMobile()), so they never appear in the desktop DOM
+// and their rules are never applied on a >= 576px viewport.
+// ---------------------------------------------------------------------------
+
+// Flexout containers stack their children into a single scrolling column.
+.split-stack-mobile,
+.grid-stack-mobile {
+  display: block;
+  width: 100%;
+}
+
+// Collapsed menu: a sticky top strip reserving just the drag-handle height. The drawer
+// (accordion panel + handle) is an absolute overlay so opening it floats over the page
+// content instead of pushing it down. The handle is the last child of the drawer, so it
+// rides the bottom edge of the panel and moves down as the panel grows.
+$mobile-handle-height: 1.5rem;
+
+.mobile-menu-bar {
+  position: sticky;   // establishes the containing block for the absolute drawer below
+  top: 0;
+  z-index: 1030;
+  height: $mobile-handle-height;   // in-flow footprint is only the grip strip
+  background-color: $dark;
+  color: $white;
+}
+
+.mobile-menu-drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1030;
+  display: flex;
+  flex-direction: column;
+  background-color: $dark;
+  box-shadow: 0 0.35rem 0.75rem rgba(0, 0, 0, 0.35);
+}
+
+.mobile-menu-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 $mobile-handle-height;
+  height: $mobile-handle-height;
+  border-top: 1px solid rgba($white, 0.15);
+  cursor: grab;
+  touch-action: none;   // let pointer drag drive open/close, not page scroll
+  user-select: none;
+}
+
+.mobile-menu-grip {
+  display: block;
+  width: 2.5rem;
+  height: 0.28rem;
+  border-radius: 0.28rem;
+  background-color: rgba($white, 0.7);
+}
+
+.mobile-menu-panel {
+  display: flex;
+  flex-direction: column;
+  // height / max-height / overflow are set inline by MobileMenu (they track the drag).
+}
+
+.mobile-menu-node {
+  color: inherit;
+}
+
+.mobile-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+  padding-right: 1rem;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba($white, 0.08);
+  color: inherit;
+  text-align: left;
+  font-size: 1rem;
+
+  &.active { font-weight: 600; }
+}
+
+.mobile-menu-toggle-row {
+  cursor: pointer;
 }

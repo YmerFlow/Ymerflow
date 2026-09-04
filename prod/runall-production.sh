@@ -32,16 +32,66 @@ echo "  Backend URL:    ${BACKEND_BASE_URL}"
 echo ""
 echo "  Clients will reach the app at: ${SERVER_URL}"
 
+# ── Step 0: Python environment ────────────────────────────────────────────────
+# This script drives ALL its host-side orchestration through env/bin/python (the image-tag
+# resolver just below, bootstrap-provision, kubeconfig materialization, image build/push, the
+# migration entrypoint). Create and populate that venv here so runall.sh is fully
+# self-provisioning on a fresh box — mirrors dev/runall.sh's Step 1. Idempotent: an existing
+# env/ is reused and the installs are cheap no-ops once satisfied. The venv is ACTIVATED (not
+# just referenced by path) so scripts/install-backend-plugins.sh's bare `pip` resolves to it,
+# exactly as under dev/runall.sh.
+if [ ! -d "${PROJECT_ROOT}/env" ]; then
+    echo "Creating Python virtual environment (env/)..."
+    # The backend package requires Python >=3.11 (matches the python:3.11-slim runtime image),
+    # so prefer an explicit python3.11 when present and fall back to the host default python3.
+    # Use the stdlib venv; fall back to virtualenv when the chosen python lacks ensurepip (no
+    # python3.x-venv system package — a bare `python3 -m venv` then builds a pip-less, unusable
+    # env). virtualenv bundles pip and needs no such package. A failed venv attempt leaves a
+    # broken dir, so wipe it before the fallback.
+    PYTHON_BIN="$(command -v python3.11 || command -v python3)"
+    "${PYTHON_BIN}" -m venv "${PROJECT_ROOT}/env" 2>/dev/null || {
+        rm -rf "${PROJECT_ROOT}/env"
+        virtualenv -p "${PYTHON_BIN}" "${PROJECT_ROOT}/env"
+    }
+fi
+# shellcheck source=/dev/null
+source "${PROJECT_ROOT}/env/bin/activate"
+echo "Installing backend package + plugins into env/ ..."
+pip install -q --upgrade pip
+pip install -q -e "${PROJECT_ROOT}"
+# YMERFLOW_SKIP_FRONTEND_BUILD=1: this host venv only runs the orchestration entrypoints
+# (bootstrap-provision, image build/push, kubeconfig, secret render) which import each plugin's
+# Python handler classes — it never serves the plugins' browser frontends (those are built into
+# the backend/frontend Docker images, which carry nodejs/npm). Skipping the npm frontend build
+# here is the plugins' own documented "metadata-only install", so the host needs no Node
+# toolchain. The mc binary download is left ENABLED in case a plugin's host-side bootstrap()
+# shells out to it.
+YMERFLOW_SKIP_FRONTEND_BUILD=1 BACKEND_PLUGINS="${BACKEND_PLUGINS:-}" \
+    bash "${PROJECT_ROOT}/scripts/install-backend-plugins.sh"
+
 # ── Step 1: Base configuration ────────────────────────────────────────────────
 
 # LAN IP added to the apiserver cert SAN so a remote kubeconfig connecting via this IP
 # passes TLS verification (see plugins/ymerflow-minikube's minikube_vm.py MINIKUBE_APISERVER_IPS).
 export MINIKUBE_APISERVER_IPS="${MINIKUBE_APISERVER_IPS:-$(hostname -I | awk '{print $1}')}"
 
-# Public host:port used to address the Docker registry everywhere (push and every cluster's
-# pull, including this one) — never minikube's internal IP. See
+# Public host used to address the Docker registry for pulls that happen AFTER the system is live —
+# the backend Deployment and the runner / Environment.docker_image (e.g. registry.<domain>:443,
+# behind the frontend nginx TLS edge). Falls back to the host's primary LAN IP when unset, which is
+# also the DIRECT address below — so an unconfigured public host makes public == direct and the
+# whole split collapses to today's single-address behaviour. Also read directly by the backend to
+# render the remote-cluster setup script. See docs/plans/registry-public-vs-direct-address.md and
 # docs/plans/done/remote-cluster-provisioning-and-registry.md.
 export REGISTRY_PUBLIC_HOST="${REGISTRY_PUBLIC_HOST:-$(hostname -I | awk '{print $1}')}"
+
+# Direct (bootstrap-only) address: the self-signed node-IP:NodePort the registry is actually
+# bootstrapped on. Used for every host-side PUSH and for the bootstrap-only container pulls
+# (frontend/nginx, the yf-deploy-app deployer Job, the migration/db-update Jobs) — pulled BEFORE
+# the public nginx TLS edge exists. Defaults to the host's primary LAN IP / 30500 (the value
+# REGISTRY_PUBLIC_HOST historically used), so a same-box deploy needs no extra config even when
+# REGISTRY_PUBLIC_HOST is set to a real public DNS name.
+export REGISTRY_DIRECT_HOST="${REGISTRY_DIRECT_HOST:-$(hostname -I | awk '{print $1}')}"
+export REGISTRY_DIRECT_PORT="${REGISTRY_DIRECT_PORT:-30500}"
 
 # Content-addressed tag for the backend/frontend images, replacing the floating "prod" tag —
 # computed ONCE here so every build/push/deploy step below (and docker/build.sh, invoked from
@@ -99,6 +149,30 @@ export YMERFLOW_DATA_DIR
 echo ""
 echo "Step 3: Bootstrap-provisioning configured backends..."
 BOOTSTRAP_JSON=$(PYTHONPATH=. env/bin/python backend/bin/yf-bootstrap-provision)
+
+# Persist the enriched {registry,storage,cluster} config (protocol + fully-bootstrapped config for
+# each axis, incl. secrets: minikube's real kubeconfig, a GKE sa_key, the registry password, ...) to
+# a host-local, gitignored, 0600 file. A later STANDALONE `docker/build.sh <env>` — run by hand to
+# rebuild just the runner image, NOT as this script's Step 10 child — re-reads it to reach the
+# already-running cluster/registry WITHOUT re-running any bootstrap() (which would restart/resize
+# the VM, re-mint credentials, redeploy the registry, ...). Uniform across every cluster type: it is
+# just this deploy's own resolved config, cached, not any per-provider extraction logic. Written
+# here, right after resolution, so it always reflects the config THIS deploy actually used.
+DEPLOY_CONFIG_FILE="${PROJECT_ROOT}/.deploy-config.json"
+# Merge the app image tag (APP_IMAGE_VERSION, resolved above at the top of this script — the exact
+# content-addressed tag the backend+frontend images are built+pushed under in Step 5) into the cached
+# config as a top-level "app_image_version". A standalone docker/build.sh reuses this instead of
+# recomputing the tag from current code: it builds only the RUNNER image, so a recomputed tag would
+# point at a backend image that was never pushed and its db-update Job would ImagePullBackOff.
+python3 -c '
+import json, os, sys
+data = json.loads(sys.argv[1])
+data["app_image_version"] = os.environ["APP_IMAGE_VERSION"]
+with open(sys.argv[2], "w") as f:
+    f.write(json.dumps(data) + "\n")
+' "${BOOTSTRAP_JSON}" "${DEPLOY_CONFIG_FILE}"
+chmod 600 "${DEPLOY_CONFIG_FILE}"
+echo "  Cached enriched backend config + app image tag ${APP_IMAGE_VERSION} to ${DEPLOY_CONFIG_FILE} (for standalone docker/build.sh)"
 
 # eval runs directly in this shell (not inside a subshell) so the `export` statements it emits
 # persist here, ready for Step 7's BACKEND_SECRET_ARGS assembly below. Do NOT wrap this eval in a
@@ -196,19 +270,36 @@ FRONTEND_IMAGE=$(YMERFLOW_RESOLVED_REGISTRY_JSON="${RESOLVED_REGISTRY_JSON}" env
     "${PROJECT_ROOT}/backend/bin/yf-build-and-push" \
     "${PROJECT_ROOT}/frontend/Dockerfile" "${PROJECT_ROOT}/frontend" ymerflow-frontend "${APP_IMAGE_VERSION}")
 
-# The registry server address (everything before the first '/' of the resolved ref) — still
-# needed by Step 6c's image-pull secret below, which wants a bare host (that's what
-# `--docker-server`/the kubelet's pull-secret host match expects).
-REGISTRY_ADDR="${BACKEND_IMAGE%%/*}"
+# The distinct registry server addresses the app pods pull from — the DIRECT node-IP:NodePort
+# (deploy Job image, frontend + migration containers) and the PUBLIC address (backend Deployment +
+# runner). Step 6c's app image-pull Secret carries an `auths` entry for BOTH so the kubelet can
+# match whichever address a given image ref embeds. Resolved via image_prefix()/direct_image_prefix()
+# rather than string-chopping a ref, so it stays correct for any registry protocol.
+REGISTRY_DIRECT_ADDR=$(env/bin/python "${PROJECT_ROOT}/backend/bin/yf-registry-image-prefix" \
+    --direct "${REGISTRY_PROTOCOL}" "${REGISTRY_CONFIG_JSON}")
+REGISTRY_PUBLIC_ADDR=$(env/bin/python "${PROJECT_ROOT}/backend/bin/yf-registry-image-prefix" \
+    "${REGISTRY_PROTOCOL}" "${REGISTRY_CONFIG_JSON}")
+
+# The yf-deploy-app Job (Step 9) runs BEFORE the public nginx TLS edge exists, so — like the
+# frontend/migration containers it goes on to deploy — it must pull its own (backend) image from
+# the DIRECT address, not the public one. Resolve that direct ref explicitly (yf-build-and-push
+# above returns the PUBLIC ref, which is what belongs in Environment.docker_image, not here).
+DEPLOY_JOB_IMAGE=$(env/bin/python -c '
+import json, os
+from backend.services.registry_protocols import get_registry_protocol_handler
+handler = get_registry_protocol_handler(os.environ["REGISTRY_PROTOCOL"])
+config = json.loads(os.environ["REGISTRY_CONFIG_JSON"])
+print(handler.direct_image_url(config, "ymerflow-backend", os.environ["APP_IMAGE_VERSION"]))
+')
 
 # The registry's full image-reference PREFIX (everything before `/{repository}:{tag}`) — used
 # below as REGISTRY_URL, consumed by fake_processes.py's create_environment to build its own
 # per-environment image references as f"{registry_url}/proj-{project_id}/env-{env_slug}". This is
-# NOT the same as REGISTRY_ADDR above for every protocol: docker-v2's prefix IS just its bare host
+# NOT the same as the pull-secret server address for every protocol: docker-v2's prefix IS just its bare host
 # (self-hosted registries accept any repository path under the host), but GAR's prefix also
 # includes fixed project_id/repository path segments after the host — GAR doesn't auto-create
 # repositories, and the bootstrapped service account only has write access to the one repository
-# bootstrap() provisioned, so truncating to host-only (as REGISTRY_ADDR does) silently produces an
+# bootstrap() provisioned, so truncating to host-only (a bare ${IMAGE%%/*}) silently produces an
 # unwritable/nonexistent path for GAR. Resolved via RegistryProtocolHandler.image_prefix() (the
 # same mechanism image_url() itself is built on) rather than assumed from BACKEND_IMAGE's shape.
 # Exported: Step 6 folds this into ymerflow-backend-secret as a script-computed override (see
@@ -255,7 +346,15 @@ kubectl create secret generic pgadmin-pgpass \
 
 MINIO_ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
 export MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
-export MC_HOST_minio="https://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio.minio.svc.cluster.local:9000"
+# Default MinIO host: the configured public S3 host when PUBLIC_TLS is enabled, otherwise the
+# in-cluster MinIO Service (dev / no-public-TLS). This is just a default value, not split-brain
+# logic — whichever single address is chosen here is then used identically from the backend host,
+# local-cluster pods, and remote-cluster pods (no runtime endpoint rewriting; see
+# docs/plans/done/storage-endpoint-single-public-address.md). MC_HOST_minio is exported but not
+# actually invoked during bring-up, so it is not load-bearing at bootstrap; it tracks the same
+# default purely for consistency with STORAGE_ENDPOINT below.
+MINIO_DEFAULT_HOST="${PUBLIC_TLS_S3_HOST:-minio.minio.svc.cluster.local:9000}"
+export MC_HOST_minio="https://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@${MINIO_DEFAULT_HOST}"
 
 # REGISTRY_USER/REGISTRY_PASSWORD (config.env, defaults ymerflow/ymerflow) only feed
 # REGISTRY_AUTH below — yf-deploy-app's fallback registry credential when REGISTRY_PROTOCOL/
@@ -274,11 +373,16 @@ export REGISTRY_AUTH=$(printf '%s:%s' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" 
 export DATABASE_URL="postgresql+asyncpg://ymerflow:ymerflowpass@postgres.ymerflow.svc.cluster.local:5432/ymerflow"
 
 # BACKEND_BASE_URL must use the public host:port because that is the address clients' browsers
-# follow when fetching dataset URLs. REGISTRY_PUBLIC_HOST/REGISTRY_URL/STORAGE_ENDPOINT/
-# STORAGE_BUCKET_PREFIX below are also script-computed rather than raw config.env text — see
-# ymerflow-render-backend-secret-env's module docstring for why each one must win over a stray
-# config.env value (STORAGE_ENDPOINT in particular: an operator's dev-host STORAGE_ENDPOINT must
-# NEVER leak into production, which always talks to MinIO via its in-cluster Service DNS name).
+# follow when fetching dataset URLs.
+#
+# STORAGE_ENDPOINT / STORAGE_BUCKET_PREFIX: CONFIG WINS. A value explicitly set in config.env
+# is preserved (the `:-` defaults below only supply a value when config.env left it unset).
+# The default (MINIO_DEFAULT_HOST, resolved above) is the configured public S3 host when
+# PUBLIC_TLS is enabled, else the in-cluster MinIO Service for dev / no-public-TLS — a plain
+# default value, not split-brain: whichever address is chosen is used identically from the backend
+# host and from every cluster's job pods, with no per-cluster endpoint rewriting. See
+# docs/plans/done/storage-endpoint-single-public-address.md. A remote/other cluster, an external
+# S3-compatible endpoint, or a different namespace can still override it via config.env.
 #
 # STORAGE_PROTOCOL/MINIO_ROOT_USER are deliberately NOT set here (verified genuinely dead, per
 # docs/plans/generic-deployment-orchestration.md Phase 5): the seed migration chain's later,
@@ -291,9 +395,11 @@ export DATABASE_URL="postgresql+asyncpg://ymerflow:ymerflowpass@postgres.ymerflo
 # the `storage_backends.endpoint` column past the initial seed
 # (`a6b7c8d9e0f1_seed_default_storage_backend.py`, which reads `settings.storage_endpoint`), and
 # `MinioProtocolHandler.fsspec_kwargs()`/`test_connection()` read `backend.endpoint` directly at
-# runtime — it stays here as the one genuinely load-bearing key.
-export STORAGE_ENDPOINT="https://minio.minio.svc.cluster.local:9000"
-export STORAGE_BUCKET_PREFIX="ymerflow-project-"
+# runtime — it stays here as the one genuinely load-bearing key. Note this seeds the endpoint only
+# on a FRESH install; on a running system a backend's endpoint is admin-owned data, edited in
+# Admin → Storage, and is never rewritten by a redeploy.
+export STORAGE_ENDPOINT="${STORAGE_ENDPOINT:-https://${MINIO_DEFAULT_HOST}}"
+export STORAGE_BUCKET_PREFIX="${STORAGE_BUCKET_PREFIX:-ymerflow-project-}"
 export BACKEND_BASE_URL="${BACKEND_BASE_URL}"
 export SERVER_URL="${SERVER_URL}"
 
@@ -348,12 +454,33 @@ PULL_CREDS_JSON=$(env/bin/python "${PROJECT_ROOT}/backend/bin/yf-registry-pull-c
 PULL_USER=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("username") or "")' "${PULL_CREDS_JSON}")
 PULL_PASSWORD=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("password") or "")' "${PULL_CREDS_JSON}")
 
-kubectl create secret docker-registry ymerflow-app-pull \
-    --docker-server="${REGISTRY_ADDR}" \
-    --docker-username="${PULL_USER}" \
-    --docker-password="${PULL_PASSWORD}" \
-    -n ymerflow \
-    --dry-run=client -o yaml | kubectl apply -f -
+# The app pull Secret must carry credentials for BOTH the DIRECT address (deploy Job image,
+# frontend + migration containers) and the PUBLIC address (backend Deployment + runner) — the
+# kubelet matches a pull Secret's `auths` server key against the host embedded in each image ref.
+# `kubectl create secret docker-registry` writes only one server, so build the (possibly two-entry,
+# deduped) dockerconfigjson directly. See docs/plans/registry-public-vs-direct-address.md.
+DOCKERCONFIGJSON=$(REGISTRY_DIRECT_ADDR="${REGISTRY_DIRECT_ADDR}" REGISTRY_PUBLIC_ADDR="${REGISTRY_PUBLIC_ADDR}" \
+    env/bin/python -c '
+import base64, json, os, sys
+user, password = sys.argv[1], sys.argv[2]
+servers = []
+for s in (os.environ["REGISTRY_DIRECT_ADDR"], os.environ["REGISTRY_PUBLIC_ADDR"]):
+    if s not in servers:
+        servers.append(s)
+auth = base64.b64encode(f"{user}:{password}".encode()).decode()
+print(json.dumps({"auths": {s: {"username": user, "password": password, "auth": auth} for s in servers}}))
+' "${PULL_USER}" "${PULL_PASSWORD}")
+DOCKERCONFIGJSON_B64=$(printf '%s' "${DOCKERCONFIGJSON}" | base64 -w0)
+kubectl apply -f - <<PULLSECRET
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ymerflow-app-pull
+  namespace: ymerflow
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: ${DOCKERCONFIGJSON_B64}
+PULLSECRET
 
 kubectl apply -f "${PROJECT_ROOT}/k8s/rbac/app-deploy-rbac.yaml"
 
@@ -455,7 +582,7 @@ spec:
       - name: ymerflow-app-pull
       containers:
       - name: deploy
-        image: ${BACKEND_IMAGE}
+        image: ${DEPLOY_JOB_IMAGE}
         # BACKEND_IMAGE is now a content-addressed tag (APP_IMAGE_VERSION, computed once above) —
         # never reused for different content — so IfNotPresent is correct and faster than an
         # unconditional re-pull. See docs/plans/versioned-app-image-tags.md and

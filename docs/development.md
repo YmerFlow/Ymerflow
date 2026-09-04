@@ -26,7 +26,7 @@ Follow the [Deployment Guide](deployment.md) to set up your development environm
 ## Project Structure
 
 ```
-nagelfluh/
+ymerflow/
 ├── backend/                    # FastAPI backend (installed editable from root setup.py)
 │   ├── main.py                # Main application
 │   ├── models.py              # Database models
@@ -92,7 +92,7 @@ The server will automatically reload when you change Python files.
 
 The backend is installed editable (`pip install -e .`, run by `dev/runall.sh`), so source edits are
 picked up immediately by the reloader. **Exception:** changes to `setup.py`'s `entry_points` (e.g.
-adding a `nagelfluh.models` or `nagelfluh.migration_dirs` registration) are read from installed
+adding a `ymerflow.models` or `ymerflow.migration_dirs` registration) are read from installed
 distribution metadata, not source — re-run `pip install -e .` for those to take effect.
 
 ### API Endpoints
@@ -386,7 +386,7 @@ Build output goes to `frontend/build/`.
 ./docker/build.sh
 ```
 
-This builds `nagelfluh-base-runner:latest` in Minikube's Docker daemon.
+This builds `ymerflow-base-runner:latest` in Minikube's Docker daemon.
 
 ### Testing Runner Locally
 
@@ -402,9 +402,9 @@ docker run --rm \
   -e PROJECT_ID=test-project \
   -e PARAMETERS_JSON='{"input_data":"http://example.com/dataset/123"}' \
   -e BACKEND_URL=http://host.docker.internal:8000 \
-  -e STORAGE_BASE=s3://nagelfluh-test \
+  -e STORAGE_BASE=s3://ymerflow-test \
   -e STORAGE_ENDPOINT=http://host.docker.internal:9000 \
-  ${MINIKUBE_IP}:30500/nagelfluh-base-runner:latest
+  ${MINIKUBE_IP}:30500/ymerflow-base-runner:latest
 ```
 
 ### Adding Process Types
@@ -453,7 +453,7 @@ class my_process:
 setup(
     name="ymerflow_processes",
     entry_points={
-        "nagelfluh.process_types": [
+        "ymerflow.process_types": [
             "fft=ymerflow_processes.fake_processes:fft",
             "my_process=ymerflow_processes.my_processes:my_process",
         ],
@@ -475,20 +475,20 @@ Create `.env` file in project root:
 
 ```bash
 # Database
-DATABASE_URL=sqlite:///./backend/nagelfluh.db
+DATABASE_URL=sqlite:///./backend/ymerflow.db
 
 # Storage (Development - MinIO)
 STORAGE_PROTOCOL=s3
 STORAGE_ENDPOINT=http://localhost:9000
-STORAGE_BUCKET_PREFIX=nagelfluh-project-
+STORAGE_BUCKET_PREFIX=ymerflow-project-
 
 # Storage (Production - GCS)
 # STORAGE_PROTOCOL=gcs
 # STORAGE_ENDPOINT=
-# STORAGE_BUCKET_PREFIX=nagelfluh-project-
+# STORAGE_BUCKET_PREFIX=ymerflow-project-
 
 # Kubernetes
-K8S_NAMESPACE=nagelfluh-jobs
+K8S_NAMESPACE=ymerflow-jobs
 
 # Authentication
 JWT_SECRET_KEY=your-secret-key-here-change-in-production
@@ -508,13 +508,13 @@ from pydantic_settings import BaseSettings
 from typing import List, Optional
 
 class Settings(BaseSettings):
-    database_url: str = "sqlite:///./nagelfluh.db"
+    database_url: str = "sqlite:///./ymerflow.db"
 
     # Per-project storage — seed-only; see the comment in config.py for why runtime code
     # doesn't read these directly anymore (routing goes through each project's StorageBackend row)
     storage_protocol: str = "s3"
     storage_endpoint: str = "https://localhost:9000"
-    storage_bucket_prefix: str = "nagelfluh-project-"
+    storage_bucket_prefix: str = "ymerflow-project-"
     storage_tls_skip_verify: bool = False
 
     jwt_secret_key: Optional[str] = None   # None => generated at startup, warns in logs
@@ -553,7 +553,7 @@ export const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 Override with environment variable:
 
 ```bash
-VITE_API_URL=https://api.nagelfluh.example.com npm start
+VITE_API_URL=https://api.ymerflow.example.com npm start
 ```
 
 ## Git Workflow
@@ -676,27 +676,27 @@ Install browser extension for React debugging:
 **Check pod status:**
 
 ```bash
-kubectl get pods -n nagelfluh-jobs
-kubectl describe pod <pod-name> -n nagelfluh-jobs
+kubectl get pods -n ymerflow-jobs
+kubectl describe pod <pod-name> -n ymerflow-jobs
 ```
 
 **View pod logs:**
 
 ```bash
-kubectl logs <pod-name> -n nagelfluh-jobs
-kubectl logs -f <pod-name> -n nagelfluh-jobs  # Follow logs
+kubectl logs <pod-name> -n ymerflow-jobs
+kubectl logs -f <pod-name> -n ymerflow-jobs  # Follow logs
 ```
 
 **Execute in pod:**
 
 ```bash
-kubectl exec -it <pod-name> -n nagelfluh-jobs -- /bin/bash
+kubectl exec -it <pod-name> -n ymerflow-jobs -- /bin/bash
 ```
 
 **Check events:**
 
 ```bash
-kubectl get events -n nagelfluh-jobs --sort-by='.lastTimestamp'
+kubectl get events -n ymerflow-jobs --sort-by='.lastTimestamp'
 ```
 
 ### Storage Debugging
@@ -721,10 +721,10 @@ mc admin info myminio
 mc ls myminio/
 
 # List bucket contents
-mc ls myminio/nagelfluh-project-{project-id}/
+mc ls myminio/ymerflow-project-{project-id}/
 
 # Tree view of bucket
-mc tree myminio/nagelfluh-project-{project-id}/
+mc tree myminio/ymerflow-project-{project-id}/
 ```
 
 **Manage users and policies:**
@@ -750,26 +750,26 @@ mc admin policy entities myminio project-{project-id}-policy
 
 ```bash
 # List storage secrets
-kubectl get secrets -n nagelfluh-jobs | grep storage
+kubectl get secrets -n ymerflow-jobs | grep storage
 
 # View secret contents
-kubectl get secret project-{project-id}-storage -n nagelfluh-jobs -o yaml
+kubectl get secret project-{project-id}-storage -n ymerflow-jobs -o yaml
 
 # Decode credentials
-kubectl get secret project-{project-id}-storage -n nagelfluh-jobs -o json | \
+kubectl get secret project-{project-id}-storage -n ymerflow-jobs -o json | \
   jq -r '.data["access-key"]' | base64 -d
 ```
 
 **Test storage access from pod:**
 
 ```bash
-kubectl exec -it <pod-name> -n nagelfluh-jobs -- python3 -c "
+kubectl exec -it <pod-name> -n ymerflow-jobs -- python3 -c "
 import fsspec, os
 fs = fsspec.filesystem('s3',
     key=os.environ['AWS_ACCESS_KEY_ID'],
     secret=os.environ['AWS_SECRET_ACCESS_KEY'],
     client_kwargs={'endpoint_url': os.environ.get('STORAGE_ENDPOINT')})
-print(fs.ls('nagelfluh-project-{project-id}'))
+print(fs.ls('ymerflow-project-{project-id}'))
 "
 ```
 

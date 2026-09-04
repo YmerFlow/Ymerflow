@@ -58,6 +58,10 @@ def mount_plugin_assets(app):
                 'base_url': f"/plugin-assets/{ch}/",
                 'source': 'backend',
                 'dist_dir': dist_dir,
+                # Public bundles are loaded for anonymous (logged-out) visitors too.
+                # Defaults to False, so this is inert for every existing bundle until
+                # one opts in with `'public': True` in its frontend_bundles() dict.
+                'public': bool(b.get('public', False)),
             })
             logger.info(f"Mounted backend plugin {remote_name} at /plugin-assets/{ch}/")
         except Exception as e:

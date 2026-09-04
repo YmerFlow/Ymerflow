@@ -97,6 +97,10 @@ class compound_filter:
     def schema(cls):
         return {
             "type": "object",
+            "title": "Compound Filter",
+            "description": "Apply an InUse diff produced by the flag editor to an XYZ dataset, "
+                           "masking or unmasking soundings and gates. With no diff it passes the "
+                           "input through unchanged.",
             "properties": {
                 "input": {
                     "type": "string",

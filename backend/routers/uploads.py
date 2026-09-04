@@ -16,18 +16,14 @@ from backend.services.auth_service import get_current_user, AuthContext, create_
 
 router = APIRouter(tags=["Uploads"])
 
+# Max size for the in-RAM JSON+base64 upload path (MCP small files). Larger uploads
+# must use the streaming raw-body path instead of being silently buffered whole.
+MAX_JSON_UPLOAD_BYTES = 25 * 1024 * 1024
 
-async def _write_upload(content: bytes, project_id: str, upload_id: str, filename: str,
-                        content_type: str, db: AsyncSession) -> dict:
-    """Write file to storage, create DB record, return response dict."""
-    file_url = await get_upload_storage_url(db, project_id, upload_id, filename)
-    storage_options = await get_fsspec_storage_options(db, project_id)
 
-    def _write():
-        with fsspec.open(file_url, "wb", **storage_options) as f:
-            f.write(content)
-    await asyncio.to_thread(_write)
-
+async def _create_upload_record(project_id: str, upload_id: str, filename: str,
+                                content_type: str, file_url: str, db: AsyncSession) -> dict:
+    """Create the Upload DB record and return the response dict."""
     upload = Upload(
         id=upload_id,
         filename=filename,
@@ -42,7 +38,58 @@ async def _write_upload(content: bytes, project_id: str, upload_id: str, filenam
     return {"id": upload.id, "filename": upload.filename, "url": http_url}
 
 
-@router.post("/projects/{project_id}/upload", summary="Upload a raw input file")
+async def _write_upload_bytes(content: bytes, project_id: str, upload_id: str, filename: str,
+                              content_type: str, db: AsyncSession) -> dict:
+    """Write a whole in-memory buffer to storage, create DB record, return response dict.
+
+    Used only by the small JSON+base64 path; the large raw-body path streams instead.
+    """
+    file_url = await get_upload_storage_url(db, project_id, upload_id, filename)
+    storage_options = await get_fsspec_storage_options(db, project_id)
+
+    def _write():
+        with fsspec.open(file_url, "wb", **storage_options) as f:
+            f.write(content)
+    await asyncio.to_thread(_write)
+
+    return await _create_upload_record(project_id, upload_id, filename, content_type, file_url, db)
+
+
+async def _stream_upload(request: Request, project_id: str, upload_id: str, filename: str,
+                         content_type: str, db: AsyncSession) -> dict:
+    """Stream the raw request body straight into the fsspec storage handle in bounded chunks.
+
+    Backend memory stays flat regardless of file size; s3fs turns the chunked writes into an
+    S3 multipart upload. On any mid-stream error the multipart is aborted so no truncated,
+    committed object is left behind, and the Upload DB row is only created after a clean close.
+    """
+    file_url = await get_upload_storage_url(db, project_id, upload_id, filename)
+    storage_options = await get_fsspec_storage_options(db, project_id)
+
+    fh = await asyncio.to_thread(
+        lambda: fsspec.open(file_url, "wb", **storage_options).open()
+    )
+    try:
+        async for chunk in request.stream():
+            if chunk:
+                await asyncio.to_thread(fh.write, chunk)
+        await asyncio.to_thread(fh.close)
+    except BaseException:
+        # Abort the S3 multipart so a partial/truncated object is never committed.
+        # discard() aborts without finalizing; fall back to close() if unavailable.
+        def _abort():
+            discard = getattr(fh, "discard", None)
+            if discard is not None:
+                discard()
+            else:
+                fh.close()
+        await asyncio.to_thread(_abort)
+        raise  # never swallow (repo rule 8)
+
+    return await _create_upload_record(project_id, upload_id, filename, content_type, file_url, db)
+
+
+@router.post("/projects/{project_id}/upload", operation_id="upload_file", summary="Upload a raw input file")
 async def upload_file(
     request: Request,
     project: Project = Depends(require_project_member),
@@ -52,19 +99,26 @@ async def upload_file(
 
     Supports two body formats (auto-detected from Content-Type):
 
-    **Multipart/form-data** (browser or curl — any file size):
-        curl -F "file=@data.xyz" "https://host/projects/{project_id}/upload"
+    **Raw body** (browser or curl — any file size; streamed straight to storage):
+        curl -X POST "https://host/projects/{project_id}/upload?filename=data.xyz" \\
+          -H "Content-Type: application/octet-stream" \\
+          --data-binary @data.xyz
 
-    **JSON + base64** (MCP-friendly — for files up to ~20 MB):
+    The filename travels as the ``filename`` query parameter (URL-encoded) and the
+    content type as the ``Content-Type`` request header. The body is streamed to object
+    storage in bounded chunks, so backend memory stays flat regardless of file size.
+
+    **JSON + base64** (MCP-friendly — for files up to ~25 MB):
         POST /projects/{project_id}/upload
         Content-Type: application/json
         {"filename": "data.xyz", "content": "<base64>", "content_type": "application/x-aarhusxyz-msgpack"}
 
     For large files, request an upload token with POST /upload/request-token, then
     upload using that token as the Bearer credential — no full session needed:
-        curl -X POST "https://host/projects/{project_id}/upload" \\
+        curl -X POST "https://host/projects/{project_id}/upload?filename=survey.xyz" \\
           -H "Authorization: Bearer upt_..." \\
-          -F "file=@survey.xyz"
+          -H "Content-Type: application/octet-stream" \\
+          --data-binary @survey.xyz
 
     The response 'url' is a direct HTTP file URL (no auth needed to download it)
     ready to pass as input_data to create_process.
@@ -81,45 +135,46 @@ async def upload_file(
             content = base64.b64decode(content_b64)
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid base64 in 'content' field")
-    else:
-        form = await request.form()
-        file = form.get("file")
-        if not file:
-            raise HTTPException(status_code=400, detail="No 'file' field in form data")
-        filename = file.filename or "upload"
-        mime = file.content_type or "application/octet-stream"
-        content = await file.read()
+        if len(content) > MAX_JSON_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"JSON+base64 upload exceeds the {MAX_JSON_UPLOAD_BYTES // (1024 * 1024)} MB "
+                    "limit. Use the raw-body upload path (Content-Type: application/octet-stream, "
+                    "--data-binary @file, ?filename=) for large files."
+                ),
+            )
+        return await _write_upload_bytes(content, project.id, upload_id, filename, mime, db)
 
-    return await _write_upload(content, project.id, upload_id, filename, mime, db)
+    filename = request.query_params.get("filename", "upload")
+    mime = content_type_header or "application/octet-stream"
+    return await _stream_upload(request, project.id, upload_id, filename, mime, db)
 
 
-@router.post("/upload/request-token", summary="Request a short-lived upload token for large file uploads")
+@router.post("/upload/request-token", operation_id="request_upload_token", summary="Request a short-lived upload token for large file uploads")
 async def request_upload_token(
+    project: Project = Depends(require_project_member),
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Issue a short-lived Bearer token (prefix upt_) for uploading large files via curl.
 
-    The token inherits the project scope of the current session (API key or JWT).
-    Use it when you need to hand off a large file upload to curl without passing
-    full session credentials:
+    Takes a required project_id query parameter identifying the project to upload into;
+    the caller must be a member of it, and (when using an API key) it must be in the key's
+    scope. Since an API key may now grant access to several projects, the project can no
+    longer be inferred and must be passed explicitly.
 
-        curl -X POST "https://host/upload" \\
+        curl -X POST "https://host/projects/{project_id}/upload?filename=survey.xyz" \\
           -H "Authorization: Bearer {token}" \\
-          -F "file=@/path/to/survey.xyz"
+          -H "Content-Type: application/octet-stream" \\
+          --data-binary @/path/to/survey.xyz
 
-    The token is a signed JWT, expires after 1 hour, and is scoped to the same
-    project as the current session. No server-side state is required.
+    The token is a signed JWT, expires after 1 hour, and is scoped to the given project.
+    No server-side state is required.
     """
-    project_id = auth.api_key_project_id
-    if not project_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Upload tokens require a project-scoped session. Authenticate with an API key."
-        )
     payload = {
         "uid": auth.user.id,
-        "project_id": project_id,
+        "project_id": project.id,
         "token_type": "upload",
     }
     jwt_token = create_access_token(payload, expires_delta=timedelta(hours=1))

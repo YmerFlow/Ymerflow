@@ -36,6 +36,10 @@ class Processing:
 
         return {
             "type": "object",
+            "title": "Process TEM",
+            "description": "Apply a configurable chain of processing steps (filtering, averaging, "
+                           "gate handling, etc.) to an imported airborne TEM dataset, producing a "
+                           "processed XYZ dataset ready for inversion.",
             "properties": {
                 "input_data": {
                     "type": "string",

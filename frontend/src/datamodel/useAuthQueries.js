@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { login, signup, forgotPassword, getUserAccount, getPublicConfig, getTos, acceptTos, updateUserPreferences, updateUserEmail, getApiKeys, createApiKey, deleteApiKey, listAdminUsers, setUserAdmin, listAdminClusters, createAdminCluster, updateAdminCluster, testAdminClusterConnection, getAdminClusterByRegistrationToken, listAdminStorageBackends, createAdminStorageBackend, updateAdminStorageBackend, testAdminStorageBackendConnection, listAdminTosVersions, createAdminTosVersion } from './api';
+import { login, signup, forgotPassword, getUserAccount, getPublicConfig, getTos, acceptTos, updateUserPreferences, updateUserEmail, getApiKeys, createApiKey, deleteApiKey, listAdminUsers, setUserAdmin, listAdminClusters, createAdminCluster, updateAdminCluster, testAdminClusterConnection, getAdminClusterByRegistrationToken, listAdminStorageBackends, createAdminStorageBackend, updateAdminStorageBackend, testAdminStorageBackendConnection, listAdminTosVersions, createAdminTosVersion, getAdminStatsSummary, getAdminStatsSchema, getAdminStatsPivot } from './api';
 
 export function useLogin() {
   return useMutation({
@@ -78,7 +78,7 @@ export function useApiKeys() {
 export function useCreateApiKey() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ label, projectId, expiresAt }) => createApiKey(label, projectId, expiresAt),
+    mutationFn: ({ label, projectIds, expiresAt }) => createApiKey(label, projectIds, expiresAt),
     onSuccess: () => {
       queryClient.invalidateQueries(['apiKeys']);
     }
@@ -95,10 +95,11 @@ export function useDeleteApiKey() {
   });
 }
 
-export function useAdminUsers() {
+export function useAdminUsers(params) {
   return useQuery({
-    queryKey: ['adminUsers'],
-    queryFn: listAdminUsers,
+    queryKey: ['adminUsers', params],   // params in the key → refetch on any change
+    queryFn: () => listAdminUsers(params),
+    keepPreviousData: true,             // avoid table flicker on page/sort change
   });
 }
 
@@ -106,7 +107,8 @@ export function useSetUserAdmin() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ username, isAdmin }) => setUserAdmin(username, isAdmin),
-    onSuccess: () => queryClient.invalidateQueries(['adminUsers']),
+    // Invalidate the ['adminUsers'] prefix so every param-keyed page refetches.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminUsers'] }),
   });
 }
 
@@ -196,5 +198,33 @@ export function useCreateAdminTosVersion() {
   return useMutation({
     mutationFn: createAdminTosVersion,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminTosVersions'] }),
+  });
+}
+
+// ── Admin stats dashboard (docs/plans/admin-stats-pivot-redesign.md) ─────────────────────────
+// Read-only; params live in the queryKey so pivoting/re-windowing refetches. keepPreviousData
+// avoids chart/table flicker while the next slice loads. The schema is static per deploy.
+
+export function useAdminStatsSummary() {
+  return useQuery({
+    queryKey: ['adminStatsSummary'],
+    queryFn: getAdminStatsSummary,
+  });
+}
+
+export function useAdminStatsSchema() {
+  return useQuery({
+    queryKey: ['adminStatsSchema'],
+    queryFn: getAdminStatsSchema,
+    staleTime: Infinity,
+  });
+}
+
+export function useAdminStatsPivot(params) {
+  return useQuery({
+    queryKey: ['adminStatsPivot', params],
+    queryFn: () => getAdminStatsPivot(params),
+    enabled: !!(params && params.entity),
+    keepPreviousData: true,
   });
 }

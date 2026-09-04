@@ -23,6 +23,7 @@ class User(Base):
 
     def to_dict(self, include_password=False):
         result = {
+            "id": self.id,
             "username": self.username,
             "email": self.email,
             "is_admin": self.is_admin,

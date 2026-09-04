@@ -12,6 +12,10 @@ class create_environment:
         """Return JSON Schema for create_environment parameters."""
         return {
             "type": "object",
+            "title": "Create Environment",
+            "description": "Build a custom Docker environment from a base image plus extra Python "
+                           "packages and Dockerfile instructions. Produces a reusable environment "
+                           "that other processes can run in.",
             "properties": {
                 "environment_name": {
                     "type": "string",

@@ -65,7 +65,7 @@ MINIKUBE_MEMORY=8192
 # SERVER_URL=http://192.168.1.100:30080
 
 # Admin credentials for pgAdmin and the Kubernetes dashboard (production only).
-# Used once on first run to create the nagelfluh-admin-secret K8s secret.
+# Used once on first run to create the ymerflow-admin-secret K8s secret.
 # ADMIN_USER=admin
 # ADMIN_PASSWORD=password
 ```
@@ -83,7 +83,7 @@ configure a **plugin-provided** protocol (e.g. Google Artifact Registry, GCS, GK
 
 ```bash
 # REGISTRY_PROTOCOL=docker-v2
-# REGISTRY_CONFIG_JSON={"user":"nagelfluh","password":"nagelfluh","host":"192.168.1.142","port":30500}
+# REGISTRY_CONFIG_JSON={"user":"ymerflow","password":"ymerflow","host":"192.168.1.142","port":30500}
 
 # STORAGE_PROTOCOL=s3
 # STORAGE_CONFIG_JSON={...}
@@ -114,7 +114,7 @@ PLUGIN_NPM_SOURCE_MODE=auto
 # Server-local directory the admin fills with plugin npm packages (used in auto/local mode): either
 # packed tarballs from `npm pack` (`<scope-name>-<version>.tgz`) or unpacked source dirs.
 # The build resolves name@version against this directory.
-PLUGIN_NPM_SOURCE_DIR=/var/lib/nagelfluh/plugin-npm-source
+PLUGIN_NPM_SOURCE_DIR=/var/lib/ymerflow/plugin-npm-source
 
 # npm registry for the plugin source (registry/auto mode) AND the build toolchain / non-shared deps.
 # Defaults to registry.npmjs.org; set to a private mirror for locked-down deployments.
@@ -127,7 +127,7 @@ PLUGIN_NPM_SOURCE_DIR=/var/lib/nagelfluh/plugin-npm-source
 #   "pvc"      — mount a PersistentVolumeClaim (set the claim name in ..._VOLUME_SOURCE)
 #   "hostpath" — mount a host path (set the host path in ..._VOLUME_SOURCE)
 # PLUGIN_NPM_SOURCE_VOLUME_TYPE=pvc
-# PLUGIN_NPM_SOURCE_VOLUME_SOURCE=nagelfluh-plugin-npm-source
+# PLUGIN_NPM_SOURCE_VOLUME_SOURCE=ymerflow-plugin-npm-source
 ```
 
 In a Kubernetes deployment, create a PVC (or host path) that holds the admin's plugin packages,
@@ -212,9 +212,9 @@ PYTHONPATH=. python backend/bin/yf-bootstrap-provision
 This:
 - Starts Minikube with CPU/RAM/disk from `MINIKUBE_CPUS`/`MINIKUBE_MEMORY`/`MINIKUBE_DISK_SIZE` in
   `config.env` (defaults: 4 CPUs, 16 GB, 30 GB), publishes the required host ports, and mounts
-  `NAGELFLUH_DATA_DIR` for persistent storage
-- Creates the `nagelfluh-jobs` namespace
-- Applies the cluster-scoped `nagelfluh-postgres` PersistentVolume (5Gi, hostPath-backed on
+  `YMERFLOW_DATA_DIR` for persistent storage
+- Creates the `ymerflow-jobs` namespace
+- Applies the cluster-scoped `ymerflow-postgres` PersistentVolume (5Gi, hostPath-backed on
   Minikube; a zonal GCE persistent disk + CSI PV on GKE) that `k8s/postgres/statefulset.yaml`'s
   `data-postgres-0` PVC binds to — see
   [Postgres PV per cluster provider](plans/done/postgres-pv-per-cluster-provider.md)
@@ -241,10 +241,10 @@ minikube status
 kubectl get crd | grep kueue
 
 # Check namespace
-kubectl get ns nagelfluh-jobs
+kubectl get ns ymerflow-jobs
 
 # Check queues
-kubectl get localqueue -n nagelfluh-jobs
+kubectl get localqueue -n ymerflow-jobs
 kubectl get clusterqueue
 
 # Check MinIO / registry pods
@@ -288,7 +288,7 @@ mc --insecure ls myminio/
 
 When you create a project in the UI, the backend automatically:
 
-1. Creates MinIO bucket: `nagelfluh-project-{project-id}`
+1. Creates MinIO bucket: `ymerflow-project-{project-id}`
 2. Creates MinIO user: `project-{project-id}` with generated password
 3. Creates IAM policy with scoped permissions:
    - **READ**: `uploads/*` and `processes/*/datasets/*` (all data in project)
@@ -310,19 +310,19 @@ When you create a project in the UI, the backend automatically:
       "Effect": "Allow",
       "Action": ["s3:GetObject"],
       "Resource": [
-        "arn:aws:s3:::nagelfluh-project-{id}/uploads/*",
-        "arn:aws:s3:::nagelfluh-project-{id}/processes/*/datasets/*"
+        "arn:aws:s3:::ymerflow-project-{id}/uploads/*",
+        "arn:aws:s3:::ymerflow-project-{id}/processes/*/datasets/*"
       ]
     },
     {
       "Effect": "Allow",
       "Action": ["s3:PutObject"],
-      "Resource": ["arn:aws:s3:::nagelfluh-project-{id}/processes/*"]
+      "Resource": ["arn:aws:s3:::ymerflow-project-{id}/processes/*"]
     },
     {
       "Effect": "Allow",
       "Action": ["s3:ListBucket"],
-      "Resource": ["arn:aws:s3:::nagelfluh-project-{id}"]
+      "Resource": ["arn:aws:s3:::ymerflow-project-{id}"]
     }
   ]
 }
@@ -357,9 +357,9 @@ This builds the image directly in Minikube's Docker daemon:
 eval $(minikube docker-env)
 
 # List images
-docker images | grep nagelfluh
+docker images | grep ymerflow
 
-# You should see: nagelfluh-base-runner:latest
+# You should see: ymerflow-base-runner:latest
 ```
 
 ### 4. Backend Setup
@@ -428,7 +428,7 @@ back up (it's a NodePort published on the host by minikube's docker driver, not 
 
 ### Full Reset (`minikube delete`)
 
-VM-local data is lost (Postgres/MinIO/registry data itself survives via the `NAGELFLUH_DATA_DIR`
+VM-local data is lost (Postgres/MinIO/registry data itself survives via the `YMERFLOW_DATA_DIR`
 host bind-mount). Run full setup again — simplest is just `./dev/runall.sh`, or individually:
 
 ```bash
@@ -449,7 +449,7 @@ For production deployments on GCP, use per-project GCS buckets with Workload Ide
 
 ```bash
 PROJECT_ID="abc123"
-BUCKET_NAME="nagelfluh-project-${PROJECT_ID}"
+BUCKET_NAME="ymerflow-project-${PROJECT_ID}"
 GCP_PROJECT="your-gcp-project"
 REGION="us-central1"
 
@@ -464,7 +464,7 @@ gsutil versioning set on gs://${BUCKET_NAME}
 
 ```bash
 PROCESS_ID="process-xyz789"
-SA_NAME="nagelfluh-process-${PROCESS_ID}"
+SA_NAME="ymerflow-process-${PROCESS_ID}"
 
 gcloud iam service-accounts create ${SA_NAME} \
   --project=${GCP_PROJECT} \
@@ -495,7 +495,7 @@ gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} \
 
 ```bash
 K8S_SA_NAME="process-${PROCESS_ID}"
-K8S_NAMESPACE="nagelfluh-jobs"
+K8S_NAMESPACE="ymerflow-jobs"
 
 # Create k8s service account
 kubectl create serviceaccount ${K8S_SA_NAME} -n ${K8S_NAMESPACE}
@@ -517,7 +517,7 @@ gcloud iam service-accounts add-iam-policy-binding \
 ```bash
 STORAGE_PROTOCOL=gcs
 STORAGE_ENDPOINT=              # Empty for GCS
-STORAGE_BUCKET_PREFIX=nagelfluh-project-
+STORAGE_BUCKET_PREFIX=ymerflow-project-
 ```
 
 Pods will automatically use Workload Identity - no explicit credentials needed.
@@ -530,7 +530,7 @@ For production deployments on AWS, use per-project S3 buckets with IRSA (IAM Rol
 
 ```bash
 PROJECT_ID="abc123"
-BUCKET_NAME="nagelfluh-project-${PROJECT_ID}"
+BUCKET_NAME="ymerflow-project-${PROJECT_ID}"
 AWS_REGION="us-east-1"
 
 # Create bucket
@@ -545,7 +545,7 @@ aws s3api put-bucket-versioning \
 **2. Create IAM policy with scoped permissions:**
 
 ```bash
-POLICY_NAME="nagelfluh-project-${PROJECT_ID}-policy"
+POLICY_NAME="ymerflow-project-${PROJECT_ID}-policy"
 
 cat > /tmp/policy.json << EOF
 {
@@ -582,7 +582,7 @@ aws iam create-policy \
 
 ```bash
 PROCESS_ID="process-xyz789"
-CLUSTER_NAME="nagelfluh-cluster"
+CLUSTER_NAME="ymerflow-cluster"
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 OIDC_PROVIDER=$(aws eks describe-cluster --name ${CLUSTER_NAME} \
   --query "cluster.identity.oidc.issuer" --output text | sed -e "s/^https:\/\///")
@@ -600,7 +600,7 @@ cat > /tmp/trust-policy.json << EOF
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
         "StringEquals": {
-          "${OIDC_PROVIDER}:sub": "system:serviceaccount:nagelfluh-jobs:process-${PROCESS_ID}"
+          "${OIDC_PROVIDER}:sub": "system:serviceaccount:ymerflow-jobs:process-${PROCESS_ID}"
         }
       }
     }
@@ -610,23 +610,23 @@ EOF
 
 # Create IAM role
 aws iam create-role \
-  --role-name nagelfluh-process-${PROCESS_ID} \
+  --role-name ymerflow-process-${PROCESS_ID} \
   --assume-role-policy-document file:///tmp/trust-policy.json
 
 # Attach policy to role
 aws iam attach-role-policy \
-  --role-name nagelfluh-process-${PROCESS_ID} \
+  --role-name ymerflow-process-${PROCESS_ID} \
   --policy-arn arn:aws:iam::${AWS_ACCOUNT_ID}:policy/${POLICY_NAME}
 ```
 
 **4. Configure Kubernetes service account:**
 
 ```bash
-kubectl create serviceaccount process-${PROCESS_ID} -n nagelfluh-jobs
+kubectl create serviceaccount process-${PROCESS_ID} -n ymerflow-jobs
 
 kubectl annotate serviceaccount process-${PROCESS_ID} \
-  -n nagelfluh-jobs \
-  eks.amazonaws.com/role-arn=arn:aws:iam::${AWS_ACCOUNT_ID}:role/nagelfluh-process-${PROCESS_ID}
+  -n ymerflow-jobs \
+  eks.amazonaws.com/role-arn=arn:aws:iam::${AWS_ACCOUNT_ID}:role/ymerflow-process-${PROCESS_ID}
 ```
 
 **5. Update backend configuration:**
@@ -634,7 +634,7 @@ kubectl annotate serviceaccount process-${PROCESS_ID} \
 ```bash
 STORAGE_PROTOCOL=s3
 STORAGE_ENDPOINT=              # Empty for AWS S3
-STORAGE_BUCKET_PREFIX=nagelfluh-project-
+STORAGE_BUCKET_PREFIX=ymerflow-project-
 ```
 
 Pods will automatically use IRSA - no explicit credentials needed.
@@ -652,7 +652,7 @@ manually; the steps below only create the raw Kubernetes cluster itself.
 
 ```bash
 # Create cluster
-gcloud container clusters create nagelfluh \
+gcloud container clusters create ymerflow \
   --region=$REGION \
   --num-nodes=3 \
   --machine-type=n1-standard-4 \
@@ -667,7 +667,7 @@ gcloud container clusters create nagelfluh \
 ```bash
 # Create cluster
 eksctl create cluster \
-  --name nagelfluh \
+  --name ymerflow \
   --region=$REGION \
   --nodegroup-name standard-workers \
   --node-type m5.xlarge \
@@ -678,7 +678,7 @@ eksctl create cluster \
 
 Register the resulting cluster's kubeconfig with YmerFlow (Admin → Clusters); Kueue/RBAC
 provisioning happens automatically once it connects successfully.
-kubectl create namespace nagelfluh-jobs
+kubectl create namespace ymerflow-jobs
 kubectl apply -f k8s/kueue-config.yaml
 ```
 
@@ -692,23 +692,23 @@ For production, use PostgreSQL instead of SQLite:
 
 ```bash
 # GKE using Cloud SQL
-gcloud sql instances create nagelfluh-db \
+gcloud sql instances create ymerflow-db \
   --tier=db-f1-micro \
   --region=$REGION
 
-gcloud sql databases create nagelfluh \
-  --instance=nagelfluh-db
+gcloud sql databases create ymerflow \
+  --instance=ymerflow-db
 
 # Create user
-gcloud sql users create nagelfluh \
-  --instance=nagelfluh-db \
+gcloud sql users create ymerflow \
+  --instance=ymerflow-db \
   --password=<secure-password>
 ```
 
 2. **Update backend configuration:**
 
 ```bash
-DATABASE_URL=postgresql://nagelfluh:<password>@<db-host>:5432/nagelfluh
+DATABASE_URL=postgresql://ymerflow:<password>@<db-host>:5432/ymerflow
 ```
 
 3. **Run migrations:**
@@ -769,12 +769,12 @@ spec:
         - name: DATABASE_URL
           valueFrom:
             secretKeyRef:
-              name: nagelfluh-secrets
+              name: ymerflow-secrets
               key: database-url
         - name: STORAGE_PROTOCOL
           value: "gcs"
         - name: STORAGE_BUCKET_PREFIX
-          value: "nagelfluh-project-"
+          value: "ymerflow-project-"
 ```
 
 Apply:
@@ -812,8 +812,8 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 Build and deploy:
 
 ```bash
-docker build -t gcr.io/$GCP_PROJECT/nagelfluh-frontend:latest frontend/
-docker push gcr.io/$GCP_PROJECT/nagelfluh-frontend:latest
+docker build -t gcr.io/$GCP_PROJECT/ymerflow-frontend:latest frontend/
+docker push gcr.io/$GCP_PROJECT/ymerflow-frontend:latest
 kubectl apply -f k8s/frontend-deployment.yaml
 ```
 
@@ -825,11 +825,11 @@ In production mode, two web-based admin GUIs are deployed automatically and prox
 
 ```
 Browser → nginx (frontend pod)
-            /pgadmin/  → pgadmin pod (nagelfluh ns, port 80)
+            /pgadmin/  → pgadmin pod (ymerflow ns, port 80)
             /headlamp/ → headlamp pod (headlamp ns, port 4466)
 ```
 
-Both paths are protected by nginx HTTP basic auth. The credentials are stored in the `nagelfluh-admin-secret` Kubernetes secret (key: `htpasswd`), which is mounted into the frontend pod at `/etc/nginx/htpasswd/admin.htpasswd`.
+Both paths are protected by nginx HTTP basic auth. The credentials are stored in the `ymerflow-admin-secret` Kubernetes secret (key: `htpasswd`), which is mounted into the frontend pod at `/etc/nginx/htpasswd/admin.htpasswd`.
 
 ### pgAdmin
 
@@ -838,9 +838,9 @@ Both paths are protected by nginx HTTP basic auth. The credentials are stored in
 | URL | `<SERVER_URL>/pgadmin/` |
 | Login | `<ADMIN_USER>@localhost` / `<ADMIN_PASSWORD>` |
 | Image | `dpage/pgadmin4:latest` |
-| Namespace | `nagelfluh` |
+| Namespace | `ymerflow` |
 
-The YmerFlow PostgreSQL server (`postgres.nagelfluh.svc.cluster.local:5432`) is pre-configured via a mounted `servers.json` ConfigMap. On first connection you will be prompted for the database password (`nagelfluhpass`).
+The YmerFlow PostgreSQL server (`postgres.ymerflow.svc.cluster.local:5432`) is pre-configured via a mounted `servers.json` ConfigMap. On first connection you will be prompted for the database password (`ymerflowpass`).
 
 pgAdmin is configured with `SCRIPT_NAME=/pgadmin` so it generates correct URLs when sitting behind the nginx subpath proxy.
 
@@ -868,7 +868,7 @@ ADMIN_PASSWORD=password # default — change this in production
 To rotate credentials after the secret has been created:
 
 ```bash
-kubectl delete secret nagelfluh-admin-secret -n nagelfluh
+kubectl delete secret ymerflow-admin-secret -n ymerflow
 # Update ADMIN_USER / ADMIN_PASSWORD in config.env, then:
 ./runall.sh
 ```
@@ -917,7 +917,7 @@ docker port minikube | grep 30900
 
 If it's missing, re-run bootstrap-provision — `MinikubeClusterProvider.bootstrap()`
 (`plugins/ymerflow-minikube`) detects the missing publish and recreates minikube (data is
-preserved via the `NAGELFLUH_DATA_DIR` host bind-mount):
+preserved via the `YMERFLOW_DATA_DIR` host bind-mount):
 
 ```bash
 PYTHONPATH=. env/bin/python backend/bin/yf-bootstrap-provision
@@ -945,20 +945,20 @@ kubectl get svc -n minio
 **Check Kueue workload:**
 
 ```bash
-kubectl get workloads -n nagelfluh-jobs
-kubectl describe workload <workload-name> -n nagelfluh-jobs
+kubectl get workloads -n ymerflow-jobs
+kubectl describe workload <workload-name> -n ymerflow-jobs
 ```
 
 **Check events:**
 
 ```bash
-kubectl get events -n nagelfluh-jobs --sort-by='.lastTimestamp'
+kubectl get events -n ymerflow-jobs --sort-by='.lastTimestamp'
 ```
 
 **Check job:**
 
 ```bash
-kubectl describe job <job-name> -n nagelfluh-jobs
+kubectl describe job <job-name> -n ymerflow-jobs
 ```
 
 ### Image Pull Errors
@@ -967,7 +967,7 @@ kubectl describe job <job-name> -n nagelfluh-jobs
 
 ```bash
 eval $(minikube docker-env)
-docker images | grep nagelfluh
+docker images | grep ymerflow
 ```
 
 **Rebuild if missing:**
@@ -997,19 +997,19 @@ kubectl config current-context
 **Check Kubernetes secret:**
 
 ```bash
-kubectl get secret project-<project-id>-storage -n nagelfluh-jobs -o yaml
+kubectl get secret project-<project-id>-storage -n ymerflow-jobs -o yaml
 ```
 
 **Test storage access:**
 
 ```bash
-kubectl exec -it <pod-name> -n nagelfluh-jobs -- python3 -c "
+kubectl exec -it <pod-name> -n ymerflow-jobs -- python3 -c "
 import fsspec, os
 fs = fsspec.filesystem('s3',
     key=os.environ['AWS_ACCESS_KEY_ID'],
     secret=os.environ['AWS_SECRET_ACCESS_KEY'],
     client_kwargs={'endpoint_url': os.environ.get('STORAGE_ENDPOINT')})
-print(fs.ls('nagelfluh-project-<project-id>'))
+print(fs.ls('ymerflow-project-<project-id>'))
 "
 ```
 
@@ -1032,7 +1032,7 @@ alembic -c backend/alembic.ini history
 **Reset database (DANGER - loses all data):**
 
 ```bash
-rm backend/nagelfluh.db
+rm backend/ymerflow.db
 env/bin/python backend/bin/yf-migrate
 ```
 
@@ -1063,17 +1063,17 @@ kubectl logs -f deployment/ymerflow-backend
 # Logs appear in terminal where npm start was run
 
 # Production (nginx)
-kubectl logs -f deployment/nagelfluh-frontend
+kubectl logs -f deployment/ymerflow-frontend
 ```
 
 **Process pod logs:**
 
 ```bash
 # Find pod
-kubectl get pods -n nagelfluh-jobs
+kubectl get pods -n ymerflow-jobs
 
 # Stream logs
-kubectl logs -f <pod-name> -n nagelfluh-jobs
+kubectl logs -f <pod-name> -n ymerflow-jobs
 ```
 
 ### Resource Usage
@@ -1082,7 +1082,7 @@ kubectl logs -f <pod-name> -n nagelfluh-jobs
 
 ```bash
 kubectl top nodes
-kubectl top pods -n nagelfluh-jobs
+kubectl top pods -n ymerflow-jobs
 ```
 
 **Storage usage:**
@@ -1092,7 +1092,7 @@ kubectl top pods -n nagelfluh-jobs
 mc du myminio/
 
 # GCS
-gsutil du -s gs://nagelfluh-project-*
+gsutil du -s gs://ymerflow-project-*
 ```
 
 ## Cleanup
@@ -1117,7 +1117,7 @@ minikube delete
 
 ```bash
 # Remove SQLite database
-rm backend/nagelfluh.db
+rm backend/ymerflow.db
 
 # Recreate tables
 env/bin/python backend/bin/yf-migrate

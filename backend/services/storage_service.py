@@ -15,9 +15,10 @@ import re
 from typing import Any, Dict, Tuple
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from backend.config import settings
-from backend.models.project import Project
+from backend.models.project import Project, Publication
 from backend.models.storage_backend import StorageBackend
 from backend.services.storage_protocols import get_protocol_handler
 
@@ -45,15 +46,34 @@ async def resolve_project_backend(db, project_id: str) -> Tuple[Project, Storage
 async def resolve_bucket(db, bucket_name: str) -> Tuple[Project, StorageBackend]:
     """Reverse-resolve a bucket name (the first path segment of a `/files/` URL) to its owning
     project + backend. A bucket is `<bucket_prefix><project_id>` for every protocol, so the
-    embedded project_id (a uuid) is the join key. Used by the `/files/` proxy and upload download,
-    which are given a bucket, not a project."""
+    embedded id is the join key. Used by the `/files/` proxy and upload download, which are given
+    a bucket, not a project.
+
+    The embedded id is normally a real project id, but when a file URL was served through a
+    publication link the id is a `pub-`-prefixed Publication id (see
+    docs/plans/done/publication-link-id-opacity.md). A `^pub-` id is looked up as a Publication
+    and resolves to its real project; a bare id is looked up as a project. Real-project loads
+    (the overwhelming majority) never match `^pub-`, so they pay zero added DB work. Legacy
+    publications minted before the prefix carry a bare-uuid bucket that no longer matches a
+    publication and 404 — accepted, see the plan."""
     result = await db.execute(select(StorageBackend))
     for backend in result.scalars().all():
         prefix = backend.bucket_prefix or ""
         if bucket_name.startswith(prefix):
-            project_id = bucket_name[len(prefix):]
+            embedded_id = bucket_name[len(prefix):]
+            if embedded_id.startswith("pub-"):
+                publication = (
+                    await db.execute(
+                        select(Publication)
+                        .options(selectinload(Publication.project))
+                        .where(Publication.id == embedded_id)
+                    )
+                ).scalar_one_or_none()
+                if publication is not None and publication.project.storage_backend_id == backend.id:
+                    return publication.project, backend
+                continue
             project = (
-                await db.execute(select(Project).where(Project.id == project_id))
+                await db.execute(select(Project).where(Project.id == embedded_id))
             ).scalar_one_or_none()
             if project is not None and project.storage_backend_id == backend.id:
                 return project, backend

@@ -6,6 +6,7 @@ import { loadDataset, DatasetCollectionAdapter } from './datamodel/dataset';
 import XYZ from './datamodel/libaarhusxyz';
 import { useWebSocket } from './hooks/useWebSocket';
 import { WS_API, uploadFile } from './datamodel/api';
+import { recordNavView } from './datamodel/navTracking';
 import { MessageContext } from './MessageContext';
 
 export const ProcessContext = createContext();
@@ -174,6 +175,27 @@ export function ProcessProvider({ children }) {
   // Parse current values from URL
   const urlParams = useMemo(() => parseUrlParams(location.pathname), [location.pathname]);
 
+  // GUI usage tracking (docs/plans/done/gui-usage-nav-tracking.md). One capture chokepoint:
+  // every navigation — navigate() setters, AppBootstrap landings, back/forward, pasted URLs —
+  // flows through parseUrlParams here. Debounced ~700ms so only a *dwelled* coordinate is
+  // recorded: rapid drill-down / scrubbing re-arms and the cleanup cancels the transient states.
+  useEffect(() => {
+    const { workspace, workspaceVersion, project, process, version, part, sounding } = urlParams;
+    if (!workspace && !project && !process) return;  // bare /app → skip
+    const t = setTimeout(() => {
+      recordNavView({
+        workspace,
+        workspace_version: workspaceVersion,
+        project,
+        process,
+        version,
+        part: part === "all" ? null : part,  // normalise to match the URL builder (Decision 5)
+        sounding,
+      });
+    }, 700);
+    return () => clearTimeout(t);
+  }, [urlParams]);
+
   // Extract values from URL - memoize objects to prevent unnecessary re-renders
   const selectedEnvironment = urlParams.workspace;
   const selectedEnvironmentVersion = urlParams.workspaceVersion;
@@ -190,12 +212,13 @@ export function ProcessProvider({ children }) {
   const { data: environments = EMPTY_ARRAY, isLoading: environmentsLoading, error: environmentsError } = useEnvironments();
   // Needed by setCurrentProject below to decide whether the currently-selected workspace
   // (which may be owned by a different project, or public) should carry across a project switch.
-  const { data: currentWorkspace } = useWorkspace(selectedEnvironment);
+  const { data: currentWorkspace } = useWorkspace(selectedEnvironment, currentProject);
 
   // InUse diff state
   const [inUseDiffState, dispatchInUseDiff] = useReducer(inUseDiffReducer, { diffs: {}, history: {} });
   const [inUseAction, setInUseAction] = useState('enable'); // 'enable' | 'disable' | 'clear'
   const [newProcessToken, setNewProcessToken] = useState(0);
+  const [newProcessDefaults, setNewProcessDefaults] = useState(null);
   const createProcess = useCreateProcess();
 
   // Handle query errors
@@ -383,7 +406,7 @@ export function ProcessProvider({ children }) {
       const latestVer = proc.versions[proc.versions.length - 1];
       try {
         await createProcess.mutateAsync({
-          proc: { id: proc.id, type: proc.type, name: proc.name, params: { ...latestVer.parameters, diff: diffUrl } },
+          proc: { id: proc.id, type: latestVer.type, environment: { id: latestVer.environment?.id }, name: proc.name, params: { ...latestVer.parameters, diff: diffUrl } },
           projectId: currentProject,
         });
       } catch (e) {
@@ -492,12 +515,8 @@ export function ProcessProvider({ children }) {
     };
   }, [datasetObjects, currentPart, addMessage]);
 
-  // Auto-select first project if none selected (only on /app routes)
-  React.useEffect(() => {
-    if (!currentProject && projects.length > 0 && location.pathname.startsWith('/app')) {
-      setCurrentProject(projects[0].id);
-    }
-  }, [projects, currentProject, setCurrentProject, location.pathname]);
+  // Project bootstrap (select the first project when none is selected) now lives in
+  // AppBootstrap, which selects workspace + project atomically in a single navigation.
 
   const contextValue = useMemo(
     () => ({
@@ -512,7 +531,8 @@ export function ProcessProvider({ children }) {
       activeProcess,
       setActiveProcess,
       newProcessToken,
-      startNewProcess: () => { setActiveProcess(null); setNewProcessToken(t => t + 1); },
+      newProcessDefaults,
+      startNewProcess: (defaults = null) => { setNewProcessDefaults(defaults); setActiveProcess(null); setNewProcessToken(t => t + 1); },
       currentPart,
       setCurrentPart,
       selectedEnvironment,
@@ -553,6 +573,8 @@ export function ProcessProvider({ children }) {
       refetch,
       activeProcess,
       setActiveProcess,
+      newProcessToken,
+      newProcessDefaults,
       currentPart,
       setCurrentPart,
       selectedEnvironment,

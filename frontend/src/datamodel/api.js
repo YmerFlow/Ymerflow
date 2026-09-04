@@ -68,6 +68,30 @@ export async function createAdminTosVersion(body) {
   return response.data;
 }
 
+// ── Admin stats dashboard (docs/plans/admin-stats-pivot-redesign.md) ─────────────────────────
+
+export async function getAdminStatsSummary() {
+  const response = await apiClient.get('/admin/stats/summary');
+  return response.data;
+}
+
+// Static per-deploy dimension / filter whitelist — the single source of truth the pivot UI
+// renders its builders from (Decision 5).
+export async function getAdminStatsSchema() {
+  const response = await apiClient.get('/admin/stats/schema');
+  return response.data;
+}
+
+// Free N-dimensional GROUP BY. `group_by` is an ordered array sent as a repeated query param;
+// axios serialises arrays with `arrayFormat: 'repeat'` so group_by=[a,b] → ?group_by=a&group_by=b.
+export async function getAdminStatsPivot(params) {
+  const response = await apiClient.get('/admin/stats/pivot', {
+    params,
+    paramsSerializer: { indexes: null },
+  });
+  return response.data;
+}
+
 export async function getInviteInfo(token) {
   const response = await apiClient.get(`/auth/invites/${token}`);
   return response.data;
@@ -144,8 +168,8 @@ export async function getApiKeys() {
   return response.data;
 }
 
-export async function createApiKey(label, projectId, expiresAt = null) {
-  const body = { label, project_id: projectId };
+export async function createApiKey(label, projectIds, expiresAt = null) {
+  const body = { label, project_ids: projectIds || [] };
   if (expiresAt) body.expires_at = expiresAt;
   const response = await apiClient.post('/auth/api-keys', body);
   return response.data;
@@ -186,9 +210,11 @@ export async function updateUserEmail(email) {
   return response.data;
 }
 
-export async function listAdminUsers() {
-  const response = await apiClient.get('/auth/admin/users');
-  return response.data;
+export async function listAdminUsers({ q, sort, dir, limit, offset } = {}) {
+  const response = await apiClient.get('/auth/admin/users', {
+    params: { q: q || undefined, sort, dir, limit, offset },
+  });
+  return response.data;   // { items, total }
 }
 
 export async function setUserAdmin(username, isAdmin) {
@@ -272,6 +298,11 @@ export async function getAvailableStorageBackends() {
   return response.data;
 }
 
+export async function getClusterQueues() {
+  const response = await apiClient.get('/utilities/cluster-queues');
+  return response.data;
+}
+
 export async function createProject(name, storageBackendId) {
   const response = await apiClient.post('/projects', { name, storage_backend_id: storageBackendId });
   return response.data;
@@ -315,7 +346,13 @@ export async function getEnvironmentProcessTypes(environmentId) {
 }
 
 export async function getProcesses(projectId) {
-  const response = await apiClient.get(`/projects/${projectId}/processes`);
+  // verbose=true: the frontend (FlowView etc.) needs the full per-version payload
+  // (parameters, outputs, …). The endpoint defaults to a terse summary for MCP callers;
+  // this hidden flag opts back into the historical full shape. See
+  // docs/plans/done/mcp-terse-process-tools.md.
+  const response = await apiClient.get(`/projects/${projectId}/processes`, {
+    params: { verbose: true },
+  });
   return response.data;
 }
 
@@ -401,6 +438,22 @@ export function getLatestVersion(process) {
   return Math.max(...process.versions.map(v => v.version));
 }
 
+// Get the latest version object for a process (highest version number).
+export function getLatestVersionObj(process) {
+  if (!process || !process.versions || process.versions.length === 0) return null;
+  return process.versions.reduce((a, b) => (b.version > a.version ? b : a));
+}
+
+// Get the process type of the latest version. `type` and `environment` moved from Process to
+// ProcessVersion (each run records its own), so read them from a version — typically the latest.
+export function getLatestProcessType(process) {
+  return getLatestVersionObj(process)?.type ?? null;
+}
+
+export function getLatestProcessEnvironment(process) {
+  return getLatestVersionObj(process)?.environment ?? null;
+}
+
 // Get data for a dataset or part
 export async function getDatasetData(datasetId, partPath = "all", projectId) {
   let url;
@@ -425,14 +478,14 @@ export async function getDatasetGeography(datasetId, partPath = "all", projectId
   return response.data;
 }
 
-// Upload a file
+// Upload a file. Sends the raw File as the request body so the backend can stream it
+// straight to object storage (flat memory regardless of size). The filename travels as
+// a query param and the content type as the Content-Type header.
 export async function uploadFile(file, onProgress, projectId) {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const response = await apiClient.post(`/projects/${projectId}/upload`, formData, {
+  const response = await apiClient.post(`/projects/${projectId}/upload`, file, {
+    params: { filename: file.name },
     headers: {
-      'Content-Type': 'multipart/form-data',
+      'Content-Type': file.type || 'application/octet-stream',
     },
     onUploadProgress: (progressEvent) => {
       if (onProgress && progressEvent.lengthComputable) {
@@ -526,7 +579,12 @@ export async function upgradePlugin(pluginId) {
 
 // Fetch a single process (used to poll a build to completion).
 export async function getProcess(processId, projectId) {
-  const response = await apiClient.get(`/projects/${projectId}/process/${processId}`);
+  // verbose=true: opt back into the full per-version payload (see getProcesses above and
+  // docs/plans/done/mcp-terse-process-tools.md). Without it the endpoint returns the terse
+  // MCP summary shape (version rows, no parameters/outputs).
+  const response = await apiClient.get(`/projects/${projectId}/process/${processId}`, {
+    params: { verbose: true },
+  });
   return response.data;
 }
 
@@ -541,8 +599,13 @@ export async function getPublicWorkspaces() {
   return response.data;
 }
 
-export async function getWorkspace(workspaceId) {
-  const response = await apiClient.get(`/workspace/${workspaceId}`);
+export async function getWorkspace(workspaceId, projectId) {
+  // projectId is the current viewing context (a real project id or a publication id). The
+  // backend uses it to grant a publication viewer read access to the project's non-public
+  // workspaces; omit it for a plain global-public fetch (e.g. the `default` workspace).
+  const response = await apiClient.get(`/workspace/${workspaceId}`, {
+    params: projectId ? { project_id: projectId } : {},
+  });
   return response.data;
 }
 

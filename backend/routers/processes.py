@@ -4,11 +4,13 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
+import asyncio
+import json
 import logging
 
 from backend.database import get_db
 from backend.models import Process, ProcessVersion, ProcessLog, Project, Environment
-from backend.services.auth_service import get_current_user, AuthContext, require_project_member, resolve_project_for_read, ProjectReadAccess
+from backend.services.auth_service import get_current_user, AuthContext, require_project_member, resolve_project_for_read, ProjectReadAccess, redact_project_id, authenticate_token, _is_project_member
 from backend.services.websocket_service import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -48,7 +50,7 @@ class ProcessCreate(BaseModel):
     model_config = {"extra": "allow", "populate_by_name": True}
 
 
-@router.post("/projects/{project_id}/process", summary="Submit a job (import, processing, inversion, or any other type)")
+@router.post("/projects/{project_id}/process", operation_id="create_process", summary="Submit a job (import, processing, inversion, or any other type)")
 async def create_process(
     proc: ProcessCreate,
     project: Project = Depends(require_project_member),
@@ -110,67 +112,83 @@ async def create_process(
     return {"id": process.id, "versions": [{"version": version}]}
 
 
-@router.get("/projects/{project_id}/processes", summary="List data processing jobs")
+@router.get("/projects/{project_id}/processes", operation_id="list_processes", summary="List data processing jobs")
 async def list_processes(
     access: ProjectReadAccess = Depends(resolve_project_for_read),
+    verbose: bool = Query(False, include_in_schema=False),
     db: AsyncSession = Depends(get_db)
 ):
-    """List processes (jobs) in a project, with their status and outputs.
+    """List processes (jobs) in a project — one short summary row per process.
 
-    Each process has a 'versions' array sorted ascending by version number; the most
-    recent run is always versions[-1]. Each version entry has:
-    - version: integer (1-based, increments with each re-run via the 'id' param)
-    - state: 'queued' | 'running' | 'done' | 'failed'
-    - outputs: dict mapping output name → /projects/{project_id}/dataset/{id} URL (populated when state == 'done')
-    - parameters: the input params the job was run with
+    Each row is: {id, name, type, latest_version, latest_state, n_versions} where
+    'type'/'latest_state' come from the most recent version. This is deliberately terse
+    so the whole project fits in a small response — it does NOT include per-version
+    parameters or outputs.
+
+    To drill into one process:
+    - get_process(project_id, process_id) — the process plus its version-summary rows.
+    - get_process_version(project_id, process_id[, version]) — full detail (parameters,
+      resources, cluster, …) for one version; defaults to the latest.
+    - get_process_version_outputs(project_id, process_id[, version]) — just that
+      version's output dataset URLs; defaults to the latest.
+
+    To poll a run submitted via create_process: call get_process and read
+    versions[-1].state until it is 'done' or 'failed'.
 
     Logs are not included — use get_process_logs for paginated log access.
 
-    To check a specific process, prefer get_process(project_id, process_id) which is more efficient.
-    To poll a specific run: find the process by .id, then find the version whose
-    .version number matches what create_process returned; check .state on that entry.
-
-    IMPORTANT: The URLs in 'outputs' are /projects/{project_id}/dataset/{id} metadata URLs, NOT
-    directly usable as input_data for create_process. To get the actual file URL to pass as
-    input_data, extract the dataset id from the URL (the last path segment) and call get_dataset,
-    then use the 'url' field from that response.
+    (The frontend calls this with ?verbose=true to get the full per-version payload;
+    that flag is not exposed to MCP tools.)
     """
     stmt = select(Process).options(
-        selectinload(Process.environment),
         selectinload(Process.versions).selectinload(ProcessVersion.datasets),
         selectinload(Process.versions).selectinload(ProcessVersion.tags),
         selectinload(Process.versions).selectinload(ProcessVersion.cluster),
+        selectinload(Process.versions).selectinload(ProcessVersion.environment),
     ).where(Process.project_id == access.project.id)
 
     result = await db.execute(stmt)
     processes = result.scalars().all()
 
-    return [p.to_dict() for p in processes]
+    return redact_project_id([p.to_dict(verbose=verbose) for p in processes], access)
 
 
-@router.get("/projects/{project_id}/process/{process_id}", summary="Get a single process by ID")
+@router.get("/projects/{project_id}/process/{process_id}", operation_id="get_process", summary="Get a single process by ID")
 async def get_process(
     process_id: str,
     access: ProjectReadAccess = Depends(resolve_project_for_read),
+    verbose: bool = Query(False, include_in_schema=False),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get a single process by its ID, including all versions with state, parameters, and outputs.
+    """Get one process and its version-summary rows.
 
-    Use this instead of list_processes when you already have a process ID (e.g. from
-    create_process). It fetches only the one process you need rather than all processes
-    in the project. Logs are not included — use get_process_logs for paginated log access.
+    Returns {id, name, type, latest_version, latest_state, versions: [...]} where each
+    entry in 'versions' is a short row: {version, type, state, started_at, completed_at,
+    run_length, has_outputs}. This is the "list the versions of a process" tool — it does
+    NOT include per-version parameters or outputs.
 
-    Returns 404 if the process is not found or not in the given project.
+    Use this instead of list_processes once you have a process ID (e.g. from
+    create_process). After create_process returns an id, poll this endpoint until
+    versions[-1].state becomes 'done' or 'failed'.
 
-    After create_process returns an id, poll this endpoint until
-    versions[-1].state becomes 'done' or 'failed'. Then read versions[-1].outputs
-    for dataset URLs.
+    Then drill in:
+    - get_process_version(project_id, process_id[, version]) — full detail (parameters,
+      resources, cluster, …) for one version; defaults to the latest.
+    - get_process_version_outputs(project_id, process_id[, version]) — that version's
+      output dataset URLs; defaults to the latest.
+
+    'type' is per-version (each run records its own) — read it from a version row, not
+    the process. Returns 404 if the process is not found or not in the given project.
+    Logs are not included — use get_process_logs for paginated log access.
+
+    (The frontend calls this with ?verbose=true to get the full per-version payload;
+    that flag is not exposed to MCP tools.)
     """
     stmt = select(Process).options(
-        selectinload(Process.environment),
         selectinload(Process.versions).selectinload(ProcessVersion.datasets),
         selectinload(Process.versions).selectinload(ProcessVersion.tags),
         selectinload(Process.versions).selectinload(ProcessVersion.cluster),
+        selectinload(Process.versions).selectinload(ProcessVersion.environment),
     ).where(Process.id == process_id)
     result = await db.execute(stmt)
     process = result.scalar_one_or_none()
@@ -178,10 +196,100 @@ async def get_process(
     if not process or process.project_id != access.project.id:
         raise HTTPException(status_code=404, detail="Process not found")
 
-    return process.to_dict()
+    return redact_project_id(process.to_dict(verbose=verbose, include_versions=True), access)
 
 
-@router.get("/projects/{project_id}/process/{process_id}/logs", summary="Get job execution logs")
+async def _load_process_version(
+    db: AsyncSession, project_id: str, process_id: str, version: Optional[int]
+) -> ProcessVersion:
+    """Load one ProcessVersion (with the relationships to_detail_dict/build_outputs need),
+    verifying the process belongs to the project. When `version` is None, resolves to the
+    latest (highest) version. Raises 404 if the process or version is not found.
+    """
+    proc_result = await db.execute(select(Process).where(Process.id == process_id))
+    process = proc_result.scalar_one_or_none()
+    if not process or process.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Process not found")
+
+    stmt = select(ProcessVersion).options(
+        selectinload(ProcessVersion.datasets),
+        selectinload(ProcessVersion.tags),
+        selectinload(ProcessVersion.cluster),
+        selectinload(ProcessVersion.environment),
+    ).where(ProcessVersion.process_id == process_id)
+    if version is not None:
+        stmt = stmt.where(ProcessVersion.version == version)
+    else:
+        stmt = stmt.order_by(ProcessVersion.version.desc()).limit(1)
+
+    pv = (await db.execute(stmt)).scalar_one_or_none()
+    if not pv:
+        raise HTTPException(status_code=404, detail="Process version not found")
+    return pv
+
+
+@router.get(
+    "/projects/{project_id}/process/{process_id}/version",
+    operation_id="get_process_version",
+    summary="Get one process version's full detail (parameters, resources, cluster)",
+)
+async def get_process_version(
+    process_id: str,
+    version: Optional[int] = Query(
+        None, description="Version number to fetch. Omit to get the latest (highest) version."
+    ),
+    access: ProjectReadAccess = Depends(resolve_project_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """Full detail for a single process version — everything except outputs.
+
+    Returns {version, type, state, parameters, dependencies, resource_requests,
+    deadline_seconds, environment, cluster, tags, started_at, completed_at, run_length}.
+    Outputs are omitted to keep the response small; fetch them separately with
+    get_process_version_outputs when the version is 'done'.
+
+    'version' is optional — omit it to get the latest version (the usual case when
+    inspecting the run you just submitted). Use get_process first to see which versions
+    exist. Returns 404 if the process or the requested version is not found.
+    """
+    pv = await _load_process_version(db, access.project.id, process_id, version)
+    return redact_project_id(pv.to_detail_dict(access.project.id), access)
+
+
+@router.get(
+    "/projects/{project_id}/process/{process_id}/version/outputs",
+    operation_id="get_process_version_outputs",
+    summary="Get one process version's output dataset URLs",
+)
+async def get_process_version_outputs(
+    process_id: str,
+    version: Optional[int] = Query(
+        None, description="Version number to fetch outputs for. Omit to get the latest (highest) version."
+    ),
+    access: ProjectReadAccess = Depends(resolve_project_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """Just the outputs for a single process version: {version, state, outputs}.
+
+    'outputs' maps each output name to a /projects/{project_id}/dataset/{id} metadata URL,
+    populated once the version's state is 'done'.
+
+    'version' is optional — omit it for the latest version. Returns 404 if the process or
+    the requested version is not found.
+
+    IMPORTANT: the URLs here are dataset METADATA URLs, NOT directly usable as input_data
+    for create_process. To get the actual file URL, extract the dataset id (the last path
+    segment) and call get_dataset, then use the 'url' field from that response.
+    """
+    pv = await _load_process_version(db, access.project.id, process_id, version)
+    return redact_project_id({
+        "version": pv.version,
+        "state": pv.state.value,
+        "outputs": pv.build_outputs(access.project.id),
+    }, access)
+
+
+@router.get("/projects/{project_id}/process/{process_id}/logs", operation_id="get_process_logs", summary="Get job execution logs")
 async def get_process_logs(
     process_id: str,
     version: Optional[int] = None,
@@ -237,7 +345,7 @@ class CloneRequest(BaseModel):
     cluster: Optional[Ref] = Field(None, description="Override the cluster for the cloned run — {id, [name]}. Obtain from available_clusters. If omitted, inherits the source version's cluster (re-validated; falls back to the first allowed cluster if that cluster is no longer allowed/active).")
 
 
-@router.post("/projects/{project_id}/process/{process_id}/versions/{version}/clone", summary="Clone a process version with parameter overrides")
+@router.post("/projects/{project_id}/process/{process_id}/versions/{version}/clone", operation_id="clone_process_version", summary="Clone a process version with parameter overrides")
 async def clone_process_version(
     process_id: str,
     version: int,
@@ -305,10 +413,11 @@ async def clone_process_version(
         else source_version.k8s_cluster_id
     )
 
+    # type/environment are per-version now — clone from the SOURCE version, not the process.
     proc = {
         "id": process_id,
-        "type": process.type,
-        "environment_id": process.environment_id,
+        "type": source_version.type,
+        "environment_id": source_version.environment_id,
         "params": http_params,
         "resource_requests": resource_requests,
         "deadline_seconds": deadline_seconds,
@@ -319,14 +428,14 @@ async def clone_process_version(
         db=db,
         proc=proc,
         project_id=process.project_id,
-        environment_id=process.environment_id,
+        environment_id=source_version.environment_id,
         username=auth.user.username
     )
 
     return {"id": new_process.id, "versions": [{"version": new_version}]}
 
 
-@router.post("/projects/{project_id}/process/{process_id}/versions/{version}/cancel", summary="Cancel a running or queued process")
+@router.post("/projects/{project_id}/process/{process_id}/versions/{version}/cancel", operation_id="cancel_process_version", summary="Cancel a running or queued process")
 async def cancel_process_version(
     process_id: str,
     version: int,
@@ -355,7 +464,7 @@ async def cancel_process_version(
         raise HTTPException(status_code=404, detail="Process version not found")
 
     from backend.models import ProcessState
-    if version_obj.state not in (ProcessState.QUEUED, ProcessState.RUNNING):
+    if version_obj.state not in (ProcessState.QUEUED, ProcessState.STARTING, ProcessState.RUNNING):
         raise HTTPException(status_code=409, detail=f"Process version is already in terminal state: {version_obj.state.value}")
 
     if version_obj.k8s_job_name:
@@ -382,7 +491,7 @@ class PositionUpdate(BaseModel):
     y: float
 
 
-@router.patch("/projects/{project_id}/process/{process_id}/position", status_code=204, summary="Save FlowView node position")
+@router.patch("/projects/{project_id}/process/{process_id}/position", operation_id="update_process_position", status_code=204, summary="Save FlowView node position")
 async def update_process_position(
     process_id: str,
     body: PositionUpdate,
@@ -404,12 +513,47 @@ async def update_process_position(
 
 @router.websocket("/ws/process/{process_id}/logs")
 async def process_logs_websocket(websocket: WebSocket, process_id: str, version: Optional[int] = None):
-    """WebSocket endpoint for streaming process logs"""
+    """WebSocket endpoint for streaming process logs.
+
+    Authenticated via first-message auth: the client accepts the socket, then must send
+    {"token": "<bearer token>"} as its first message. The token is validated and the caller
+    must be a REAL member of the process's project. Unlike the state socket (whose body is
+    stripped to a bare refetch signal), the log lines ARE the payload here, so the socket
+    needs real auth rather than a slimmed body. See docs/plans/done/ws-data-leak-fixes.md.
+    """
+    from backend.database import async_session_maker
+
     await websocket.accept()
+
+    # First-message auth: the token travels in the first client message, never in the URL
+    # (query params leak into proxy logs / browser history) or an Authorization header
+    # (browsers can't set one on `new WebSocket()`). The wait_for timeout stops a client that
+    # never authenticates from holding the socket open forever.
+    try:
+        raw = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+    except (asyncio.TimeoutError, WebSocketDisconnect):
+        await websocket.close(code=1008)
+        return
+
+    try:
+        token = json.loads(raw).get("token")
+    except (ValueError, TypeError, AttributeError):
+        token = None
+
+    async with async_session_maker() as db:
+        auth = await authenticate_token(token, db) if token else None
+        project_id = None
+        if auth is not None:
+            project_id = (await db.execute(
+                select(Process.project_id).where(Process.id == process_id)
+            )).scalar_one_or_none()
+        if auth is None or project_id is None or not await _is_project_member(db, project_id, auth):
+            await websocket.close(code=1008)
+            return
+
     await ws_manager.connect_logs(process_id, websocket)
 
     try:
-        from backend.database import async_session_maker
         async with async_session_maker() as db:
             stmt = select(ProcessLog).where(ProcessLog.process_id == process_id)
             if version is not None:

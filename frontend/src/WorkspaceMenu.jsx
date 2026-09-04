@@ -1,9 +1,11 @@
 import React, { useContext, useEffect, useState, useRef } from 'react';
 import { Dropdown, Form } from 'react-bootstrap';
+import { AuthContext } from './AuthContext';
 import { LayoutContext } from './flexout/LayoutContext';
 import { ProcessContext } from './ProcessContext';
 import { useWorkspaces, useWorkspace, useSaveWorkspace, useSaveWorkspaceVersion, usePublicWorkspaces } from './datamodel/useQueries';
 import WorkspaceSharingModal from './WorkspaceSharingModal';
+import WorkspaceCodeModal from './WorkspaceCodeModal';
 
 // One row per workspace: clickable title (loads the selected version, default latest) plus an
 // inline version <select>. Clicking the title makes this the "current" workspace — that identity
@@ -67,7 +69,7 @@ function WorkspaceList({ onSelect }) {
   const { currentProject: proj, selectedEnvironment } = useContext(ProcessContext);
   const { data: workspaces = [] } = useWorkspaces(proj);
   const isOwned = workspaces.some(w => w.id === selectedEnvironment);
-  const { data: pinned } = useWorkspace(selectedEnvironment, { enabled: !!selectedEnvironment && !isOwned });
+  const { data: pinned } = useWorkspace(selectedEnvironment, proj, { enabled: !!selectedEnvironment && !isOwned });
   const { data: publicWorkspaces = [] } = usePublicWorkspaces();
 
   const rows = [];
@@ -97,12 +99,14 @@ function WorkspaceList({ onSelect }) {
 // "Save" — write the current layout back as a NEW version of the currently-loaded workspace.
 // The label names the target workspace and disables itself when nothing is loaded/editable.
 function SaveCurrentWorkspaceItem({ layoutRef, onSaved }) {
+  const { isAuthenticated } = useContext(AuthContext);
   const { currentProject: proj, selectedEnvironment, setSelectedEnvironment, projects } = useContext(ProcessContext);
-  const { data: current } = useWorkspace(selectedEnvironment);
+  const { data: current } = useWorkspace(selectedEnvironment, proj);
   // Editability is membership in the workspace's home project, not whether that project
   // happens to be the currently-open one. The `!p.read_only` guard excludes pinned
   // read-only publication entries in `projects` — those aren't real memberships.
-  const canEdit = !!current && projects.some(p => p.id === current.project_id && !p.read_only);
+  // Anonymous visitors (read-only publication links) can never save.
+  const canEdit = isAuthenticated && !!current && projects.some(p => p.id === current.project_id && !p.read_only);
   const saveVersion = useSaveWorkspaceVersion(current?.project_id);
 
   const handleSave = async () => {
@@ -204,26 +208,21 @@ function PublicWorkspaceSearch({ onSelect }) {
 }
 
 export default function WorkspaceMenu() {
-  const { layout, updateLayout } = useContext(LayoutContext);
+  const { isAuthenticated } = useContext(AuthContext);
+  const { layout } = useContext(LayoutContext);
   const { currentProject, selectedEnvironment } = useContext(ProcessContext);
-  const { data: current } = useWorkspace(selectedEnvironment);
+  const { data: current } = useWorkspace(selectedEnvironment, currentProject);
   const saveWorkspace = useSaveWorkspace(currentProject);
   const layoutRef = useRef(layout);
   const [showSharingModal, setShowSharingModal] = useState(false);
+  const [showCodeModal, setShowCodeModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     layoutRef.current = layout;
   }, [layout]);
 
-  // A private workspace dropped by setCurrentProject's switch logic (ProcessContext, Decision 4)
-  // leaves selectedEnvironment null. Clear the layout too, so the previous project's panes don't
-  // stay on screen referencing processes/datasets the new project has no relationship to.
-  useEffect(() => {
-    if (!selectedEnvironment) {
-      updateLayout({ id: 'root', widget: 'Empty' });
-    }
-  }, [selectedEnvironment]);
+  // "No workspace → Empty layout" is now owned by WorkspaceLayoutSync.
 
   const handleSaveAsNew = async () => {
     const title = window.prompt('Enter workspace name:');
@@ -251,15 +250,30 @@ export default function WorkspaceMenu() {
           <WorkspaceList onSelect={() => setMenuOpen(false)} />
           <Dropdown.Divider />
           <SaveCurrentWorkspaceItem layoutRef={layoutRef} onSaved={() => setMenuOpen(false)} />
-          <button type="button" className="dropdown-item" onClick={handleSaveAsNew}>
+          <button
+            type="button"
+            className="dropdown-item"
+            onClick={handleSaveAsNew}
+            disabled={!isAuthenticated}
+            title={!isAuthenticated ? 'Log in to save workspaces' : undefined}
+          >
             Save As New Workspace...
           </button>
           <button
             type="button"
             className="dropdown-item"
             onClick={() => { setShowSharingModal(true); setMenuOpen(false); }}
+            disabled={!isAuthenticated}
+            title={!isAuthenticated ? 'Log in to publish workspaces' : undefined}
           >
             Publish Workspaces...
+          </button>
+          <button
+            type="button"
+            className="dropdown-item"
+            onClick={() => { setShowCodeModal(true); setMenuOpen(false); }}
+          >
+            <i className="fa fa-code me-2" aria-hidden="true" />Edit as code...
           </button>
           <Dropdown.Divider />
           <PublicWorkspaceSearch onSelect={() => setMenuOpen(false)} />
@@ -271,6 +285,8 @@ export default function WorkspaceMenu() {
         onHide={() => setShowSharingModal(false)}
         currentProject={currentProject}
       />
+
+      <WorkspaceCodeModal show={showCodeModal} onHide={() => setShowCodeModal(false)} />
     </>
   );
 }

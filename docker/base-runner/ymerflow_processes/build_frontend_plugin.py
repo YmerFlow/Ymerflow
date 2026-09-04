@@ -47,6 +47,9 @@ class build_frontend_plugin:
     def schema(cls):
         return {
             "type": "object",
+            "title": "Build Frontend Plugin",
+            "description": "Build a frontend plugin from a server-local npm package at a pinned "
+                           "version, producing a distributable bundle dataset.",
             "properties": {
                 "npm_name": {
                     "type": "string",

@@ -20,6 +20,8 @@ export default defineConfig({
         react:                   { singleton: true, requiredVersion: '^18.2.0' },
         'react-dom':             { singleton: true, requiredVersion: '^18.2.0' },
         '@tanstack/react-query': { singleton: true },
+        'react-router-dom':      { singleton: true, requiredVersion: '^7.12.0' },
+        'markdown-to-jsx':       { singleton: true, requiredVersion: '^9.8.2' },
       },
     }),
   ],

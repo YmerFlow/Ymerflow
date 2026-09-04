@@ -1,4 +1,5 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { Plot, DataGroup, LayerType, registerLayerType, registerAxisQuantityKind } from 'gladly-plot';
 import { ProcessContext } from '../ProcessContext';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -77,6 +78,7 @@ function extractStatusEntry(logEntry) {
 }
 
 function ProcessProgress() {
+  const isMobile = useIsMobile();
   const { activeProcess, processes, currentProject } = useContext(ProcessContext);
   const [plotData, setPlotData]                 = useState([]);
   const [state, setState]                       = useState(null);
@@ -133,7 +135,7 @@ function ProcessProgress() {
     setPlotData([]);
     lastDomainKeyRef.current = null;
 
-    const shouldStream = versionObj.state === 'running' || versionObj.state === 'queued';
+    const shouldStream = versionObj.state === 'running' || versionObj.state === 'starting' || versionObj.state === 'queued';
     setShouldStreamLogs(shouldStream);
 
     if (!shouldStream) {
@@ -153,6 +155,9 @@ function ProcessProgress() {
     {
       enabled: shouldStreamLogs && !!processId && version !== null && version !== undefined,
       name: `Process Progress (${processId}/${version})`,
+      // First-message auth: the logs socket requires the bearer token as its first message
+      // (backend closes with 1008 otherwise). event.target is the just-opened, OPEN socket.
+      onOpen: (event) => event.target.send(JSON.stringify({ token: localStorage.getItem('auth_token') })),
       onMessage: (logEntry) => {
         const entry = extractStatusEntry(logEntry);
         if (entry) setPlotData(prev => [...prev, entry]);
@@ -225,7 +230,8 @@ function ProcessProgress() {
   }[state];
 
   return (
-    <div className="d-flex flex-column h-100">
+    <div className={isMobile ? 'd-flex flex-column' : 'd-flex flex-column h-100'}
+         style={isMobile ? { height: '60vh' } : undefined}>
       <div className="p-2 border-bottom d-flex justify-content-between align-items-center">
         <small className="text-muted">Process Progress</small>
         {stateBadge}
@@ -253,7 +259,7 @@ function ProcessProgress() {
             className="d-flex align-items-center justify-content-center text-muted"
             style={{ position: 'absolute', inset: 0, background: '#f8f9fa' }}
           >
-            {state === 'queued' ? 'Waiting for process to start…' : 'No progress data yet'}
+            {state === 'queued' || state === 'starting' ? 'Waiting for process to start…' : 'No progress data yet'}
           </div>
         )}
       </div>

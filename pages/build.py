@@ -131,12 +131,27 @@ def main() -> None:
     if cname.exists():
         shutil.copy(cname, OUT_DIR / "CNAME")
 
-    # Mirror frontend/public for images referenced from README (e.g. Nagelfluh.jpg)
+    # Mirror frontend/public for images referenced from README (e.g. YmerFlow.jpg)
     pub_dir = REPO_ROOT / "frontend" / "public"
     if pub_dir.exists():
         dest = OUT_DIR / "frontend" / "public"
         dest.mkdir(parents=True, exist_ok=True)
         for f in pub_dir.iterdir():
+            if f.is_file():
+                shutil.copy(f, dest / f.name)
+
+    # Copy the app wordmark SVG (single-sourced from the frontend) into the site
+    logo_svg = REPO_ROOT / "frontend" / "src" / "assets" / "Logo-OnDark.svg"
+    if logo_svg.exists():
+        shutil.copy(logo_svg, OUT_DIR / "assets" / "Logo-OnDark.svg")
+
+    # Mirror the frontend brand assets so README image refs (e.g. the YmerIcon.svg
+    # hero logo) resolve both on GitHub and in the built site.
+    src_assets = REPO_ROOT / "frontend" / "src" / "assets"
+    if src_assets.exists():
+        dest = OUT_DIR / "frontend" / "src" / "assets"
+        dest.mkdir(parents=True, exist_ok=True)
+        for f in src_assets.iterdir():
             if f.is_file():
                 shutil.copy(f, dest / f.name)
 

@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Modal, Button } from 'react-bootstrap';
 import { CustomForm } from '../../jsoneditor';
 import validator from "@rjsf/validator-ajv8";
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 // Error Boundary to catch widget crashes
 class WidgetErrorBoundary extends Component {
@@ -83,6 +84,7 @@ function stripNoDataSentinels(val) {
 
 export default function Pane({ parentUpdate, onTabMoved, hideHeader, ...node }) {
   const { updateLayout, widgets, data_context } = useContext(LayoutContext);
+  const isMobile = useIsMobile();
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -215,7 +217,7 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, ...node }) 
   const style = { opacity: isDragging ? 0.5 : 1 };
 
   return (
-    <div ref={drop} style={style} className={`${hideHeader ? 'border-top ' : ''}d-flex flex-column h-100`}>
+    <div ref={drop} style={style} className={`${hideHeader ? 'border-top ' : ''}d-flex flex-column ${isMobile ? '' : 'h-100'}`}>
       {!hideHeader && (
         <div ref={drag} className="d-flex justify-content-between bg-light border-bottom align-items-center ps-1 pane-header">
           <div onClick={handleTitleClick} style={{ cursor: 'pointer', flexGrow: 1, minWidth: 0, minHeight: '1.5em' }}>
@@ -267,7 +269,11 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, ...node }) 
           </div>
         </div>
       )}
-      <div className={`${hideHeader ? 'p-1' : 'pt-1'} flex-grow-1 overflow-auto`}>
+      <div className={
+        isMobile
+          ? (hideHeader ? 'p-1' : 'pt-1')
+          : `${hideHeader ? 'p-1' : 'pt-1'} flex-grow-1 overflow-auto`
+      }>
         <WidgetErrorBoundary widgetName={node.widget} node={node}>
           <Widget parentUpdate={parentUpdate} {...node} />
         </WidgetErrorBoundary>

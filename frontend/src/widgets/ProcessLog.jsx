@@ -1,18 +1,22 @@
 import React, { useContext, useEffect, useRef, useState } from 'react';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { ProcessContext } from '../ProcessContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { WS_API, getProcessLogs } from '../datamodel/api';
+import { resolveProcessRef } from '../datamodel/processRef';
 
-function ProcessLog() {
+function ProcessLog({ processRef }) {
+  const isMobile = useIsMobile();
   const { activeProcess, processes, currentProject } = useContext(ProcessContext);
   const [logs, setLogs] = useState({}); // Changed to object keyed by timestamp
   const [state, setState] = useState(null);
   const [shouldStreamLogs, setShouldStreamLogs] = useState(false);
   const logContainerRef = useRef(null);
 
-  // Extract processId and version from activeProcess for stable dependencies
-  const processId = activeProcess?.processId;
-  const version = activeProcess?.version;
+  // Resolve the process/version reference for stable dependencies
+  const ref = resolveProcessRef(processRef, activeProcess, processes);
+  const processId = ref?.processId;
+  const version = ref?.version;
 
   // Auto-scroll to bottom when new logs arrive, but only if user was already at bottom
   const isUserAtBottomRef = useRef(true);
@@ -65,7 +69,7 @@ function ProcessLog() {
     setLogs({});
 
     // Determine if we should stream logs via WebSocket
-    const shouldStream = versionObj.state === 'running' || versionObj.state === 'queued';
+    const shouldStream = versionObj.state === 'running' || versionObj.state === 'starting' || versionObj.state === 'queued';
     setShouldStreamLogs(shouldStream);
 
     // If not streaming, fetch logs via REST API
@@ -98,6 +102,9 @@ function ProcessLog() {
     {
       enabled: shouldStreamLogs && !!processId && version !== null && version !== undefined,
       name: `Process Logs (${processId}/${version})`,
+      // First-message auth: the logs socket requires the bearer token as its first message
+      // (backend closes with 1008 otherwise). event.target is the just-opened, OPEN socket.
+      onOpen: (event) => event.target.send(JSON.stringify({ token: localStorage.getItem('auth_token') })),
       onMessage: (logEntry) => {
         setLogs(prev => {
           // Only create new object if this is actually a new log entry
@@ -113,7 +120,7 @@ function ProcessLog() {
     }
   );
 
-  if (!activeProcess) {
+  if (!ref) {
     return (
       <div className="p-3 text-center text-muted">
         <p>No process selected</p>
@@ -136,7 +143,8 @@ function ProcessLog() {
   };
 
   return (
-    <div className="d-flex flex-column h-100">
+    <div className={isMobile ? 'd-flex flex-column' : 'd-flex flex-column h-100'}
+         style={isMobile ? { height: '60vh' } : undefined}>
       <div className="p-2 border-bottom d-flex justify-content-between align-items-center">
         <small className="text-muted">Process Logs</small>
         {getStateBadge()}
@@ -153,7 +161,7 @@ function ProcessLog() {
       >
         {!logs || Object.keys(logs).length === 0 ? (
           <div className="text-muted text-center">
-            {state === 'queued' ? 'Waiting for process to start...' : 'No logs available'}
+            {state === 'queued' || state === 'starting' ? 'Waiting for process to start...' : 'No logs available'}
           </div>
         ) : (
           Object.values(logs)
@@ -173,5 +181,17 @@ function ProcessLog() {
 }
 
 ProcessLog.title = "Process Log";
+
+ProcessLog.get_default = () => ({ processRef: 'current' });
+
+ProcessLog.get_schema = () => ({
+  type: 'object',
+  properties: {
+    id:         { type: 'string', title: 'ID', readOnly: true },
+    widget:     { type: 'string', title: 'Widget Type', readOnly: true },
+    processRef: { type: 'string', title: 'Process / version',
+                  'x-format': 'processVersion', default: 'current' },
+  },
+});
 
 export default ProcessLog;

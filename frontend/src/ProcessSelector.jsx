@@ -1,7 +1,9 @@
 import React, { useContext, useState, useEffect, useRef } from 'react';
 import { ProcessContext } from './ProcessContext';
+import { useIsMobile } from './hooks/useIsMobile';
 
 export default function ProcessSelector() {
+  const isMobile = useIsMobile();
   const {
     processes,
     activeProcess,
@@ -112,9 +114,15 @@ export default function ProcessSelector() {
   };
 
   return (
-    <div className="d-flex align-items-center gap-2 px-2">
+    <div className={isMobile
+      ? "d-flex flex-column gap-2 p-2"
+      : "d-flex align-items-center gap-2 px-2"}>
       {/* Process search/select */}
-      <div className="position-relative" ref={dropdownRef}>
+      <div
+        className="position-relative"
+        ref={dropdownRef}
+        style={isMobile ? { width: '100%' } : undefined}
+      >
         <input
           type="text"
           className="form-control form-control-sm"
@@ -125,7 +133,7 @@ export default function ProcessSelector() {
             setShowDropdown(true);
           }}
           onFocus={() => setShowDropdown(true)}
-          style={{ width: '200px' }}
+          style={isMobile ? { width: '100%' } : { width: '200px' }}
         />
         {showDropdown && filteredProcesses.length > 0 && (
           <div
@@ -160,7 +168,7 @@ export default function ProcessSelector() {
         className="form-select form-select-sm"
         value={activeProcess?.version || 0}
         onChange={handleVersionChange}
-        style={{ width: 'auto', minWidth: '80px' }}
+        style={isMobile ? { width: '100%' } : { width: 'auto', minWidth: '80px' }}
       >
         {availableVersions.map(v => (
           <option key={v.version} value={v.version}>
@@ -177,7 +185,7 @@ export default function ProcessSelector() {
         className="form-select form-select-sm"
         value={currentPart}
         onChange={(e) => setCurrentPart(e.target.value)}
-        style={{ width: 'auto', minWidth: '120px' }}
+        style={isMobile ? { width: '100%' } : { width: 'auto', minWidth: '120px' }}
       >
         {availableParts.map(part => (
           <option key={part} value={part}>{part}</option>

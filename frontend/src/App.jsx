@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './datamodel/queryClient';
 import { LayoutProvider } from './flexout/LayoutContext';
 import { MainLayout } from './flexout/Layout';
 import { ProcessProvider, ProcessContext } from './ProcessContext';
@@ -10,12 +11,17 @@ import { MessageProvider } from './MessageContext';
 import MessageDisplay from './MessageDisplay';
 import { MenuProvider, useRegisterMenuComponent } from "./flexout/MenuContext";
 import MenuBar from "./flexout/MenuBar";
+import { useIsMobile } from "./hooks/useIsMobile";
 import ProcessSelector from "./ProcessSelector";
 import ProjectDropdown from "./ProjectDropdown";
 import AutoCreateProjectDialog from "./AutoCreateProjectDialog";
+import AutoOpenProcessEditor from "./AutoOpenProcessEditor";
+import AppBootstrap from "./AppBootstrap";
+import WorkspaceLayoutSync from "./WorkspaceLayoutSync";
 import UserMenu from "./UserMenu";
 import WorkspaceMenu from "./WorkspaceMenu";
-import LandingPage from "./LandingPage";
+import BrandLogo from "./BrandLogo";
+import { LandingChrome, LandingContent } from "./LandingPage";
 import AccountPage from "./AccountPage";
 import AdminPage from "./AdminPage";
 import InviteAcceptPage from "./InviteAcceptPage";
@@ -28,11 +34,13 @@ import ProcessLog from "./widgets/ProcessLog";
 import ProcessProgress from "./widgets/ProcessProgress";
 import Export from "./widgets/Export";
 import ProcessInfo from "./widgets/ProcessInfo";
+import ProcessComparison from "./widgets/ProcessComparison";
 import AEMModelSimulator from "./widgets/AEMModelSimulator";
 import InUseEditor from "./widgets/InUseEditor";
 import PluginManager from "./widgets/PluginManager";
+import ClusterQueueView from "./widgets/ClusterQueueView";
 
-import { registerHook, hooks } from './plugins/hooks';
+import { registerHook, resetHooks, hooks } from './plugins/hooks';
 import { buildDatasetRegistry } from './datamodel/datasetRegistry';
 import { buildLayerTypeRegistry, buildQuantityKindRegistry } from './plugins/registries';
 import { loadPlugins } from './plugins/loadPlugin';
@@ -40,6 +48,12 @@ import { API, getPublicationInfo } from './datamodel/api';
 
 // Expose API URL for plugins that need to call the backend
 if (typeof window !== 'undefined') window.__ymerflow_api = API;
+
+// Expose the shared query cache so plugins (e.g. billing) can invalidate host
+// queries whose results depend on plugin-owned state — e.g. after a billing
+// contract activates, the availableStorageBackends / availableClusters /
+// clusterQueues lists (empty while there was no contract) must be refetched.
+if (typeof window !== 'undefined') window.__ymerflow_queryClient = queryClient;
 
 // ── Register built-in dataset types ──────────────────────────────────────────
 // These run at module load time (side effects) so the registry is populated
@@ -67,9 +81,11 @@ registerHook('widgets', () => [
   { name: 'ProcessProgress',   component: ProcessProgress },
   { name: 'Export',            component: Export },
   { name: 'ProcessInfo',       component: ProcessInfo },
+  { name: 'ProcessComparison', component: ProcessComparison },
   { name: 'AEMModelSimulator', component: AEMModelSimulator },
   { name: 'InUseEditor',       component: InUseEditor },
   { name: 'PluginManager',     component: PluginManager },
+  { name: 'ClusterQueueView',  component: ClusterQueueView },
 ]);
 
 // ── Register built-in cluster connection provider forms ──────────────────────
@@ -91,16 +107,6 @@ registerHook('storage_protocol_forms', () => [
 // Note: buildDatasetRegistry() and friends are called AFTER plugins load in AuthenticatedApp,
 // so plugin-contributed types are included. See useEffect inside AuthenticatedApp.
 
-// Create a client
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-});
-
 function buildWidgets() {
   const map = Object.fromEntries(
     hooks.run.widgets().map(({ name, component }) => [name, component])
@@ -109,38 +115,19 @@ function buildWidgets() {
   return map;
 }
 
-var initial_layout = {
-    "splitType": "vertical",
-    "id": "root",
-    "widget": "VerticalSplit",
-    "children": [
-        {
-            "id": "35501582-95b5-458e-b8ca-3a2b63413eac",
-            "widget": "FlowView"
-        },
-        {
-            "id": "794e8232-a793-4ff6-9372-3c94169a3eac",
-            "widget": "TabSet",
-            "children": [
-                {
-                    "id": "8658b5f1-d171-49b0-8dd9-73e46b469e5d",
-                    "widget": "ProcessEditor"
-                },
-                {
-                    "id": "d1e9273c-c3ca-4261-b14a-55cc0e45f583",
-                    "widget": "PlotView"
-                }
-            ]
-        }
-    ]
-};
-
 function MenuBarWithComponents() {
+  const { isAuthenticated } = useContext(AuthContext);
+  useRegisterMenuComponent(["_brandLogo"], BrandLogo, 0);
   useRegisterMenuComponent(["_projectDropdown"], ProjectDropdown, -2);
   useRegisterMenuComponent(["_workspaceMenu"], WorkspaceMenu, 2);
   useRegisterMenuComponent(["_processSelector"], ProcessSelector, -1);
 
-  return <><UserMenu /><MenuBar /></>;
+  return <>
+    {hooks.run_jsx.menu_registrars({ context: 'in' })}
+    {/* No user menu for anonymous visitors (e.g. read-only publication links). */}
+    {isAuthenticated && <UserMenu />}
+    <MenuBar />
+  </>;
 }
 
 function PageChrome({ children }) {
@@ -165,48 +152,11 @@ function RequireAdmin({ children }) {
 
 function AppWithContext({ widgets }) {
   const processContext = useContext(ProcessContext);
-  const location = useLocation();
-  const [layoutToUse, setLayoutToUse] = useState(initial_layout);
-  const [layoutLoaded, setLayoutLoaded] = useState(false);
+  const isMobile = useIsMobile();
 
-  // Load workspace on mount based on URL or fall back to 'default'
-  useEffect(() => {
-    const loadInitialWorkspace = async () => {
-      // Extract workspace ID and version from URL path (e.g. /app/w/:workspace/wv/:workspaceVersion/...)
-      const match = location.pathname.match(/\/w\/([^/]+)/);
-      const workspaceId = match ? match[1] : 'default';
-      const versionMatch = location.pathname.match(/\/wv\/([^/]+)/);
-      const workspaceVersion = versionMatch ? parseInt(versionMatch[1], 10) : null;
-
-      try {
-        const { getWorkspace } = await import('./datamodel/api');
-        const workspace = await getWorkspace(workspaceId);
-        const versions = workspace?.versions ?? [];
-        const selectedVersion = versions.find(v => v.version === workspaceVersion) ?? versions[versions.length - 1];
-        if (selectedVersion) {
-          setLayoutToUse(selectedVersion.layout);
-        }
-      } catch (error) {
-        console.error('Failed to load workspace, using hardcoded layout:', error);
-      } finally {
-        setLayoutLoaded(true);
-      }
-    };
-
-    loadInitialWorkspace();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (!layoutLoaded) {
-    return <div className="d-flex align-items-center justify-content-center h-100">
-      <div className="spinner-border" role="status">
-        <span className="visually-hidden">Loading workspace...</span>
-      </div>
-    </div>;
-  }
-
+  // LayoutProvider starts Empty; WorkspaceLayoutSync fills it in from the URL's workspace.
   return (
-    <LayoutProvider widgets={widgets} initial_layout={layoutToUse} data_context={processContext}>
+    <LayoutProvider widgets={widgets} initial_layout={{ id: 'root', widget: 'Empty' }} data_context={processContext}>
       <MenuProvider>
         <Routes>
           <Route path="/account/:tab?" element={
@@ -221,17 +171,28 @@ function AppWithContext({ widgets }) {
             <div className="d-flex flex-column h-100">
               <MessageDisplay />
               <MenuBarWithComponents />
-              <div className="flex-grow-1 overflow-hidden">
+              <div className={`flex-grow-1 ${isMobile ? 'overflow-auto' : 'overflow-hidden'}`}>
                 <MainLayout />
               </div>
+              <AppBootstrap />
+              <WorkspaceLayoutSync />
               <AutoCreateProjectDialog />
+              <AutoOpenProcessEditor />
             </div>
           } />
           {hooks.run.pages().map(({ path, component: C }) => (
             <Route key={path} path={`/app/plugin/${path}`} element={<C />} />
           ))}
           {hooks.run_jsx.app_routes().map(({ path, element }) => (
-            <Route key={path} path={path} element={element} />
+            <Route key={path} path={path} element={<PageChrome>{element}</PageChrome>} />
+          ))}
+          {/* Logged-out plugin routes (e.g. the CMS /page/* pages) are ALSO reachable while logged
+              in — a shared/bookmarked logged-out URL resolves instead of bouncing to /app. They get
+              the logged-in PageChrome here. They never appear in a logged-in menu: the menu bar only
+              runs menu_registrars({ context: 'in' }), so 'out'-context pages are never listed. The
+              reverse stays safe — app_routes/pages/fullscreen_pages are never mounted logged-out. */}
+          {hooks.run_jsx.logged_out_routes().map(({ path, element }) => (
+            <Route key={path} path={path} element={<PageChrome>{element}</PageChrome>} />
           ))}
           <Route path="/" element={<Navigate to="/app" replace />} />
           <Route path="*" element={<Navigate to="/app" replace />} />
@@ -242,7 +203,7 @@ function AppWithContext({ widgets }) {
 }
 
 function AuthenticatedApp() {
-  const { isAuthenticated, token } = useContext(AuthContext);
+  const { isAuthenticated, token, authReady } = useContext(AuthContext);
   const location = useLocation();
   const [pluginsReady, setPluginsReady] = useState(false);
   const [widgets, setWidgets] = useState(null);
@@ -277,21 +238,21 @@ function AuthenticatedApp() {
 
   const anonymousViewingAllowed = !isAuthenticated && publicationCheck.status === 'done' && publicationCheck.allowed;
 
-  // Load plugins from GET /plugins/me before rendering the main app. Anonymous publication
-  // viewers have no session to load user plugins with, so they get the built-in registries
-  // only. After plugins load, build all registries so plugin contributions are included.
+  // Load plugins from GET /plugins/me before rendering the main app. Gated on authReady so
+  // it never runs against the transient pre-hydration anonymous render: the effect only fires
+  // once AuthContext has decided the logged-in-or-out question. It re-fires on real in-session
+  // auth transitions (the key includes isAuthenticated): an anonymous visitor loads the public
+  // bundle set, an authenticated visitor loads the full set. Because the frontend hook registry
+  // is append-only, we resetHooks() back to the host built-ins before each reload so hooks don't
+  // double-register and a logged-in user's private plugin hooks don't leak after logout. After
+  // plugins load, all derived registries are rebuilt so plugin contributions are included.
   useEffect(() => {
-    if (!isAuthenticated && !anonymousViewingAllowed) {
-      setPluginsReady(false);
-      setWidgets(null);
-      return;
-    }
-    const pluginsPromise = isAuthenticated
-      ? fetch(`${API}/plugins/me`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-          .then(r => r.ok ? r.json() : [])
-          .catch(() => [])
-      : Promise.resolve([]);
-    pluginsPromise
+    if (!authReady) return;  // don't load against unknown auth state
+    setPluginsReady(false);
+    resetHooks();
+    fetch(`${API}/plugins/me`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => r.ok ? r.json() : [])
+      .catch(() => [])
       .then(plugins => loadPlugins(plugins))
       .catch(() => {})
       .finally(() => {
@@ -301,7 +262,11 @@ function AuthenticatedApp() {
         setWidgets(buildWidgets());
         setPluginsReady(true);
       });
-  }, [isAuthenticated, token, anonymousViewingAllowed]);
+    // token is read inside for the Authorization header but is intentionally not a trigger —
+    // isAuthenticated already gates every transition that changes it; keying on token too would
+    // re-fire on same-auth token refreshes for no benefit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, isAuthenticated]);
 
   // When not logged in on a special URL, persist path/token for post-login redirect
   useEffect(() => {
@@ -318,10 +283,7 @@ function AuthenticatedApp() {
   }, [location.pathname, isAuthenticated]);
 
   if (!isAuthenticated) {
-    if (!publicationIdFromUrl) {
-      return <LandingPage />;
-    }
-    if (publicationCheck.status !== 'done') {
+    if (publicationIdFromUrl && publicationCheck.status !== 'done') {
       // Still resolving the publication link — avoid a login-page flash while we check.
       return (
         <div className="d-flex align-items-center justify-content-center h-100">
@@ -332,7 +294,29 @@ function AuthenticatedApp() {
       );
     }
     if (!anonymousViewingAllowed) {
-      return <LandingPage />;
+      // Not an anonymous-viewable publication link. Render the logged-out plugin routes
+      // registered by public plugins if the URL matches one; otherwise the landing page.
+      // Wait for public plugins to load first so their logged_out_routes are registered
+      // before we try to match the current URL.
+      if (!pluginsReady) {
+        return (
+          <div className="d-flex align-items-center justify-content-center h-100">
+            <div className="spinner-border" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </div>
+          </div>
+        );
+      }
+      return (
+        <LandingChrome>
+          <Routes>
+            {hooks.run_jsx.logged_out_routes().map(({ path, element }) => (
+              <Route key={path} path={path} element={element} />
+            ))}
+            <Route path="*" element={<LandingContent />} />
+          </Routes>
+        </LandingChrome>
+      );
     }
     // Falls through: valid anonymous-allowed publication link — render /app/* read-only.
   }
@@ -353,14 +337,18 @@ function AuthenticatedApp() {
   if (currentFullscreen) {
     return <currentFullscreen.Component />;
   }
-  // Restore fullscreen page after post-login redirect (path stored before auth)
+  // Restore the pre-login destination stashed before auth (App.jsx:274, and the billing
+  // invite bounce). Consume it exactly once and navigate there, so the restore is
+  // URL-driven and self-clearing: the target URL resolves through the normal fullscreen
+  // / route checks on the next render. Works for any stashed path — fullscreen plugin
+  // pages and ordinary /app/... project URLs alike — and can never linger into a later
+  // session, because it is always removed here the first time an authenticated render
+  // reaches this point.
   const pendingPath = sessionStorage.getItem('pendingPath');
   if (pendingPath) {
-    const pendingFullscreen = fullscreenPages.find(p => pendingPath.startsWith(p.path));
-    if (pendingFullscreen) {
-      return <pendingFullscreen.Component />;
-    }
     sessionStorage.removeItem('pendingPath');
+    const here = location.pathname + location.search + location.hash;
+    if (pendingPath !== here) return <Navigate to={pendingPath} replace />;
   }
 
   // Show invite page when arriving at an invite URL while already logged in,

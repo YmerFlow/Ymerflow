@@ -2,7 +2,7 @@ import os
 import secrets
 import logging
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -49,11 +49,20 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: List[str] = ["http://localhost:3000"]
 
+    # Public URL clients use to reach the app — the frontend origin (config.env SERVER_URL).
+    # In production the deploy pipeline injects this; in dev it defaults to the local frontend.
+    # frontend_base_url derives from this when not set explicitly.
+    server_url: str = "http://localhost:3000"
+
     # Backend API base URL
     backend_base_url: str = "http://localhost:8000"
 
-    # Frontend base URL (used for invite links)
-    frontend_base_url: str = "http://localhost:3000"
+    # Frontend base URL, used for invite links (billing + core project invites + invite emails).
+    # Defaults to server_url — the public app origin — so invite links point at the real deployment
+    # with no extra config. Set FRONTEND_BASE_URL in config.env only to override, e.g. when the
+    # frontend is served on a different host than SERVER_URL. (None here => resolved to server_url
+    # by the validator below; it is always a real string at runtime.)
+    frontend_base_url: Optional[str] = None
 
     # Site admin bootstrap
     admin_username: Optional[str] = None   # ADMIN_USERNAME in config.env
@@ -74,6 +83,31 @@ class Settings(BaseSettings):
     # which needs to fetch the registry's live TLS cert and bake host:port into the script. See
     # docs/plans/done/remote-cluster-provisioning-and-registry.md.
     registry_public_host: Optional[str] = None
+    # Port the registry is addressed on (config.env REGISTRY_PUBLIC_PORT). Defaults to the
+    # self-hosted docker-v2 NodePort (30500) so an unset config.env is byte-for-byte today's
+    # behaviour. Overridable so a registry reached on a different port — a remapped NodePort,
+    # or a reverse proxy (e.g. behind the public-TLS nginx edge on 443) — is addressable by
+    # config alone instead of the port being hard-locked in code. An explicit "port" in
+    # REGISTRY_CONFIG_JSON still wins over this (per-backend config beats the global default).
+    registry_public_port: int = 30500
+
+    # ── Direct (bootstrap-only) registry address ──────────────────────────────────────────────
+    # The self-signed node-IP:NodePort the docker-v2 registry is actually bootstrapped on. Used
+    # for (a) every host-side image PUSH, and (b) the pull references of the bootstrap-only
+    # containers that must be pulled BEFORE the public nginx TLS edge exists: the frontend/nginx
+    # Deployment (it cannot pull its own image through itself), the transient yf-deploy-app
+    # deployer Job, and the transient migration / db-update Jobs. Everything pulled AFTER the edge
+    # is live (the backend Deployment, the runner / Environment.docker_image) uses the PUBLIC
+    # address (registry_public_host/port). See docs/plans/registry-public-vs-direct-address.md.
+    #
+    # Defaulting rule (robustness requirement 1): when registry_public_host is unset, the PUBLIC
+    # address falls back to this DIRECT address (see DockerV2ProtocolHandler.bootstrap()), so
+    # public == direct and every public/direct split collapses to a single address — byte-for-byte
+    # today's behaviour. registry_direct_host defaults to None here and is resolved to the host's
+    # primary LAN IP by the runall scripts (REGISTRY_DIRECT_HOST, same `hostname -I` default
+    # REGISTRY_PUBLIC_HOST used to have).
+    registry_direct_host: Optional[str] = None
+    registry_direct_port: int = 30500
 
     # Plugin frontend build configuration
     # The build resolves a plugin's npm source from a server-local directory and/or the npm
@@ -122,6 +156,16 @@ class Settings(BaseSettings):
         if v is None:
             return v
         return v.replace('\\n', '\n')
+
+    @model_validator(mode='after')
+    def default_frontend_base_url(self):
+        # Invite links (billing /billing/invite, core /invite, and invite emails) all read
+        # frontend_base_url. When FRONTEND_BASE_URL isn't set explicitly, fall back to the public
+        # app origin (server_url) rather than a hardcoded localhost — otherwise every production
+        # deploy silently emits http://localhost:3000 invite links.
+        if not self.frontend_base_url:
+            self.frontend_base_url = self.server_url
+        return self
 
 
 settings = Settings()

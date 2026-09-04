@@ -10,13 +10,13 @@ import fsspec
 
 from backend.database import get_db
 from backend.models import Dataset, ProcessVersion, ProcessState
-from backend.services.auth_service import resolve_project_for_read, ProjectReadAccess
+from backend.services.auth_service import resolve_project_for_read, ProjectReadAccess, redact_project_id
 from backend.services.storage_service import get_fsspec_storage_options
 
 router = APIRouter(tags=["Datasets"])
 
 
-@router.get("/projects/{project_id}/datasets", summary="Search for output datasets")
+@router.get("/projects/{project_id}/datasets", operation_id="search_datasets", summary="Search for output datasets")
 async def search_datasets(
     search: str = "",
     completed_only: bool = True,
@@ -62,10 +62,10 @@ async def search_datasets(
     result = await db.execute(stmt)
     datasets = result.scalars().all()
 
-    return [d.to_dict() for d in datasets]
+    return redact_project_id([d.to_dict() for d in datasets], access)
 
 
-@router.get("/projects/{project_id}/dataset/{dataset_id}", summary="Get dataset metadata")
+@router.get("/projects/{project_id}/dataset/{dataset_id}", operation_id="get_dataset", summary="Get dataset metadata")
 async def get_dataset(
     dataset_id: str,
     access: ProjectReadAccess = Depends(resolve_project_for_read),
@@ -116,7 +116,7 @@ async def get_dataset(
     if not dataset or dataset.project_id != access.project.id:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    return dataset.to_dict()
+    return redact_project_id(dataset.to_dict(), access)
 
 
 @router.get("/projects/{project_id}/dataset/{dataset_id}/data", include_in_schema=False)
@@ -366,8 +366,13 @@ async def get_file(
     except RuntimeError:
         raise HTTPException(status_code=404, detail="File not found")
 
-    scheme = get_protocol_handler(backend.protocol).storage_base_url(project, backend).split("://", 1)[0]
-    storage_url = f"{scheme}://{path}"
+    # Rebuild the storage URL from the RESOLVED project's bucket, not the client-supplied bucket
+    # segment. For a real-project bucket these are identical; for a pub-prefixed bucket the client
+    # segment is <bucket_prefix>pub-X and resolve_bucket mapped it to the real project, so we must
+    # substitute the real bucket here. See docs/plans/done/publication-link-id-opacity.md.
+    real_base = get_protocol_handler(backend.protocol).storage_base_url(project, backend)
+    rest = path.split("/", 1)[1] if "/" in path else ""
+    storage_url = f"{real_base}/{rest}" if rest else real_base
 
     # Determine MIME type based on file extension. Our list is authoritative (it carries the
     # domain-specific types mimetypes doesn't know); fall back to the stdlib guess, then octet-stream.

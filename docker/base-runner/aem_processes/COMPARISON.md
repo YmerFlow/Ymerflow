@@ -370,7 +370,7 @@ entry_points = {
 ```python
 entry_points = {
     # Process types for YmerFlow
-    "nagelfluh.process_types": [
+    "ymerflow.process_types": [
         "import_skytem=aem_processes.import_process:Import",
         "process_tem=aem_processes.processing_process:Processing",
         "invert_tem=aem_processes.inversion_process:Inversion",

@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, DateTime, JSON, Integer, ForeignKey, Enum, Index, UniqueConstraint, Text, select, Table, Float
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import relationship, selectinload
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 import uuid
 import enum
@@ -10,8 +10,33 @@ import asyncio
 from backend.database import Base
 
 
+def _iso8601_duration(delta: timedelta) -> str:
+    """Format a timedelta as an ISO 8601 duration string (e.g. 'PT1H3M42S').
+
+    Fractional seconds are preserved. Negative durations are not expected
+    (completed_at should never precede started_at) but are represented with a
+    leading '-' on the whole duration if they occur.
+    """
+    total = delta.total_seconds()
+    sign = "-" if total < 0 else ""
+    total = abs(total)
+    hours, rem = divmod(total, 3600)
+    minutes, seconds = divmod(rem, 60)
+    parts = []
+    if hours:
+        parts.append(f"{int(hours)}H")
+    if minutes:
+        parts.append(f"{int(minutes)}M")
+    # Always emit seconds so a zero-length duration renders as 'PT0S'.
+    if seconds or not parts:
+        # Drop trailing ".0" for whole-second durations, keep fractions otherwise.
+        parts.append(f"{seconds:g}S")
+    return f"{sign}PT{''.join(parts)}"
+
+
 class ProcessState(str, enum.Enum):
     QUEUED = "queued"
+    STARTING = "starting"
     RUNNING = "running"
     DONE = "done"
     FAILED = "failed"
@@ -45,34 +70,69 @@ class Process(Base):
 
     id = Column(String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False)
-    type = Column(String(100), nullable=False)
-    environment_id = Column(String(255), ForeignKey("environments.id", ondelete="CASCADE"), nullable=False, index=True)
+    # NOTE: `type` and `environment_id` are per-run and live on ProcessVersion, not here —
+    # every version records the process type and environment it actually ran under. See
+    # docs/plans/done/move-type-environment-to-processversion.md.
     project_id = Column(String(255), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     flow_x = Column(Float, nullable=True)
     flow_y = Column(Float, nullable=True)
+    # Attribution for the admin stats dashboard (docs/plans/admin-stats-dashboard.md); nullable,
+    # SET NULL — see Project.created_by.
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Relationships
-    environment = relationship("Environment", back_populates="processes", foreign_keys=[environment_id])
     project = relationship("Project", back_populates="processes")
+    created_by_user = relationship("User", foreign_keys=[created_by])
     versions = relationship("ProcessVersion", back_populates="process", cascade="all, delete-orphan", order_by="ProcessVersion.version")
     logs = relationship("ProcessLog", back_populates="process", cascade="all, delete-orphan")
 
-    def to_dict(self):
-        """Convert to API response format"""
-        return {
+    def to_dict(self, verbose: bool = False, include_versions: bool = False):
+        """Convert to API response format.
+
+        `verbose` controls caller-aware verbosity (see docs/plans/done/
+        mcp-terse-process-tools.md):
+
+        - verbose=True (frontend, ?verbose=true) — the full payload: every version
+          serialized with full parameters/outputs/etc. This reproduces the historical
+          shape exactly.
+        - verbose=False (MCP/terse, the default):
+            - include_versions=False (list_processes rows): a single short row per
+              process — {id, name, type, latest_version, latest_state, n_versions}.
+            - include_versions=True (get_process overview): the process plus its
+              version-summary rows — {id, name, type, latest_version, latest_state,
+              versions: [version rows]} (no parameters).
+
+        `type`/`latest_state` are per-version fields read from the latest (highest)
+        version, since type/environment moved off Process onto ProcessVersion.
+        """
+        sorted_versions = sorted(self.versions, key=lambda x: x.version)
+
+        if verbose:
+            return {
+                "id": self.id,
+                "name": self.name,
+                # `type` and `environment` are per-version — read them from a version entry
+                # (typically versions[-1] for the "current" type/environment).
+                "project_id": self.project_id,
+                "flow_x": self.flow_x,
+                "flow_y": self.flow_y,
+                "versions": [v.to_dict(self.project_id, verbose=True) for v in sorted_versions]
+            }
+
+        latest = sorted_versions[-1] if sorted_versions else None
+        result = {
             "id": self.id,
             "name": self.name,
-            "type": self.type,
-            # minimal=True: only the process's own environment id/name are ever
-            # consumed by the frontend — not worth shipping docker_image/process_id/
-            # process_types (even just names) on every process.
-            "environment": self.environment.to_dict(minimal=True) if self.environment else None,
-            "project_id": self.project_id,
-            "flow_x": self.flow_x,
-            "flow_y": self.flow_y,
-            "versions": [v.to_dict(self.project_id) for v in sorted(self.versions, key=lambda x: x.version)]
+            "type": latest.type if latest else None,
+            "latest_version": latest.version if latest else None,
+            "latest_state": latest.state.value if latest else None,
         }
+        if include_versions:
+            result["versions"] = [v.to_dict(self.project_id, verbose=False) for v in sorted_versions]
+        else:
+            result["n_versions"] = len(sorted_versions)
+        return result
 
     @staticmethod
     def extract_dependencies(params: Dict[str, Any]) -> list:
@@ -164,15 +224,13 @@ class Process(Base):
 
         if process:
             new_version = len(process.versions) + 1
-            process.type = proc["type"]
-            process.environment_id = environment_id
         else:
             process = Process(
                 id=str(uuid.uuid4()),
                 name=proc.get("name", f"{proc['type']}-process"),
-                type=proc["type"],
-                environment_id=environment_id,
-                project_id=project_id
+                project_id=project_id,
+                # Attribution for the admin stats dashboard — the acting user is loaded above.
+                created_by=user.id,
             )
             db.add(process)
             new_version = 1
@@ -197,6 +255,7 @@ class Process(Base):
         # limits via sliders bounded by GET /projects/{project_id}/utilities/available-clusters.
         from backend.models.cluster import get_allowed_clusters
         from backend.services.k8s_client import k8s_clients, _parse_cpu_cores, _parse_memory_gb
+        from backend.services.cluster_providers import get_cluster_provider
 
         allowed = await get_allowed_clusters(db, user, project_id, resource_requests)
         if not allowed:
@@ -211,42 +270,51 @@ class Process(Base):
             if cluster is None:
                 raise HTTPException(status_code=400, detail=f"Cluster {cluster_id} is not allowed for this request.")
 
-        limits = await k8s_clients.get(cluster).get_cluster_queue_limits()
-        if limits is None:
-            limits = {"max_cpu_cores": 8.0, "max_memory_gb": 32.0}
+        # A pod is atomic — it must fit on one node — so the ceiling that actually bounds a task is
+        # the cluster's single-node capacity, NOT the cluster-wide Kueue aggregate. Validating
+        # against node_capacity() rejects an unschedulable task at submit instead of admitting it
+        # on aggregate quota and letting its pod hang Unschedulable until its deadline burns. No
+        # fallback: a provider that can't report capacity raises (a real misconfiguration to fix,
+        # not a guessed ceiling). See docs/plans/done/single-node-task-size-accounting.md.
+        provider = get_cluster_provider(cluster.cluster_type)
+        limits = await provider.node_capacity(k8s_clients.get(cluster), cluster.provider_config)
 
         requested_cpu = _parse_cpu_cores(resource_requests.get("cpu", "1000m"))
         requested_memory = _parse_memory_gb(resource_requests.get("memory", "2Gi"))
         if requested_cpu > limits["max_cpu_cores"]:
-            raise HTTPException(status_code=400, detail=f"Requested CPU ({requested_cpu} cores) exceeds cluster limit ({limits['max_cpu_cores']} cores)")
+            raise HTTPException(status_code=400, detail=f"Requested CPU ({requested_cpu} cores) exceeds single-node capacity ({limits['max_cpu_cores']} cores)")
         if requested_memory > limits["max_memory_gb"]:
-            raise HTTPException(status_code=400, detail=f"Requested memory ({requested_memory} GB) exceeds cluster limit ({limits['max_memory_gb']} GB)")
+            raise HTTPException(status_code=400, detail=f"Requested memory ({requested_memory} GB) exceeds single-node capacity ({limits['max_memory_gb']} GB)")
         if cluster.max_runtime_seconds is not None and deadline_seconds > cluster.max_runtime_seconds:
             raise HTTPException(status_code=400, detail=f"Requested deadline ({deadline_seconds}s) exceeds cluster limit ({cluster.max_runtime_seconds}s)")
 
         version_obj = ProcessVersion(
             process_id=process.id,
             version=new_version,
+            # type and environment are per-run — recorded on the version, never mutated on the
+            # process (so history stays truthful and an in-flight version keeps its own image).
+            type=proc["type"],
+            environment_id=environment_id,
             parameters=params,
             state=ProcessState.QUEUED,
             dependencies=[],  # Resolved in background
             resource_requests=resource_requests,
             deadline_seconds=deadline_seconds,
             k8s_cluster_id=cluster.id,
-            log_retrieval_state=LogRetrievalState.NOT_STARTED
+            log_retrieval_state=LogRetrievalState.NOT_STARTED,
+            # Attribution for the admin stats dashboard — every version records its submitter.
+            created_by=user.id,
         )
         db.add(version_obj)
 
         await db.commit()
 
-        # Broadcast QUEUED state to connected clients
+        # Broadcast a bare refetch signal to connected clients. The payload carries no
+        # process/project ids or output URLs — the sole frontend consumer ignores the body
+        # and just refetches through the access-checked REST endpoints. See
+        # docs/plans/done/ws-data-leak-fixes.md.
         from backend.services.websocket_service import ws_manager
-        state_update = {
-            "process_id": process.id,
-            "version": new_version,
-            "state": ProcessState.QUEUED.value
-        }
-        await ws_manager.broadcast_state(state_update)
+        await ws_manager.broadcast_state({"refetch": True})
 
         # Schedule background task — balance check, dependency resolution, K8s submission
         asyncio.create_task(version_obj.run_task(username))
@@ -260,11 +328,19 @@ class ProcessVersion(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     process_id = Column(String(255), ForeignKey("processes.id", ondelete="CASCADE"), nullable=False, index=True)
     version = Column(Integer, nullable=False)
+    # Per-run process type + environment (moved off Process — see
+    # docs/plans/done/move-type-environment-to-processversion.md). environment_id is RESTRICT:
+    # an environment referenced by any historical version cannot be deleted.
+    type = Column(String(100), nullable=False)
+    environment_id = Column(String(255), ForeignKey("environments.id", ondelete="RESTRICT"), nullable=False, index=True)
     parameters = Column(JSON, nullable=False)  # Process parameters
     state = Column(Enum(ProcessState), default=ProcessState.QUEUED, nullable=False, index=True)
     dependencies = Column(JSON, default=list, nullable=False)  # Array of dependency objects
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    # Attribution for the admin stats dashboard (docs/plans/admin-stats-dashboard.md); nullable,
+    # SET NULL — see Project.created_by.
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # K8s execution fields
     resource_requests = Column(JSON, default=lambda: {"cpu": "1000m", "memory": "2Gi", "ephemeral-storage": "10Gi"}, nullable=True)
@@ -290,6 +366,8 @@ class ProcessVersion(Base):
 
     # Relationships
     process = relationship("Process", back_populates="versions")
+    environment = relationship("Environment", back_populates="process_versions", foreign_keys=[environment_id])
+    created_by_user = relationship("User", foreign_keys=[created_by])
     datasets = relationship("Dataset", back_populates="process_version")
     tags = relationship("ProcessTag", secondary=process_version_tags_table, viewonly=True)
     # viewonly=True: nothing should mutate cluster assignment through this relationship —
@@ -304,30 +382,67 @@ class ProcessVersion(Base):
         UniqueConstraint('process_id', 'version', name='uq_process_version'),
     )
 
-    def to_dict(self, project_id: str):
+    def build_outputs(self, project_id: str) -> dict:
+        """Build the {output_name: /projects/{id}/dataset/{id} URL} map for this version.
+
+        Factored out of to_dict so the terse get_process_version_outputs endpoint can
+        reuse it. Requires self.datasets to be eagerly loaded.
+        """
+        from backend.config import settings
+        return {
+            dataset.dataset_name: f"{settings.backend_base_url}/projects/{project_id}/dataset/{dataset.id}"
+            for dataset in self.datasets
+        }
+
+    def to_dict(self, project_id: str, verbose: bool = False):
         """Convert to API response format.
 
-        Note: Requires self.datasets, self.tags, and self.cluster to be eagerly loaded.
-        Use selectinload(ProcessVersion.datasets), selectinload(ProcessVersion.tags), and
-        selectinload(ProcessVersion.cluster). Logs are not included — use
-        GET /projects/{project_id}/process/{id}/logs for paginated log access.
+        `verbose` controls caller-aware verbosity (see docs/plans/done/
+        mcp-terse-process-tools.md):
+
+        - verbose=True (frontend) — the full version dict (unchanged historical shape).
+          Requires self.datasets, self.tags, self.cluster, and self.environment to be
+          eagerly loaded. Use selectinload(ProcessVersion.datasets),
+          selectinload(ProcessVersion.tags), selectinload(ProcessVersion.cluster), and
+          selectinload(ProcessVersion.environment).
+        - verbose=False (MCP/terse, the default) — a short version-summary row:
+          {version, type, state, started_at, completed_at, run_length, has_outputs}.
+          No parameters/outputs/dependencies/resource_requests/environment/cluster/tags.
+          Requires only self.datasets (for has_outputs).
+
+        Logs are never included — use GET /projects/{project_id}/process/{id}/logs.
 
         project_id must be passed explicitly (rather than read off self.process) to avoid
         a lazy-load on the process backref, which isn't populated by selectinload(Process.versions)
         and would raise a MissingGreenlet error in async context.
         """
+        run_length = None
+        if self.started_at is not None and self.completed_at is not None:
+            run_length = _iso8601_duration(self.completed_at - self.started_at)
+
+        if not verbose:
+            return {
+                "version": self.version,
+                "type": self.type,
+                "state": self.state.value,
+                "started_at": self.started_at.isoformat() if self.started_at else None,
+                "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+                "run_length": run_length,
+                "has_outputs": bool(self.datasets),
+            }
+
         from backend.services.storage_service import translate_urls_in_dict
 
         parameters = translate_urls_in_dict(self.parameters, to_storage=False)
-
-        from backend.config import settings
-        outputs = {
-            dataset.dataset_name: f"{settings.backend_base_url}/projects/{project_id}/dataset/{dataset.id}"
-            for dataset in self.datasets
-        }
+        outputs = self.build_outputs(project_id)
 
         return {
             "version": self.version,
+            "type": self.type,
+            # minimal=True: only id/name are consumed by the frontend — not worth shipping
+            # docker_image/process_id/process_types on every version. Requires
+            # selectinload(ProcessVersion.environment).
+            "environment": self.environment.to_dict(minimal=True) if self.environment else None,
             "parameters": parameters,
             "outputs": outputs,
             "state": self.state.value,
@@ -336,7 +451,22 @@ class ProcessVersion(Base):
             "deadline_seconds": self.deadline_seconds,
             "cluster": self.cluster.to_dict() if self.cluster else None,
             "tags": [t.to_dict() for t in self.tags],
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "run_length": run_length,
         }
+
+    def to_detail_dict(self, project_id: str):
+        """Full single-version detail EXCEPT outputs (the get_process_version tool).
+
+        Reuses the full to_dict body minus the outputs key — outputs are fetched
+        separately via get_process_version_outputs so a version drill-down doesn't pay
+        for the dataset URL map when it isn't needed. Same eager-loading requirements as
+        to_dict(verbose=True).
+        """
+        detail = self.to_dict(project_id, verbose=True)
+        detail.pop("outputs", None)
+        return detail
 
     async def update_state(self, db: AsyncSession, new_state: ProcessState, project_id: str = None):
         """Update process state and broadcast to all state listeners
@@ -348,7 +478,6 @@ class ProcessVersion(Base):
         """
         import logging
         from backend.services.websocket_service import ws_manager
-        from backend.services.storage_service import translate_urls_in_dict
 
         logger = logging.getLogger(__name__)
 
@@ -357,34 +486,13 @@ class ProcessVersion(Base):
 
         await db.commit()
 
-        # Broadcast state change to all connected clients
-        state_update = {
-            "process_id": self.process_id,
-            "version": self.version,
-            "state": new_state.value
-        }
-
-        # Include outputs in broadcast when transitioning to DONE
-        if new_state == ProcessState.DONE and self.datasets:
-            # Build outputs list from datasets
-            state_update["outputs"] = [dataset.to_dict() for dataset in self.datasets]
-
-        # Use provided project_id or get from relationship (if already loaded)
-        if project_id is None:
-            # Only access relationship if it's already loaded (avoid lazy loading)
-            if 'process' in self.__dict__:
-                project_id = self.process.project_id
-            else:
-                # Fetch project_id directly without loading full relationship
-                result = await db.execute(
-                    select(Process.project_id).where(Process.id == self.process_id)
-                )
-                project_id = result.scalar_one()
-
-        state_update = translate_urls_in_dict(state_update, to_storage=False)
-
-        logger.info(f"Broadcasting state update: {state_update}")
-        await ws_manager.broadcast_state(state_update)
+        # Broadcast a bare refetch signal. The socket is a global, unauthenticated fan-out, so
+        # it must never carry process/project ids, dataset ids, or output /files/ URLs — the
+        # sole frontend consumer ignores the body and refetches through the access-checked
+        # REST endpoints instead. `project_id` is kept in the signature for the later
+        # per-project scoping work. See docs/plans/done/ws-data-leak-fixes.md.
+        logger.info(f"Broadcasting state refetch signal: {self.process_id} v{self.version}")
+        await ws_manager.broadcast_state({"refetch": True})
 
     async def add_log_entry(self, db: AsyncSession, message: str):
         """Add a log entry and broadcast to connected clients"""
@@ -492,9 +600,10 @@ class ProcessVersion(Base):
                     )
                     return
 
-                # Wait for pod if still queued
-                if process_version.state == ProcessState.QUEUED:
-                    logger.info(f"Job is queued, waiting for pod to start")
+                # Wait for pod if still queued or starting (STARTING = pod coming up, e.g. on
+                # backend restart mid-startup — resume waiting for the container to run).
+                if process_version.state in [ProcessState.QUEUED, ProcessState.STARTING]:
+                    logger.info(f"Job is queued/starting, waiting for pod to start")
                     pod_name = await ProcessVersion._wait_for_pod(
                         process_version, process, job_name, db, logger, log_manager, k8s_client
                     )
@@ -503,7 +612,7 @@ class ProcessVersion(Base):
                     await db.refresh(process_version)
 
                     # Check if job completed during wait
-                    if process_version.state == ProcessState.QUEUED:
+                    if process_version.state in [ProcessState.QUEUED, ProcessState.STARTING]:
                         final_status = await get_job_status(job_name, k8s_client)
                         if final_status in ["succeeded", "failed"]:
                             logger.info(f"Job completed during wait with status: {final_status}")
@@ -638,6 +747,15 @@ class ProcessVersion(Base):
 
                     await process_version.update_state(db, ProcessState.FAILED, process.project_id)
                     return None
+
+                # Pod exists with no pod-level error: it's coming up (scheduled / pulling image /
+                # ContainerCreating) but its container isn't running yet. Move to STARTING and start
+                # the billing clock here (from when the pod started coming up, not from submission).
+                # Guarded so a re-observation doesn't reset the timestamp.
+                if process_version.state == ProcessState.QUEUED:
+                    if not process_version.started_at:
+                        process_version.started_at = datetime.utcnow()
+                    await process_version.update_state(db, ProcessState.STARTING, process.project_id)
 
                 # Check if container is running
                 if await k8s_client.is_pod_container_running(pod_name):
@@ -820,13 +938,10 @@ class ProcessVersion(Base):
                 dependencies = await Dataset.resolve_dependencies(db, raw_dependencies)
                 process_version.dependencies = dependencies
 
-                # Broadcast so the frontend refreshes and shows the resolved dependency edges
+                # Broadcast a bare refetch signal so the frontend refreshes and shows the
+                # resolved dependency edges (payload-free — see the note in update_state).
                 from backend.services.websocket_service import ws_manager
-                await ws_manager.broadcast_state({
-                    "process_id": process.id,
-                    "version": process_version.version,
-                    "state": ProcessState.QUEUED.value
-                })
+                await ws_manager.broadcast_state({"refetch": True})
 
                 # --- Ensure storage credentials are ready before job launch ---
                 from backend.services.storage_credentials import ensure_ready, get_strategy
@@ -883,7 +998,7 @@ class ProcessVersion(Base):
                         "secret_key": project.storage_secret_key,
                     }
 
-                storage_kwargs = handler.fsspec_kwargs(storage_backend, project_scoped_creds, for_pod=True)
+                storage_kwargs = handler.fsspec_kwargs(storage_backend, project_scoped_creds)
 
                 # --- Resolve registry pull credentials for the Job's own image ---
                 # Mirrors the storage-backend resolution above, for the third pluggable-backend
@@ -906,7 +1021,9 @@ class ProcessVersion(Base):
                 registry_pull_credentials = await registry_handler.pull_credentials(registry_backend.config)
 
                 # --- Create K8s job ---
-                stmt = select(Environment).where(Environment.id == process.environment_id)
+                # Read type/environment from THIS version, not the process — a later version with a
+                # different environment must not change the image an already-queued job launches with.
+                stmt = select(Environment).where(Environment.id == process_version.environment_id)
                 result = await db.execute(stmt)
                 environment = result.scalar_one_or_none()
 
@@ -915,12 +1032,15 @@ class ProcessVersion(Base):
                     await process_version.update_state(db, ProcessState.FAILED, process.project_id)
                     return
 
-                process_version.started_at = datetime.utcnow()
+                # NOTE: started_at (the billing clock) is set at the STARTING transition in
+                # _wait_for_pod — when the pod starts coming up — NOT here at submission, so
+                # queue-wait time is not billed. A job that fails before any pod exists keeps
+                # started_at=None → runtime_seconds=0 (see _handle_job_completion).
                 job_name = await create_job(
                     docker_image=environment.docker_image,
                     process_id=process_version.process_id,
                     version=process_version.version,
-                    process_type=process.type,
+                    process_type=process_version.type,
                     parameters=process_version.parameters,
                     resource_requests=process_version.resource_requests,
                     deadline_seconds=process_version.deadline_seconds,
@@ -1121,7 +1241,9 @@ class ProcessVersion(Base):
                 name=env_info['name'],
                 docker_image=env_info['docker_image'],
                 process_id=env_info['process_id'],
-                process_types=env_info.get('process_types', {})
+                process_types=env_info.get('process_types', {}),
+                # Attribution for the admin stats dashboard — inherit the creating process's user.
+                created_by=process.created_by,
             )
 
             db.add(environment)

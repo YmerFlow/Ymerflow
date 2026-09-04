@@ -41,7 +41,7 @@ export default function UserMenu() {
   };
 
 
-  var menuName = "YmerFlow Geophysics: " + user?.username;
+  var menuName = user?.username;
 
   useRegisterMenuComponent([menuName], null, 0);
 

@@ -1,6 +1,7 @@
 import React, { useContext, useState } from 'react';
 import { Dropdown, Form } from 'react-bootstrap';
 import { useQueryClient } from '@tanstack/react-query';
+import { AuthContext } from './AuthContext';
 import { ProcessContext } from './ProcessContext';
 import { queryKeys, usePublicPublications } from './datamodel/useQueries';
 import ProjectModal from './ProjectModal';
@@ -68,6 +69,7 @@ function PublicProjectSearch({ onSelect }) {
 }
 
 function ProjectDropdown() {
+  const { isAuthenticated } = useContext(AuthContext);
   const { projects, currentProject, setCurrentProject, projectsLoading } = useContext(ProcessContext);
   const queryClient = useQueryClient();
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -80,6 +82,7 @@ function ProjectDropdown() {
   const handleProjectSelect = (projectId) => {
     setMenuOpen(false);
     if (projectId === '_create_new') {
+      if (!isAuthenticated) return;
       setShowCreateModal(true);
     } else if (projectId === '_export_project') {
       if (currentProjectObj?.read_only) return;
@@ -140,7 +143,11 @@ function ProjectDropdown() {
               Export Project...
             </Dropdown.Item>
           )}
-          <Dropdown.Item eventKey="_create_new">
+          <Dropdown.Item
+            eventKey="_create_new"
+            disabled={!isAuthenticated}
+            title={!isAuthenticated ? 'Log in to create a project' : undefined}
+          >
             Create New Project...
           </Dropdown.Item>
           <Dropdown.Divider />

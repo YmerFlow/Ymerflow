@@ -115,8 +115,10 @@ export function useWebSocket(url, options = {}) {
         clearHeartbeat();
         onClose?.(event);
 
-        // Attempt reconnection if not manually closed and should reconnect
-        if (shouldReconnectRef.current && event.code !== 1000) {
+        // Attempt reconnection if not manually closed and should reconnect.
+        // 1008 (policy violation) means the server rejected auth (e.g. the authenticated logs
+        // socket closes 1008 on a missing/invalid token) — don't hammer the endpoint retrying.
+        if (shouldReconnectRef.current && event.code !== 1000 && event.code !== 1008) {
           const delay = Math.min(reconnectDelayRef.current, maxReconnectDelay);
           console.log(`[${name}] Reconnecting in ${delay}ms...`);
 

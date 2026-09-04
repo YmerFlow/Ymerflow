@@ -98,7 +98,11 @@ def _resolve_registry():
         user, _, password = decoded.partition(":")
 
     host = os.getenv("REGISTRY_PUBLIC_HOST")
-    return "docker-v2", {"user": user, "password": password, "host": host, "port": 30500}
+    port = int(os.getenv("REGISTRY_PUBLIC_PORT") or 30500)
+    direct_host = os.getenv("REGISTRY_DIRECT_HOST") or host
+    direct_port = int(os.getenv("REGISTRY_DIRECT_PORT") or 30500)
+    return "docker-v2", {"user": user, "password": password, "host": host, "port": port,
+                         "direct_host": direct_host, "direct_port": direct_port}
 
 
 async def main():
@@ -106,22 +110,37 @@ async def main():
     registry_protocol, registry_config = _resolve_registry()
     registry_handler = get_registry_protocol_handler(registry_protocol)
     images = {
+        # backend Deployment is pulled AFTER the nginx TLS edge is live -> PUBLIC address.
         "backend": registry_handler.image_url(registry_config, BACKEND_REPOSITORY, APP_IMAGE_TAG),
-        "frontend": registry_handler.image_url(registry_config, FRONTEND_REPOSITORY, APP_IMAGE_TAG),
+        # frontend/nginx cannot pull its own image through itself, and the migration Job is a
+        # transient bootstrap container that runs before the edge -> both use the DIRECT address
+        # (node-IP:NodePort). For a managed registry with a single public address,
+        # direct_image_url() falls back to image_url(), so these collapse to the same ref. See
+        # docs/plans/registry-public-vs-direct-address.md.
+        "frontend": registry_handler.direct_image_url(registry_config, FRONTEND_REPOSITORY, APP_IMAGE_TAG),
+        "migration": registry_handler.direct_image_url(registry_config, BACKEND_REPOSITORY, APP_IMAGE_TAG),
     }
     print(f"Resolved app images: {images}", file=sys.stderr)
 
     pull_creds = await registry_handler.pull_credentials(registry_config)
     image_pull_credentials = None
     if pull_creds.get("username") or pull_creds.get("password"):
-        # The registry server the credential authenticates against is the host[:port] prefix of
-        # the resolved image ref (everything before the first '/'). Matches the same derivation
+        # One `auths` entry per DISTINCT registry server the app pods pull from — the PUBLIC
+        # backend address plus the DIRECT frontend/migration address (deduped; identical when
+        # public == direct). The kubelet matches a pull Secret's server key against the host
+        # embedded in each image ref, so both must be present. Same host[:port]-prefix derivation
         # job_orchestrator.py makes for its per-Job pull secret.
-        image_pull_credentials = {
-            "registry_server": images["backend"].split("/")[0],
-            "username": pull_creds.get("username"),
-            "password": pull_creds.get("password"),
-        }
+        servers = []
+        for ref in (images["backend"], images["frontend"], images["migration"]):
+            server = ref.split("/")[0]
+            if server not in servers:
+                servers.append(server)
+        image_pull_credentials = [
+            {"registry_server": server,
+             "username": pull_creds.get("username"),
+             "password": pull_creds.get("password")}
+            for server in servers
+        ]
 
     # ── Cluster: resolve the provider, confirm it supports app hosting ──────────────────────────
     cluster_type = os.getenv("CLUSTER_TYPE") or "same-as-backend"
@@ -164,6 +183,11 @@ async def main():
     # not Secret material — real Python objects, not strings). See NodePortAppDeploymentMixin.
     app_config["_image_pull_credentials"] = image_pull_credentials
     app_config["_replicas"] = None
+    # Bounded gate (popped by the provider's deploy_app, consumed by apply_app_workloads): block
+    # applying the backend Deployment until the PUBLIC registry address answers, so its public
+    # image ref is pullable. Self-healing on timeout. is_reachable() returns True immediately for a
+    # managed registry / when public == direct. See docs/plans/registry-public-vs-direct-address.md.
+    app_config["_registry_reachable"] = lambda: registry_handler.is_reachable(registry_config)
 
     k8s_client = provider.connect(cluster_config, APP_NAMESPACE)
     await provider.deploy_app(k8s_client, cluster_config, APP_NAMESPACE, images, app_config, secrets)

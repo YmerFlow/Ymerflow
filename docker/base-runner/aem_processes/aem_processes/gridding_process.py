@@ -432,6 +432,9 @@ class Gridding:
     def schema(cls):
         return {
             "type": "object",
+            "title": "Grid TEM Model",
+            "description": "Interpolate a 1D inversion resistivity model onto a regular 3D grid, "
+                           "producing a gridded volume for 3D visualisation and further analysis.",
             "properties": {
                 "input_model": {
                     "type": "string",

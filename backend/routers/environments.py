@@ -16,7 +16,7 @@ class CreateEnvironmentRequest(BaseModel):
     process_id: Optional[str] = Field(None, description="ID of the process that built this environment, if any. Used to link the environment back to its build job.")
 
 
-@router.get("", summary="List compute environments")
+@router.get("", operation_id="list_environments", summary="List compute environments")
 async def list_environments(
     include_schemas: bool = Query(False, description="Include full JSON Schemas for each process type. Default false — use get_environment_process_type to fetch a single type's schema."),
     db: AsyncSession = Depends(get_db)
@@ -34,7 +34,7 @@ async def list_environments(
     return [e.to_dict(include_schemas=include_schemas) for e in environments]
 
 
-@router.get("/{env_id}/process-types", summary="Get all process type schemas for an environment")
+@router.get("/{env_id}/process-types", operation_id="get_environment_process_types", summary="Get all process type schemas for an environment")
 async def get_process_types(env_id: str, db: AsyncSession = Depends(get_db)):
     """Return all process types available in an environment, keyed by type name.
 
@@ -59,7 +59,7 @@ async def get_process_types(env_id: str, db: AsyncSession = Depends(get_db)):
     return environment.process_types or {}
 
 
-@router.get("/{env_id}/process-types/{type_name}", summary="Get schema for a single process type")
+@router.get("/{env_id}/process-types/{type_name}", operation_id="get_environment_process_type", summary="Get schema for a single process type")
 async def get_process_type_schema(env_id: str, type_name: str, db: AsyncSession = Depends(get_db)):
     """Return the JSON Schema for exactly one named process type in an environment.
 
@@ -87,7 +87,7 @@ async def get_process_type_schema(env_id: str, type_name: str, db: AsyncSession 
     return process_types[type_name]
 
 
-@router.post("", summary="Register a new compute environment")
+@router.post("", operation_id="create_environment", summary="Register a new compute environment")
 async def create_environment(
     request: CreateEnvironmentRequest,
     db: AsyncSession = Depends(get_db)

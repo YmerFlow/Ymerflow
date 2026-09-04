@@ -101,7 +101,10 @@ def upgrade() -> None:
 
     provider = get_cluster_provider(final_cluster_type)
     k8s_client = provider.connect(final_provider_config or {}, final_namespace)
-    asyncio.run(ensure_cluster_job_ready(k8s_client, final_namespace))
+    asyncio.run(ensure_cluster_job_ready(
+        k8s_client, final_namespace,
+        provider=provider, provider_config=final_provider_config or {},
+    ))
 
 
 def downgrade() -> None:

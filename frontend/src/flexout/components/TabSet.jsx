@@ -7,6 +7,7 @@ import { LayoutContext } from '../LayoutContext';
 import { Modal, Button } from 'react-bootstrap';
 import { CustomForm } from '../../jsoneditor';
 import validator from "@rjsf/validator-ajv8";
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 function removeTabFromTree(node, tabSetId, tabId) {
   if (node.id === tabSetId) {
@@ -75,8 +76,7 @@ function TabHeader({ tab, index, isActive, onActivate, onInsertBefore, onRemoveT
   return (
     <li
       ref={drop}
-      className="nav-item"
-      style={{ borderLeft: isOver ? '2px solid #0d6efd' : '2px solid transparent' }}
+      className={`nav-item${isOver ? ' tab-drop-target' : ''}`}
     >
       <button
         ref={drag}
@@ -145,6 +145,7 @@ function TabHeader({ tab, index, isActive, onActivate, onInsertBefore, onRemoveT
 
 export default function TabSet({ parentUpdate, ...node }) {
   const { widgets, updateLayout, data_context } = useContext(LayoutContext);
+  const isMobile = useIsMobile();
   const activeTab = node.activeTab ?? node.children[0]?.id;
   const [configTab, setConfigTab] = useState(null);
 
@@ -264,11 +265,11 @@ export default function TabSet({ parentUpdate, ...node }) {
           <button className="nav-link tab-mini" onClick={() => addTab({ id: uuidv4(), widget: 'Empty' })}>+</button>
         </li>
       </ul>
-      <div className="p-0 flex-grow-1 position-relative">
+      <div className={isMobile ? '' : 'p-0 flex-grow-1 position-relative'}>
         {node.children.map(tab => (
           <div
             key={tab.id}
-            className="position-absolute top-0 start-0 w-100 h-100"
+            className={isMobile ? '' : 'position-absolute top-0 start-0 w-100 h-100'}
             style={{ display: tab.id === activeTab ? 'block' : 'none' }}
           >
             <Pane parentUpdate={handleChildUpdate} onTabMoved={() => removeTabFromSource(tab.id)} {...tab} hideHeader />

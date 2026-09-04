@@ -7,7 +7,7 @@ Environments in YmerFlow are Docker images that contain process types and their 
 ```
 Docker Image (Environment)
   ├─> Python packages with process types
-  ├─> setuptools entrypoints (nagelfluh.process_types)
+  ├─> setuptools entrypoints (ymerflow.process_types)
   ├─> runner.py (execution entrypoint)
   ├─> get_schema.py (schema extraction at build time)
   └─> process_schemas.json (generated schemas file)
@@ -110,11 +110,11 @@ output would delay or batch log lines instead of streaming them in real time.
 
 ## Setuptools Entrypoints
 
-Process types are registered using setuptools entrypoints in the `nagelfluh.process_types` group.
+Process types are registered using setuptools entrypoints in the `ymerflow.process_types` group.
 
 ### Entrypoint Registration
 
-Process types are registered in `setup.py` using the `nagelfluh.process_types` entrypoint group. The entry name becomes the process type identifier.
+Process types are registered in `setup.py` using the `ymerflow.process_types` entrypoint group. The entry name becomes the process type identifier.
 
 **See:** [Process Types - Registering a New Process Type](processes.md#registering-a-new-process-type) for complete setup.py examples and registration details.
 
@@ -143,7 +143,7 @@ RUN python /app/get_schema.py
 
 1. **Discover entrypoints:**
    ```python
-   for entry_point in get_entry_points('nagelfluh.process_types'):
+   for entry_point in get_entry_points('ymerflow.process_types'):
        # ...
    ```
 
@@ -240,7 +240,7 @@ orchestrator (`backend/services/job_orchestrator.py`):
 | `PROJECT_ID` | Project identifier | `"project-xyz-789"` |
 | `PARAMETERS_JSON` | JSON-encoded parameters | `'{"input_data":"http://..."}}'` |
 | `BACKEND_URL` | Backend API endpoint | `"http://backend-service:8000"` |
-| `STORAGE_BASE` | Storage bucket URL | `"s3://nagelfluh-project-xyz"` |
+| `STORAGE_BASE` | Storage bucket URL | `"s3://ymerflow-project-xyz"` |
 | `STORAGE_KWARGS_JSON` | Protocol-general fsspec kwargs, JSON-encoded (e.g. `endpoint_url`, `key`/`secret` for S3; `token` for GCS) — built by the project's `StorageProtocolHandler` | `'{"key":"...","secret":"...","client_kwargs":{"endpoint_url":"http://minio:9000"}}'` |
 | `CREDENTIAL_STRATEGY` | `"static-key"` (default) or `"short-lived"` — selects whether `storage_kwargs` is a plain dict or a live, self-refreshing view (see below) | `"short-lived"` |
 | `STORAGE_CREDENTIALS_EXPIRES_AT` | (short-lived only) ISO timestamp when the initial minted credential expires | `"2026-08-12T00:00:00"` |
@@ -284,7 +284,7 @@ plain dict computed once at startup.
 
 2. **Discover and load process class:**
    ```python
-   for entry_point in get_entry_points('nagelfluh.process_types'):
+   for entry_point in get_entry_points('ymerflow.process_types'):
        if entry_point.name == process_type:
            process_class = entry_point.load()
            break
@@ -370,7 +370,7 @@ The `storage_context` parameter provides process ID, project ID, storage base UR
    setup(
        name="my_processes",
        entry_points={
-           "nagelfluh.process_types": [
+           "ymerflow.process_types": [
                "my_process=my_processes.processors:MyProcess",
            ],
        },
@@ -412,7 +412,7 @@ spec:
 
 ### `create_environment` Process
 
-`create_environment` (`docker/base-runner/nagelfluh_processes/fake_processes.py`) is a fully
+`create_environment` (`docker/base-runner/ymerflow_processes/fake_processes.py`) is a fully
 implemented process type — not a stub — that builds and registers a brand-new environment image
 entirely from within a running process job, without any privileged Docker daemon access:
 
@@ -504,7 +504,7 @@ spec:
         - name: BACKEND_URL
           value: "http://backend-service:8000"
         - name: STORAGE_BASE
-          value: "s3://nagelfluh-project-xyz"
+          value: "s3://ymerflow-project-xyz"
         - name: STORAGE_KWARGS_JSON
           value: '{"key":"...","secret":"...","client_kwargs":{"endpoint_url":"http://minio:9000"}}'
         - name: CREDENTIAL_STRATEGY
@@ -557,7 +557,7 @@ spec:
 **Solutions:**
 - Verify entrypoint is registered in `setup.py`
 - Check package is installed (`pip list | grep my-package`)
-- Run `python -c "from importlib.metadata import entry_points; print(list(entry_points(group='nagelfluh.process_types')))"` in image
+- Run `python -c "from importlib.metadata import entry_points; print(list(entry_points(group='ymerflow.process_types')))"` in image
 
 ### Schema Not in JSON
 

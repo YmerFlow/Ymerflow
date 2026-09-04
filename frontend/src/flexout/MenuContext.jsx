@@ -26,6 +26,16 @@ export function useMenu() {
   return useContext(MenuContext);
 }
 
+// Expose the menu context object and registration hook via window so
+// module-federation plugins can call useContext(window.__ymerflow_MenuContext)
+// and window.__ymerflow_useRegisterMenu(...) with the shared React singleton
+// (mirrors AuthContext.jsx). This lets a plugin turn a dynamically fetched list
+// into menu entries by registering into the shared menu tree.
+if (typeof window !== 'undefined') {
+  window.__ymerflow_MenuContext = MenuContext;
+  window.__ymerflow_useRegisterMenu = useRegisterMenu;
+}
+
 function mergeMenu(tree, path, action, position = 1, active = false) {
   // Deep clone the path we're modifying to avoid mutating shared references
   const newTree = { ...tree };

@@ -8,6 +8,7 @@ import os
 
 from backend.database import get_db
 from backend.routers.auth import get_current_user, AuthContext
+from backend.services.auth_service import get_current_user_optional
 from backend.models.user import User
 from backend.models.plugin import Plugin, PluginVersion, UserPlugin
 
@@ -21,10 +22,6 @@ assets_router = APIRouter(prefix="/plugin-assets", tags=["plugin-assets"])
 # completes, its output auto-registers as a Plugin/PluginVersion in ProcessVersion._create_outputs
 # (via backend/services/plugin_registration.py), like create_environment -> environment.json ->
 # Environment. Enabling for a user remains a separate action below.
-
-
-def _backend_plugins(request: Request):
-    return getattr(request.app.state, 'backend_frontend_plugins', [])
 
 
 def _backend_plugins(request: Request):
@@ -103,10 +100,18 @@ async def list_plugins(
 async def get_my_plugins(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_current_user),
+    auth: AuthContext | None = Depends(get_current_user_optional),
 ):
-    """Return union of backend-bundled plugins and user-enabled remote plugins."""
-    # Backend plugins — always on, not user-toggled
+    """Return the frontend plugin bundles the caller should load.
+
+    Authenticated → all backend-bundled plugins plus the user's enabled remote plugins.
+    Anonymous (no/invalid credentials) → only the backend-bundled plugins flagged
+    ``public``; the user-enabled remote-plugin query is skipped entirely (no user).
+    """
+    anonymous = auth is None
+
+    # Backend plugins — always on, not user-toggled. For anonymous visitors, restrict
+    # to the public subset (bundles that opted in with `'public': True`).
     backend = [
         {
             "name": b["name"],
@@ -116,7 +121,12 @@ async def get_my_plugins(
             "upgrade_available": False,
         }
         for b in _backend_plugins(request)
+        if not anonymous or b.get("public", False)
     ]
+
+    # Anonymous visitors have no user, so there are no enabled remote plugins to load.
+    if anonymous:
+        return backend
 
     # User-enabled remote plugins
     stmt = (

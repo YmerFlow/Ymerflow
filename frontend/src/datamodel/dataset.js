@@ -8,6 +8,8 @@ import { Data, DataGroup, registerAxisQuantityKind, parseCrsCode, crsToQkX, crsT
 // that scrambles class-evaluation order under the bundler ("Class extends undefined"). Non-core
 // dataset types are resolved lazily through the plugin registry instead (see createDatasetInstance).
 import { getDatasetClass } from './datasetRegistry';
+import { cacheNamespace } from './cacheNamespace';
+import { encodeSeg } from './datasetPath';
 
 // ── Shared fetch semaphore ────────────────────────────────────────────────────
 // All dataset types (XYZ, Mag, JSON, webxtile, …) share this pool so the total
@@ -164,22 +166,25 @@ async function initDB() {
   });
 }
 
-// Cache utilities with LRU eviction
+// Cache utilities with LRU eviction. Stored keys are namespaced by the current
+// user id (cacheNamespace()) so a logout → login-as-different-user switch (which
+// does not reload the page) never reads the previous user's cached data.
 async function getFromCache(storeName, key) {
   try {
     const database = await initDB();
     const transaction = database.transaction([storeName], 'readwrite');
     const store = transaction.objectStore(storeName);
 
+    const nsKey = `${cacheNamespace()}:${key}`;
     return new Promise((resolve, reject) => {
-      const getRequest = store.get(key);
+      const getRequest = store.get(nsKey);
 
       getRequest.onsuccess = () => {
         const result = getRequest.result;
         if (result) {
           // Update lastAccessed timestamp
           result.lastAccessed = Date.now();
-          store.put(result, key);
+          store.put(result, nsKey);
           resolve(result);
         } else {
           resolve(null);
@@ -197,7 +202,7 @@ async function getFromCache(storeName, key) {
 async function putInCache(storeName, key, value) {
   try {
     const database = await initDB();
-    await putInCacheWithRetry(database, storeName, key, value);
+    await putInCacheWithRetry(database, storeName, `${cacheNamespace()}:${key}`, value);
   } catch (error) {
     console.error('Cache write error:', error);
   }
@@ -229,6 +234,10 @@ async function putInCacheWithRetry(database, storeName, key, value, retries = 3)
   }
 }
 
+// Global quota manager: cursors raw stored keys across all stores and evicts the
+// globally-oldest entry regardless of namespace. Keys are now namespaced (see
+// getFromCache/putInCache), so one user hitting quota may evict another user's
+// cold entries — acceptable for an LRU space reclaimer.
 async function evictOldest(database) {
   const stores = ['datasets', 'data', 'geography'];
   const entries = [];
@@ -897,17 +906,27 @@ export class DatasetCollectionAdapter {
     this._datasets = datasetObjects || {};
   }
 
+  // prefixedCol is an encoded path: "<encodeSeg(name)>.<col…>". Split at the first
+  // dot to isolate the (dot-free) encoded dataset segment; the column tail keeps its
+  // own intentional dot-nesting (e.g. "grid.x").
   _parse(prefixedCol) {
     const dot = prefixedCol.indexOf('.');
     if (dot === -1) return [null, prefixedCol];
     return [prefixedCol.slice(0, dot), prefixedCol.slice(dot + 1)];
   }
 
+  // Resolve an encoded dataset segment back to the raw-keyed dataset object.
+  _findDataset(nameSeg) {
+    if (nameSeg == null) return undefined;
+    const entry = Object.entries(this._datasets).find(([n]) => encodeSeg(n) === nameSeg);
+    return entry?.[1];
+  }
+
   columns() {
     const cols = [];
     for (const [name, ds] of Object.entries(this._datasets)) {
       if (ds && typeof ds.columns === 'function') {
-        for (const col of ds.columns()) cols.push(`${name}.${col}`);
+        for (const col of ds.columns()) cols.push(`${encodeSeg(name)}.${col}`);
       }
     }
     if (cols.length === 0) cols.push('No dataset');
@@ -934,14 +953,14 @@ export class DatasetCollectionAdapter {
           if (domain != null) domainData[col] = domain;
         }
       }
-      raw[name] = { data: colData, quantity_kinds: qkData, domains: domainData };
+      raw[encodeSeg(name)] = { data: colData, quantity_kinds: qkData, domains: domainData };
     }
     return new DataGroup(raw);
   }
 
   getData(prefixedCol) {
     const [name, col] = this._parse(prefixedCol);
-    const ds = this._datasets[name];
+    const ds = this._findDataset(name);
     if (!ds) return undefined;
     const result = ds.getData(col);
     if (result == null) return undefined;
@@ -960,7 +979,7 @@ export class DatasetCollectionAdapter {
 
   getQuantityKind(prefixedCol) {
     const [name, col] = this._parse(prefixedCol);
-    const qk = this._datasets[name]?.getQuantityKind(col);
+    const qk = this._findDataset(name)?.getQuantityKind(col);
     if (qk !== undefined) return qk;
     // No explicit mapping — use the unprefixed column name as the quantity kind
     // and ensure it is registered so gladly displays a proper label and so the
@@ -971,7 +990,7 @@ export class DatasetCollectionAdapter {
 
   getDomain(prefixedCol) {
     const [name, col] = this._parse(prefixedCol);
-    return this._datasets[name]?.getDomain(col);
+    return this._findDataset(name)?.getDomain(col);
   }
 }
 

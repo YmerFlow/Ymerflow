@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy import func
@@ -344,24 +344,35 @@ async def create_api_key(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new project-scoped API key. Returns the raw key once — store it securely."""
+    """Create an API key scoped to a set of the caller's projects. Returns the raw key
+    once — store it securely.
+
+    Body: { "label": str, "project_ids": [str, ...], "expires_at"?: ISO8601 }. Every id
+    must be a project the caller is a member of. An empty list is valid — the key can
+    then only call list_projects/create_project until it creates a project.
+    """
     label = body.get("label", "").strip()
-    project_id = body.get("project_id", "").strip()
+    project_ids = body.get("project_ids", [])
     expires_at_str: Optional[str] = body.get("expires_at")
 
     if not label:
         raise HTTPException(status_code=400, detail="label is required")
-    if not project_id:
-        raise HTTPException(status_code=400, detail="project_id is required")
+    if not isinstance(project_ids, list):
+        raise HTTPException(status_code=400, detail="project_ids must be a list")
 
-    # Verify the user is a member of the target project
-    member_stmt = select(ProjectMember).where(
-        ProjectMember.project_id == project_id,
-        ProjectMember.user_id == auth.user.id
-    )
-    member_result = await db.execute(member_stmt)
-    if not member_result.scalar_one_or_none():
-        raise HTTPException(status_code=403, detail="Not a member of this project")
+    # Validate every id is one of the caller's memberships (empty list skips the check).
+    projects = []
+    if project_ids:
+        unique_ids = set(project_ids)
+        member_stmt = (
+            select(Project)
+            .join(ProjectMember, ProjectMember.project_id == Project.id)
+            .where(Project.id.in_(unique_ids), ProjectMember.user_id == auth.user.id)
+        )
+        member_result = await db.execute(member_stmt)
+        projects = member_result.scalars().all()
+        if len(projects) != len(unique_ids):
+            raise HTTPException(status_code=403, detail="Not a member of one or more of the requested projects")
 
     expires_at = None
     if expires_at_str:
@@ -373,26 +384,27 @@ async def create_api_key(
     raw_key = "apk_" + secrets.token_urlsafe(32)
     key_hash = hash_api_key(raw_key)
 
-    # Load project for the response
-    project_stmt = select(Project).where(Project.id == project_id)
-    project_result = await db.execute(project_stmt)
-    project = project_result.scalar_one_or_none()
-
     api_key = ApiKey(
         user_id=auth.user.id,
-        project_id=project_id,
         label=label,
         key_hash=key_hash,
         expires_at=expires_at,
         created_at=datetime.utcnow(),
+        projects=list(projects),
     )
     db.add(api_key)
     await db.commit()
-    await db.refresh(api_key)
+
+    # Re-load with projects eagerly so to_dict() doesn't lazy-load on the async session.
+    reload_stmt = (
+        select(ApiKey)
+        .options(selectinload(ApiKey.projects))
+        .where(ApiKey.id == api_key.id)
+    )
+    api_key = (await db.execute(reload_stmt)).scalar_one()
 
     return {
         **api_key.to_dict(),
-        "project_name": project.name if project else None,
         "key": raw_key,  # returned exactly once
     }
 
@@ -405,7 +417,7 @@ async def list_api_keys(
     """List all API keys belonging to the current user."""
     stmt = (
         select(ApiKey)
-        .options(selectinload(ApiKey.project))
+        .options(selectinload(ApiKey.projects))
         .where(ApiKey.user_id == auth.user.id)
         .order_by(ApiKey.created_at.desc())
     )
@@ -437,16 +449,52 @@ async def delete_api_key(
 # Admin endpoints
 # ---------------------------------------------------------------------------
 
+SORTABLE_USER_COLUMNS = {
+    "username": User.username,
+    "email": User.email,
+    "is_admin": User.is_admin,
+}
+
+
 @router.get("/admin/users")
 async def admin_list_users(
+    q: Optional[str] = None,
+    sort: str = "username",
+    dir: str = "asc",
+    limit: int = 25,
+    offset: int = 0,
     auth: AuthContext = Depends(require_admin),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    """List all users (admin only)."""
-    stmt = select(User).order_by(User.username)
-    result = await db.execute(stmt)
-    users = result.scalars().all()
-    return [{"username": u.username, "email": u.email, "is_admin": u.is_admin} for u in users]
+    """List users (admin only), server-side paged, sorted and searched.
+
+    Returns ``{"items": [...], "total": N}`` where ``total`` is the count *after* the ``q`` filter.
+    """
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    sort_col = SORTABLE_USER_COLUMNS.get(sort, User.username)
+    order = sort_col.desc() if dir == "desc" else sort_col.asc()
+
+    base = select(User)
+    if q:
+        # Match q as a literal substring: escape LIKE wildcards in user input so % and _ aren't
+        # treated as wildcards. lower()-wrapping keeps this DB-agnostic (Postgres prod / SQLite dev).
+        needle = "%" + q.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        base = base.where(or_(
+            func.lower(User.username).like(needle, escape="\\"),
+            func.lower(User.email).like(needle, escape="\\"),
+        ))
+
+    total = await db.scalar(select(func.count()).select_from(base.subquery()))
+
+    # Secondary username tiebreak keeps paging stable under low-cardinality sorts (e.g. is_admin).
+    stmt = base.order_by(order, User.username.asc()).limit(limit).offset(offset)
+    users = (await db.execute(stmt)).scalars().all()
+
+    return {
+        "items": [{"username": u.username, "email": u.email, "is_admin": u.is_admin} for u in users],
+        "total": total,
+    }
 
 
 @router.put("/admin/users/{username}/admin")

@@ -1,6 +1,7 @@
 import { WebxtileLoader } from 'webxtile';
 import { ArrayColumn } from 'gladly-plot';
 import { Dataset, acquireFetchSlot, releaseFetchSlot } from './dataset';
+import { cacheNamespace } from './cacheNamespace';
 import { parseCrsCode, crsToQkX, crsToQkY, registerAxisQuantityKind } from 'gladly-plot';
 
 const _CF_TO_QK = {
@@ -233,7 +234,7 @@ export class WebxtileDataset extends Dataset {
       const url = partMetadata?.files?.[this.mimeType];
       if (!url) throw new Error('No webxtile URL found in dataset metadata');
       this._loader = new WebxtileLoader(url, {
-        dbName:  `webxtile-${this.id}`,
+        dbName:  `webxtile-${cacheNamespace()}-${this.id}`,
         acquire: acquireFetchSlot,
         release: releaseFetchSlot,
       });

@@ -4,9 +4,12 @@ import { Modal, Button, Card } from 'react-bootstrap';
 import { CustomForm } from '../jsoneditor';
 import { ProcessContext } from '../ProcessContext';
 import { useEnvironmentProcessTypes, useCreateProcess, useAvailableClusters, useCancelProcess, useAddVersionTag } from "../datamodel/useQueries";
-import { getProcessVersion, getLatestVersion } from '../datamodel/api';
+import { getProcessVersion, getLatestVersion, getLatestProcessType } from '../datamodel/api';
 import { LayoutContext } from '../flexout/LayoutContext';
+import { AuthContext } from '../AuthContext';
 import TagSelector from './FlowView/TagSelector';
+import ProcessTypeSelect from './ProcessTypeSelect';
+import EnvironmentSelect from './EnvironmentSelect';
 import { hooks } from '../plugins/hooks';
 
 function useActivateProcessLog() {
@@ -33,12 +36,24 @@ const cleanFormData = (data) => {
   return clean(data);
 };
 
+// The environments list from the backend is unordered, so "newest" is derived
+// from created_at. Returns the id of the most recently created environment, or
+// null if the list is empty.
+const newestEnvironmentId = (environments) => {
+  if (!environments || environments.length === 0) return null;
+  const latest = environments.reduce(
+    (a, b) => (new Date(b.created_at) > new Date(a.created_at) ? b : a)
+  );
+  return latest.id;
+};
+
 export default function ProcessEditor() {
   const {
     processes, activeProcess, setActiveProcess, invalidateProject,
-    selectedEnvironment, environments, environmentsLoading, currentProject,
-    newProcessToken
+    environments, environmentsLoading, currentProject,
+    newProcessToken, newProcessDefaults
   } = useContext(ProcessContext);
+  const { user } = useContext(AuthContext);
   const activateProcessLog = useActivateProcessLog();
 
   const process = activeProcess ? processes.find(p => p.id === activeProcess.processId) : null;
@@ -46,7 +61,7 @@ export default function ProcessEditor() {
   const isExisting = !!process && !!versionObj;
 
   const [processName, setProcessName] = useState("");
-  const [localEnvironment, setLocalEnvironment] = useState(selectedEnvironment || null);
+  const [localEnvironment, setLocalEnvironment] = useState(newestEnvironmentId(environments) || null);
   const [localType, setLocalType] = useState(null);
   const [formData, setFormData] = useState({});
   const [selectedTags, setSelectedTags] = useState([]);
@@ -59,10 +74,14 @@ export default function ProcessEditor() {
   const { data: types = {}, isLoading: typesLoading } = useEnvironmentProcessTypes(localEnvironment);
   const createProcessMutation = useCreateProcess();
   const cancelProcessMutation = useCancelProcess();
-  const { data: clusters = [] } = useAvailableClusters(currentProject, {
-    cpu: `${Math.floor(cpuCores * 1000)}m`,
-    memory: `${memoryGb}Gi`,
-  });
+  // NOTE: do NOT key this query on the current cpu/memory slider values. The returned
+  // clusters (and their single-node max_cpu_cores/max_memory_gb, which the sliders bind to)
+  // do not depend on the request — get_allowed_clusters ignores resource_requests and the
+  // billing select_clusters hook filters purely by contract plan. Keying on the slider value
+  // refetched on every drag, briefly emptying `clusters` so the slider max collapsed to its
+  // fallback and snapped back — making the sliders jump. Submit-time validation still enforces
+  // the real per-cluster limits.
+  const { data: clusters = [] } = useAvailableClusters(currentProject);
   const addVersionTagMutation = useAddVersionTag();
   const selectedCluster = clusters.find(c => c.id === clusterId) ?? clusters[0] ?? null;
   const maxCpu = selectedCluster?.max_cpu_cores ?? 8;
@@ -94,8 +113,14 @@ export default function ProcessEditor() {
   useEffect(() => {
     if (newProcessToken === 0) return;
     setProcessName("");
-    setLocalEnvironment(selectedEnvironment || null);
-    setLocalType(null);
+    if (newProcessDefaults) {
+      setLocalEnvironment(newProcessDefaults.environmentId ?? null);
+      setLocalType(newProcessDefaults.type ?? null);   // e.g. 'import_skytem'
+    } else {
+      // No existing config: default to the newest available environment.
+      setLocalEnvironment(newestEnvironmentId(environments) || null);
+      setLocalType(null);
+    }
     setFormData({});
     setSelectedTags([]);
     setCpuCores(1);
@@ -104,11 +129,21 @@ export default function ProcessEditor() {
     setClusterId(null);
   }, [newProcessToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // No existing config being edited: once environments load, default to the
+  // newest one (mirrors the "Process > Create" default). Only runs when there
+  // is no active process and nothing has been selected yet.
+  useEffect(() => {
+    if (activeProcess || localEnvironment) return;
+    const newest = newestEnvironmentId(environments);
+    if (newest) setLocalEnvironment(newest);
+  }, [environments, activeProcess, localEnvironment]);
+
   // Sync all state from process data when active process/version changes
   useEffect(() => {
     if (!process || !versionObj) return;
-    setLocalEnvironment(process.environment?.id);
-    setLocalType(process.type);
+    // type/environment are per-version now — seed from the active version, not the process.
+    setLocalEnvironment(versionObj.environment?.id);
+    setLocalType(versionObj.type);
     setFormData(versionObj.parameters || {});
     setSelectedTags(versionObj.tags || []);
     if (versionObj.resource_requests) {
@@ -123,7 +158,7 @@ export default function ProcessEditor() {
   // Auto-generate name when type changes in new-process mode
   useEffect(() => {
     if (!activeProcess && localType) {
-      const count = processes.filter(p => p.type === localType).length;
+      const count = processes.filter(p => getLatestProcessType(p) === localType).length;
       setProcessName(`${localType}-${count + 1}`);
     }
   }, [localType, processes, activeProcess]);
@@ -138,13 +173,22 @@ export default function ProcessEditor() {
 
   // First plugin that registers resource_cost_display wins; null if billing is not active.
   const CostDisplay = useMemo(() => hooks.run.resource_cost_display()[0]?.Component ?? null, []);
-  const schema = localType ? types[localType]?.schema : null;
+  // Strip the top-level title/description before handing the schema to the form:
+  // the ProcessTypeSelect card already shows them, so RJSF's form header would
+  // just duplicate what's right above it. Only the top level is stripped —
+  // per-field title/description (nested in `properties`) must stay.
+  const rawSchema = localType ? types[localType]?.schema : null;
+  const schema = useMemo(() => {
+    if (!rawSchema) return null;
+    const { title, description, ...rest } = rawSchema;
+    return rest;
+  }, [rawSchema]);
 
   if (activeProcess && (!process || !versionObj)) return null;
 
   const handleCreateNew = () => {
     if (localType) {
-      const count = processes.filter(p => p.type === localType).length;
+      const count = processes.filter(p => getLatestProcessType(p) === localType).length;
       setProcessName(`${localType}-${count + 1}`);
     }
     setActiveProcess(null);
@@ -211,7 +255,7 @@ export default function ProcessEditor() {
                 Create new
               </Button>
             )}
-            {isExisting && (versionObj.state === 'queued' || versionObj.state === 'running') && (
+            {isExisting && (versionObj.state === 'queued' || versionObj.state === 'starting' || versionObj.state === 'running') && (
               <Button
                 variant="outline-danger" size="sm"
                 disabled={cancelProcessMutation.isPending}
@@ -235,27 +279,16 @@ export default function ProcessEditor() {
             </div>
           )}
 
-          <div className="mb-3">
-            <label className="form-label">Environment: </label>
-            <select
-              className="form-select" value={localEnvironment || ""} disabled={environmentsLoading}
-              onChange={e => setLocalEnvironment(e.target.value)}
-            >
-              <option value="">{environmentsLoading ? "Loading..." : "Select environment..."}</option>
-              {environments.map(env => <option key={env.id} value={env.id}>{env.name}</option>)}
-            </select>
-          </div>
-
           {localEnvironment && (
             <div className="mb-3">
               <label className="form-label">Process Type: </label>
-              <select
-                className="form-select" value={localType || ""} disabled={typesLoading}
-                onChange={e => { setLocalType(e.target.value); if (!isExisting) setFormData({}); }}
-              >
-                <option value="">{typesLoading ? "Loading..." : "Select type..."}</option>
-                {Object.keys(types).map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
+              <ProcessTypeSelect
+                types={types}
+                value={localType}
+                disabled={typesLoading}
+                loading={typesLoading}
+                onChange={t => { setLocalType(t); if (!isExisting) setFormData({}); }}
+              />
             </div>
           )}
         </div>
@@ -276,10 +309,23 @@ export default function ProcessEditor() {
             </Card.Body>
             {CostDisplay && (
               <Card.Footer className="text-muted">
-                <CostDisplay cpuCores={cpuCores} memoryGb={memoryGb} deadlineMinutes={deadlineMinutes} />
+                <CostDisplay
+                  cpuCores={cpuCores} memoryGb={memoryGb} deadlineMinutes={deadlineMinutes}
+                  accountData={user} variant="summary"
+                />
               </Card.Footer>
             )}
           </Card>
+          <div className="mt-3 d-flex align-items-center">
+            <label className="form-label mb-0 me-2">Software version: </label>
+            <EnvironmentSelect
+              environments={environments}
+              value={localEnvironment}
+              disabled={environmentsLoading}
+              loading={environmentsLoading}
+              onChange={id => setLocalEnvironment(id)}
+            />
+          </div>
           <div className="mt-3">
             <label className="form-label">Tags: </label>
             {isExisting ? (
@@ -322,6 +368,20 @@ export default function ProcessEditor() {
             <input type="range" className="form-range" min="0.5" max={maxMemory} step="0.5"
               value={memoryGb} onChange={e => setMemoryGb(parseFloat(e.target.value))} />
           </div>
+          {/* A single task runs in one pod, which must fit on one node, so its ceiling is the
+              cluster's single-node capacity (maxCpu/maxMemory). Only surface the aggregate when it
+              actually differs — on a single-node cluster the two numbers are equal and the split
+              would just be confusing. */}
+          {selectedCluster
+            && selectedCluster.aggregate_max_cpu_cores != null
+            && (selectedCluster.aggregate_max_cpu_cores !== maxCpu
+              || selectedCluster.aggregate_max_memory_gb !== maxMemory) && (
+            <div className="mb-3 text-muted small">
+              A single task can request at most <strong>{maxCpu}</strong> cores / <strong>{maxMemory}</strong> GB
+              (one node's capacity). This cluster can queue up to <strong>{selectedCluster.aggregate_max_cpu_cores}</strong> cores
+              / <strong>{selectedCluster.aggregate_max_memory_gb}</strong> GB in total across autoscaled nodes.
+            </div>
+          )}
           <div className="mb-3">
             <label className="form-label">Deadline (minutes)</label>
             <input type="number" className="form-control" min="1" {...(maxDeadlineMinutes != null ? { max: maxDeadlineMinutes } : {})}
@@ -329,7 +389,10 @@ export default function ProcessEditor() {
           </div>
           {CostDisplay && (
             <div className="alert alert-info">
-              <CostDisplay cpuCores={cpuCores} memoryGb={memoryGb} deadlineMinutes={deadlineMinutes} />
+              <CostDisplay
+                cpuCores={cpuCores} memoryGb={memoryGb} deadlineMinutes={deadlineMinutes}
+                accountData={user} variant="detailed"
+              />
             </div>
           )}
         </Modal.Body>

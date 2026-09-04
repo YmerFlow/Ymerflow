@@ -4,18 +4,59 @@ import Markdown from 'markdown-to-jsx';
 import { AuthContext } from './AuthContext';
 import { useLogin, useSignup, useForgotPassword, usePublicConfig, useTos, useAcceptTos } from './datamodel/useAuthQueries';
 import { setAuthToken } from './datamodel/api';
+import { MenuProvider, useMenu, useRegisterMenuComponent } from './flexout/MenuContext';
+import MenuBar from './flexout/MenuBar';
+import { hooks } from './plugins/hooks';
+import BrandLogo from './BrandLogo';
+import logo from './assets/YmerIcon.svg';
+
+// The logged-out menu bar reuses the exact same MenuBar/MenuContext machinery as the
+// authenticated app. It is hidden entirely when no plugin contributes real entries, so a
+// vanilla install (no public plugin) looks exactly as it did before — no empty navbar.
+function LandingMenuBar() {
+  const { menuTree } = useMenu();
+  // Count only real entries. Component-only nodes use '_'-prefixed keys (e.g. _brandLogo) and must
+  // not by themselves keep the bar visible — otherwise the logo would force a bar onto a vanilla
+  // install and duplicate the big landing-content logo.
+  const hasRealEntries = Object.keys(menuTree).some(k => !k.startsWith('_'));
+  if (!hasRealEntries) return null;  // no contributor → no bar
+  return <MenuBar />;
+}
+
+// Registers the shared logo into the logged-out menu tree — same markup/styling as the logged-in bar.
+function LandingBrand() {
+  useRegisterMenuComponent(['_brandLogo'], BrandLogo, 0);
+  return null;
+}
+
+// Chrome shared by the landing page AND every logged-out plugin route.
+export function LandingChrome({ children }) {
+  return (
+    <MenuProvider>
+      <LandingBrand />
+      {/* Always mounted so the menu tree can fill asynchronously from fetched data. */}
+      {hooks.run_jsx.menu_registrars({ context: 'out' })}
+      <LandingMenuBar />
+      {children}
+    </MenuProvider>
+  );
+}
 
 export default function LandingPage() {
+  return <LandingChrome><LandingContent /></LandingChrome>;
+}
+
+export function LandingContent() {
   return (
-    <Container className="d-flex align-items-center justify-content-center min-vh-100">
+    <Container className="landing-page d-flex align-items-center justify-content-center min-vh-100">
       <div className="w-100">
         <div className="d-flex align-items-center flex-wrap mb-5 gap-4">
           <img
-            src="/YmerFlow.jpg"
+            src={logo}
             alt="YmerFlow"
             style={{ maxWidth: '200px', width: '100%', height: 'auto', flexShrink: 0 }}
           />
-          <div style={{ flex: '1 1 300px' }}>
+          <div className="landing-intro" style={{ flex: '1 1 300px' }}>
             <h1>YmerFlow - Cloud-native geophysics</h1>
             <p>
               Browser-based AEM and magnetic survey processing, inversion, and pipeline
@@ -158,7 +199,7 @@ function SignInCard({ initialMode = 'signin', allowBackToSignIn = true }) {
                 required
               />
             </Form.Group>
-            <Button type="submit" variant="primary" className="w-100">
+            <Button type="submit" variant="secondary" className="w-100">
               Sign In
             </Button>
             <div className="mt-2 text-center">
@@ -288,7 +329,7 @@ function PricingCard() {
         {publicConfig?.hosted_version_text && (
           <Markdown>{publicConfig.hosted_version_text}</Markdown>
         )}
-        <Button variant="success" className="w-100" onClick={() => setShowSignup(true)}>
+        <Button variant="primary" className="w-100" onClick={() => setShowSignup(true)}>
           Sign Up Now
         </Button>
       </Card.Body>

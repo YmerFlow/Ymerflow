@@ -20,8 +20,17 @@ _ENV_REGISTRY_PROTOCOL="${REGISTRY_PROTOCOL:-}"
 _ENV_REGISTRY_CONFIG_JSON="${REGISTRY_CONFIG_JSON:-}"
 _ENV_STORAGE_PROTOCOL="${STORAGE_PROTOCOL:-}"
 _ENV_STORAGE_CONFIG_JSON="${STORAGE_CONFIG_JSON:-}"
+# `set -a` (allexport) so every assignment in config.env is EXPORTED into the environment, not
+# left as a plain shell variable. The production branch below shells out to inline `python3`
+# subprocesses that read REGISTRY_PROTOCOL/REGISTRY_CONFIG_JSON (and the RegistryProtocolHandler
+# reads REGISTRY_*_HOST/PORT) via os.environ — those only see EXPORTED vars. Without this a
+# standalone `./docker/build.sh` in production mode fails with KeyError: 'REGISTRY_PROTOCOL',
+# because it never runs as a child of prod/runall-production.sh (which does its own `set -a`
+# before sourcing config.env). Mirrors that script exactly.
 if [ -f "config.env" ]; then
+    set -a
     source "config.env"
+    set +a
 fi
 [ -n "$_ENV_DEPLOYMENT" ] && DEPLOYMENT="$_ENV_DEPLOYMENT"
 [ -n "$_ENV_CLUSTER_TYPE" ] && CLUSTER_TYPE="$_ENV_CLUSTER_TYPE"
@@ -30,6 +39,74 @@ fi
 [ -n "$_ENV_REGISTRY_CONFIG_JSON" ] && REGISTRY_CONFIG_JSON="$_ENV_REGISTRY_CONFIG_JSON"
 [ -n "$_ENV_STORAGE_PROTOCOL" ] && STORAGE_PROTOCOL="$_ENV_STORAGE_PROTOCOL"
 [ -n "$_ENV_STORAGE_CONFIG_JSON" ] && STORAGE_CONFIG_JSON="$_ENV_STORAGE_CONFIG_JSON"
+
+# ── Standalone: load the enriched config the last deploy cached ───────────────────────────────
+# As a child of prod/runall-production.sh (its Step 10), that script has already
+# bootstrap-provisioned every axis (its Step 3) and exported the ENRICHED
+# REGISTRY_*/CLUSTER_*/STORAGE_* config into our environment — CLUSTER_CONFIG_JSON then already
+# carries e.g. minikube's real kubeconfig, REGISTRY_CONFIG_JSON its resolved addresses/creds.
+# Run STANDALONE (`./docker/build.sh <env>` by hand to rebuild just the runner image), we only have
+# config.env's RAW pre-bootstrap values — CLUSTER_TYPE=<type> with CLUSTER_CONFIG_JSON={} and no
+# kubeconfig — so yf-materialize-kubeconfig below dies with KeyError: 'kubeconfig' (and the
+# production registry step fails likewise).
+#
+# Re-read the enriched config that Step 3 of the LAST deploy cached to .deploy-config.json (see
+# prod/runall-production.sh) and export the same env vars its own eval does. This runs NO
+# bootstrap() — it never starts/resizes/restarts the cluster, re-mints a credential, or redeploys
+# anything; it just reuses this deploy's already-resolved config, uniformly for every cluster type.
+# Guarded on an empty INHERITED _ENV_CLUSTER_CONFIG_JSON (runall always passes a non-empty, enriched
+# one), so it never runs — and never overrides live values — in the runall-child path.
+if [ "${DEPLOYMENT:-}" = "production" ] && [ -z "$_ENV_CLUSTER_CONFIG_JSON" ]; then
+    DEPLOY_CONFIG_FILE="$(pwd)/.deploy-config.json"   # pwd == project root (cd'd at top of script)
+    if [ ! -f "${DEPLOY_CONFIG_FILE}" ]; then
+        echo "ERROR: ${DEPLOY_CONFIG_FILE} not found." >&2
+        echo "  It is written by prod/runall-production.sh on each deploy and holds the enriched" >&2
+        echo "  registry/cluster config a standalone docker/build.sh needs. Run a full deploy" >&2
+        echo "  (prod/runall-production.sh) once before building a runner image standalone." >&2
+        exit 1
+    fi
+    echo "Loading enriched backend config cached by the last deploy (${DEPLOY_CONFIG_FILE})..." >&2
+    # Same axis->env-var mapping prod/runall-production.sh's Step 3 eval uses, reading the cached
+    # file instead of a fresh bootstrap result — PLUS the app_image_version (the backend/frontend
+    # tag the deploy actually built+pushed). Exporting APP_IMAGE_VERSION here means the resolution
+    # below reuses it instead of recomputing a content-addressed tag from current (possibly drifted)
+    # code — the recomputed tag would name a backend image that was never pushed, so the db-update
+    # Job would fail with ImagePullBackOff. app_image_version is required in this mode: a file
+    # without it predates prod/runall-production.sh recording it, so re-deploy (or re-cache) once.
+    # Capture-then-eval (NOT `eval "$(...)"` directly): eval always returns 0 on empty stdout, so a
+    # direct form would swallow the python exit code below. The assignment's `|| exit 1` propagates it.
+    _DEPLOY_EXPORTS=$(python3 -c '
+import json, sys, shlex
+
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+axis_map = {
+    "registry": ("REGISTRY_PROTOCOL", "REGISTRY_CONFIG_JSON"),
+    "storage": ("STORAGE_PROTOCOL", "STORAGE_CONFIG_JSON"),
+    "cluster": ("CLUSTER_TYPE", "CLUSTER_CONFIG_JSON"),
+}
+lines = []
+for axis, (protocol_var, config_var) in axis_map.items():
+    if axis not in data:
+        continue
+    entry = data[axis]
+    protocol = entry["protocol"]
+    config_json = json.dumps(entry["config"])
+    lines.append(f"export {protocol_var}={shlex.quote(protocol)}")
+    lines.append(f"export {config_var}={shlex.quote(config_json)}")
+app_image_version = data.get("app_image_version")
+if not app_image_version:
+    sys.stderr.write(
+        "ERROR: .deploy-config.json has no \"app_image_version\" — it predates "
+        "prod/runall-production.sh recording the backend image tag. Re-deploy (or re-cache the "
+        "file) so a standalone build uses the pushed backend image instead of recomputing a tag "
+        "that was never pushed.\n")
+    sys.exit(1)
+lines.append(f"export APP_IMAGE_VERSION={shlex.quote(app_image_version)}")
+print("\n".join(lines))
+' "${DEPLOY_CONFIG_FILE}") || exit 1
+    eval "${_DEPLOY_EXPORTS}"
+fi
 
 # ── Materialize kubeconfig: point kubectl at the resolved cluster, never the ambient context ──
 # See docs/plans/base-infrastructure-via-cluster-provider.md, Design decision 1. Cheap/harmless
@@ -40,8 +117,13 @@ env/bin/python backend/bin/yf-materialize-kubeconfig > "$KUBECONFIG_FILE"
 export KUBECONFIG="$KUBECONFIG_FILE"
 
 # Content-addressed tag for the backend/frontend images (see docs/plans/versioned-app-image-tags.md).
-# Threaded through from prod/runall-production.sh's Step 10 invocation when this script runs as
-# its subprocess; resolved directly when this script runs standalone.
+# Threaded through from prod/runall-production.sh's Step 10 invocation when this script runs as its
+# subprocess. In the STANDALONE production case it was already exported above, straight from
+# .deploy-config.json's "app_image_version" (the tag the last deploy actually built+pushed) — this
+# script builds+pushes only the RUNNER image, never the backend, so it must NOT recompute the tag
+# from current (possibly drifted) code: that would name a backend image that was never pushed and
+# the db-update Job below would fail with ImagePullBackOff. The fallback here only fires for a dev
+# build (which builds+pushes its own backend at this very tag).
 APP_IMAGE_VERSION="${APP_IMAGE_VERSION:-$(env/bin/python backend/bin/yf-resolve-app-image-tag)}"
 
 echo "=== Building YmerFlow Runner Image for ${ENV_NAME} Environment ==="
@@ -118,7 +200,7 @@ import json, os
 from backend.services.registry_protocols import get_registry_protocol_handler
 protocol = os.environ["REGISTRY_PROTOCOL"]
 config = json.loads(os.environ["REGISTRY_CONFIG_JSON"])
-print(get_registry_protocol_handler(protocol).image_url(config, "ymerflow-backend", os.environ["APP_IMAGE_VERSION"]))
+print(get_registry_protocol_handler(protocol).direct_image_url(config, "ymerflow-backend", os.environ["APP_IMAGE_VERSION"]))
 ')
 
         kubectl delete configmap "runner-schemas-${ENV_TAG}" -n ymerflow --ignore-not-found=true 2>/dev/null

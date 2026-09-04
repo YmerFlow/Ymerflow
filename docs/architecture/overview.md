@@ -96,7 +96,7 @@ Relationships:
 ### Kubernetes Client
 - Kubernetes API integration for job management
 - Creates and monitors Jobs in the target `Cluster`'s namespace (`Cluster.namespace`,
-  `backend/models/cluster.py`, defaults to `nagelfluh-jobs` but is configurable per cluster —
+  `backend/models/cluster.py`, defaults to `ymerflow-jobs` but is configurable per cluster —
   see "Pluggable Backends" below and "Kubernetes Resources" for the multi-cluster picture)
 - Handles job lifecycle and cleanup (TTL 1 hour after completion)
 
@@ -115,7 +115,7 @@ Relationships:
 ### Pluggable Backends
 
 Three axes of the system are pluggable, each following the same shape (a discriminator column on
-a DB row dispatching to a handler/provider class, discovered via a `nagelfluh.hooks` fan-out
+a DB row dispatching to a handler/provider class, discovered via a `ymerflow.hooks` fan-out
 entry point — no "core is special" path):
 
 | Axis | Model | Handler ABC | Docs |
@@ -135,7 +135,7 @@ target cluster) live in `backend/routers/admin.py`.
 ### Plugin & Hook System
 
 Beyond the three pluggable backend axes above, the whole application is extensible through a
-generic hook system (`backend/hooks.py`): plugins register themselves via the `nagelfluh.hooks`
+generic hook system (`backend/hooks.py`): plugins register themselves via the `ymerflow.hooks`
 setuptools entry point, and the backend fans calls out to every installed plugin at defined
 extension points, e.g. `register_routers`, `register_models` (wired in
 `backend/models/__init__.py`), `job_pre_run`/`job_completed` (used by `plugins/billing` for
@@ -293,7 +293,7 @@ Lists installed plugins and lets the user enable, disable, or upgrade them per a
 ## Kubernetes Resources
 
 ### Namespace
-- **Name**: `Cluster.namespace` (`backend/models/cluster.py`), defaults to `nagelfluh-jobs` but
+- **Name**: `Cluster.namespace` (`backend/models/cluster.py`), defaults to `ymerflow-jobs` but
   is configurable per registered `Cluster` — multi-cluster execution is real and user-facing (a
   cluster picker on process creation resolves the target `Cluster` and namespace per job; see
   `backend/routers/processes.py` and the "Pluggable Backends" table above)
@@ -301,8 +301,8 @@ Lists installed plugins and lets the user enable, disable, or upgrade them per a
 - **Resources**: Jobs, Pods, Secrets, ConfigMaps
 
 ### Kueue Configuration
-- **Local queue**: `nagelfluh-queue` (namespace-scoped)
-- **Cluster queue**: `nagelfluh-cluster-queue` (cluster-wide resource management)
+- **Local queue**: `ymerflow-queue` (namespace-scoped)
+- **Cluster queue**: `ymerflow-cluster-queue` (cluster-wide resource management)
 - **Resource limits**: Enforced CPU, memory, ephemeral storage
 - **Job queuing**: Automatic queuing when resources unavailable
 - **Admission control**: Jobs admitted based on available quota
@@ -320,14 +320,14 @@ runs identically for any `cluster_type`, and is called automatically:
   `d1266f2f6e68_generic_seed_default_cluster.py`).
 
 This replaced two independent, duplicated shell implementations (a minikube-only script and a
-GCP-plugin-specific GKE setup script). `plugins/ymerflow-minikube`'s provision-nagelfluh-jobs.sh now only creates the
+GCP-plugin-specific GKE setup script). `plugins/ymerflow-minikube`'s provision-ymerflow-jobs.sh now only creates the
 jobs namespace — everything else moved into the Python routine above.
 
 ### Job Structure
 Each process creates a Kubernetes Job with (`backend/services/job_orchestrator.py`):
 - **Name**: `process-{process_id}-v{version}`
 - **Job labels**: `kueue.x-k8s.io/queue-name` (Kueue's queue-name label lives on the Job itself)
-- **Pod template labels**: `app=nagelfluh-process`, `process_id={id}`, `version={v}`
+- **Pod template labels**: `app=ymerflow-process`, `process_id={id}`, `version={v}`
 - **Resource requests/limits**: User-specified CPU/memory
 - **Deadline**: `activeDeadlineSeconds` for timeout enforcement
 - **Backoff limit**: 0 (no automatic retries)
@@ -336,7 +336,7 @@ Each process creates a Kubernetes Job with (`backend/services/job_orchestrator.p
   Job for automatic garbage collection (see [Registry Architecture](registry.md))
 
 ### Pod Configuration
-- **Image**: `nagelfluh-base-runner:latest` (or environment-specific image)
+- **Image**: `ymerflow-base-runner:latest` (or environment-specific image)
 - **Environment variables**:
   - `PROCESS_TYPE`: Type of process to run
   - `PROCESS_ID`: Unique process identifier

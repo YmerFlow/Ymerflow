@@ -65,7 +65,7 @@ else
 fi
 
 # Convert localhost endpoint to internal service name (like job_orchestrator.py does)
-POD_STORAGE_ENDPOINT="${CONFIG_STORAGE_ENDPOINT/http:\/\/localhost:9000/http:\/\/minio-nagelfluh.ymerflow-jobs.svc.cluster.local:9000}"
+POD_STORAGE_ENDPOINT="${CONFIG_STORAGE_ENDPOINT/http:\/\/localhost:9000/http:\/\/minio-ymerflow.ymerflow-jobs.svc.cluster.local:9000}"
 
 echo "=========================================="
 echo "Starting Debug Pod in K8s"

@@ -41,6 +41,30 @@ class RegistryProtocolHandler:
         just a host."""
         raise NotImplementedError
 
+    def direct_image_url(self, config: dict, repository: str, tag: str) -> str:
+        """Image reference for the bootstrap-only containers — the ones pulled BEFORE the public
+        TLS edge exists: the frontend/nginx Deployment, the transient yf-deploy-app deployer Job,
+        and the migration / db-update Jobs (see
+        docs/plans/registry-public-vs-direct-address.md). For a managed registry with a single
+        CA-issued public address there is no such split, so the default is image_url() itself; the
+        self-hosted docker-v2 handler overrides this to render its direct node-IP:NodePort
+        address."""
+        return self.image_url(config, repository, tag)
+
+    def direct_image_prefix(self, config: dict) -> str:
+        """direct_image_url()'s prefix, mirroring the image_prefix()/image_url() relationship —
+        `direct_image_url(config, repo, tag) == f"{direct_image_prefix(config)}/{repo}:{tag}"`.
+        Default: image_prefix() (managed registries have no direct/public split)."""
+        return self.image_prefix(config)
+
+    async def is_reachable(self, config: dict) -> bool:
+        """Whether this registry answers its API right now — used to gate applying the backend
+        Deployment until the PUBLIC pull address is actually live (on a first boot the nginx TLS
+        edge may not be up yet). Default True: a managed registry is always reachable, so there is
+        nothing to wait for and the gate returns immediately. The docker-v2 handler overrides this
+        with a real probe. See docs/plans/registry-public-vs-direct-address.md."""
+        return True
+
     async def pull_credentials(self, config: dict) -> dict:
         """Resolve a pod image-pull credential. Returns
         {"username": str, "password": str, "expires_at": datetime | None}.

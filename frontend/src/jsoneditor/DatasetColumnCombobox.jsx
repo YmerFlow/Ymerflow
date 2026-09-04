@@ -1,6 +1,7 @@
 import React, { useState, useContext, useRef, useEffect } from 'react';
 import { ProcessContext } from '../ProcessContext';
 import { loadDataset } from '../datamodel/dataset';
+import { encodeSeg } from '../datamodel/datasetPath';
 
 export default function DatasetColumnCombobox({ value, onChange, mode }) {
   const { processes, fetchedData, currentProject } = useContext(ProcessContext);
@@ -30,16 +31,24 @@ export default function DatasetColumnCombobox({ value, onChange, mode }) {
     const lower = filter.toLowerCase();
     const opts = [];
 
-    if (mode === 'dataset') {
+    if (mode === 'process') {
+      if (!filter || 'current'.includes(lower)) opts.push('current');
+      for (const proc of (processes || [])) {
+        for (const ver of (proc.versions || [])) {
+          const path = `${encodeSeg(proc.name)}.${ver.version}`;
+          if (!filter || path.toLowerCase().includes(lower)) opts.push(path);
+        }
+      }
+    } else if (mode === 'dataset') {
       for (const dsName of Object.keys(fetchedData || {})) {
-        const path = `current.${dsName}`;
+        const path = `current.${encodeSeg(dsName)}`;
         if (!filter || path.toLowerCase().includes(lower)) opts.push(path);
       }
       for (const proc of (processes || [])) {
         for (const ver of (proc.versions || [])) {
           if (ver.outputs) {
             for (const dsName of Object.keys(ver.outputs)) {
-              const path = `${proc.name}.${ver.version}.${dsName}`;
+              const path = `${encodeSeg(proc.name)}.${ver.version}.${encodeSeg(dsName)}`;
               if (!filter || path.toLowerCase().includes(lower)) opts.push(path);
             }
           }
@@ -50,7 +59,7 @@ export default function DatasetColumnCombobox({ value, onChange, mode }) {
       for (const [dsName, dsObj] of Object.entries(fetchedData || {})) {
         const cols = dsObj?.columns?.() || [];
         for (const col of cols) {
-          const path = `current.${dsName}.${col}`;
+          const path = `current.${encodeSeg(dsName)}.${col}`;
           if (!filter || path.toLowerCase().includes(lower)) opts.push(path);
         }
       }
@@ -65,7 +74,7 @@ export default function DatasetColumnCombobox({ value, onChange, mode }) {
         for (const ver of (proc.versions || [])) {
           if (ver.outputs) {
             for (const dsName of Object.keys(ver.outputs)) {
-              const dsPath = `${proc.name}.${ver.version}.${dsName}`;
+              const dsPath = `${encodeSeg(proc.name)}.${ver.version}.${encodeSeg(dsName)}`;
               if (!lazilyLoadedColumns.has(dsPath)) {
                 if (!filter || dsPath.toLowerCase().includes(lower)) {
                   opts.push(`${dsPath}.<column>`);
@@ -87,10 +96,12 @@ export default function DatasetColumnCombobox({ value, onChange, mode }) {
       const dsPath = parts.slice(0, 3).join('.');
       if (lazilyLoadedColumns.has(dsPath)) return;
 
-      const [procName, verStr, dsName] = parts;
-      const proc = (processes || []).find(p => p.name === procName);
+      // parts hold encoded segments — match back to real objects in encoded space.
+      const [procNameSeg, verStr, dsNameSeg] = parts;
+      const proc = (processes || []).find(p => encodeSeg(p.name) === procNameSeg);
       const ver = (proc?.versions || []).find(v => String(v.version) === verStr);
-      const dsUrl = ver?.outputs?.[dsName];
+      const dsKey = Object.keys(ver?.outputs || {}).find(k => encodeSeg(k) === dsNameSeg);
+      const dsUrl = dsKey != null ? ver.outputs[dsKey] : undefined;
       if (!dsUrl) return;
 
       const dsId = dsUrl.split('/').pop();

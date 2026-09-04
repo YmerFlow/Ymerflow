@@ -14,6 +14,9 @@ class MagCSVImporter:
         """Return JSON Schema for import parameters."""
         return {
             "type": "object",
+            "title": "Import Magnetic (CSV)",
+            "description": "Import a magnetic survey from a CSV file, attaching an EPSG coordinate "
+                           "reference system. Produces a MagData dataset ready for processing.",
             "properties": {
                 "csvfile": {
                     "type": "string",

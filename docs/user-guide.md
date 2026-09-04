@@ -283,21 +283,21 @@ For administrators or developers:
 
 ```bash
 # Check jobs
-kubectl get jobs -n nagelfluh-jobs
+kubectl get jobs -n ymerflow-jobs
 
 # Check pods
-kubectl get pods -n nagelfluh-jobs
+kubectl get pods -n ymerflow-jobs
 
 # Stream logs
-kubectl logs -f <pod-name> -n nagelfluh-jobs
+kubectl logs -f <pod-name> -n ymerflow-jobs
 
 # Check queue status
-kubectl get workloads -n nagelfluh-jobs
+kubectl get workloads -n ymerflow-jobs
 ```
 
 ## Billing and Costs
 
-Billing is an optional, pluggable feature. If your Nagelfluh installation has a billing plugin
+Billing is an optional, pluggable feature. If your YmerFlow installation has a billing plugin
 enabled, you'll see cost estimates and balance information when creating and running processes.
 If it doesn't, this section doesn't apply — processes simply run.
 
@@ -533,7 +533,7 @@ billing enabled)
 
 ### Support
 
-- **GitHub Issues**: https://github.com/emerald-geomodelling/nagelfluh/issues
+- **GitHub Issues**: https://github.com/emerald-geomodelling/ymerflow/issues
 - **Documentation**: Check `/help` command in application
 - **Logs**: Always include ProcessLog output when reporting issues
 

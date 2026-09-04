@@ -3,7 +3,7 @@ import uuid
 import json
 import fsspec
 import pandas as pd
-from nagelfluh_runner import xyz_utils
+from ymerflow_runner import xyz_utils
 
 
 def create_mock_dataset(process_type: str, output_name: str, storage_context: dict):
