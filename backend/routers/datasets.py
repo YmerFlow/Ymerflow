@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, cast, String
 from sqlalchemy.orm import selectinload
 import asyncio
+import mimetypes
 import re
 import fsspec
 
@@ -368,10 +369,15 @@ async def get_file(
     scheme = get_protocol_handler(backend.protocol).storage_base_url(project, backend).split("://", 1)[0]
     storage_url = f"{scheme}://{path}"
 
-    # Determine MIME type based on file extension
+    # Determine MIME type based on file extension. Our list is authoritative (it carries the
+    # domain-specific types mimetypes doesn't know); fall back to the stdlib guess, then octet-stream.
     basename = path.rsplit('/', 1)[-1]
     extension = f".{basename.rsplit('.', 1)[-1].lower()}" if '.' in basename else ''
-    mime_type = FILE_MIME_TYPES.get(extension, "application/octet-stream")
+    mime_type = (
+        FILE_MIME_TYPES.get(extension)
+        or mimetypes.guess_type(basename)[0]
+        or "application/octet-stream"
+    )
 
     # Read file from storage (backend-side admin credentials)
     storage_options = await get_fsspec_storage_options(db, project.id)
