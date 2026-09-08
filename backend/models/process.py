@@ -429,6 +429,7 @@ class ProcessVersion(Base):
                 "completed_at": self.completed_at.isoformat() if self.completed_at else None,
                 "run_length": run_length,
                 "has_outputs": bool(self.datasets),
+                "tags": [t.to_dict() for t in self.tags],
             }
 
         from backend.services.storage_service import translate_urls_in_dict

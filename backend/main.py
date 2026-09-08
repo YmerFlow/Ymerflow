@@ -171,6 +171,6 @@ mcp = FastApiMCP(
         "layer_type=...). `layout` on create_workspace is a JSON object (a node tree), never a "
         "JSON string. Then create_workspace(project_id, title=..., layout={...})."
     ),
-    include_tags=["Projects", "Processes", "Datasets", "Environments", "Uploads", "Workspaces"],
+    include_tags=["Projects", "Processes", "Datasets", "Environments", "Uploads", "Workspaces", "Tags"],
 )
 mcp.mount_http()
