@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Confidential report
+    url: mailto:hello@ymerflow.earth
+    about: For a problem you cannot describe without client data, names or locations, or a security concern, email hello@ymerflow.earth instead of opening a public issue.
+  - name: Documentation and tutorials
+    url: https://ymerflow.org/docs/tutorials/README.html
+    about: Walkthroughs on public demo data, the user guide, and the troubleshooting tables.
