@@ -69,6 +69,12 @@ YmerFlow replaces desktop-bound geophysics tools with a reproducible, versioned 
 
 ## Getting Started
 
+**Try it on real data.** The **[YmerFlow demo data](https://github.com/YmerFlow/ymerflow-demo-data)**
+is a SkyTEM 304 flight line from a published survey, with the contractor's inversion input
+and their resistivity model to compare against. Download it, then follow the
+**[tutorials](docs/tutorials/README.md)** from delivered data to an inverted model, and check
+your result against the published one.
+
 See the **[Quickstart Guide](docs/quickstart.md)** to go from zero to a running system in minutes, or the **[Deployment Guide](docs/deployment.md)** for production mode, admin tools, and cloud deployment and the **[User Guide](docs/user-guide.md)** for full coverage of the interface, datasets, billing, and troubleshooting.
 
 ## Documentation
