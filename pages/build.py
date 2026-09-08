@@ -17,6 +17,22 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PAGES_DIR = Path(__file__).resolve().parent
 OUT_DIR = PAGES_DIR / "_site"
 
+# Paths under docs/ that stay in the repository but are not published on the site.
+# Plans, bug write-ups and authoring guidelines are working documents for the people
+# building YmerFlow; the site is for the people using it. A path matches if it equals
+# an entry or is inside a directory named by one.
+UNPUBLISHED = (
+    "plans",
+    "bugs",
+    "fixed-bugs",
+    "tutorials/WRITING.md",
+)
+
+
+def is_published(rel: Path) -> bool:
+    posix = rel.as_posix()
+    return not any(posix == entry or posix.startswith(entry + "/") for entry in UNPUBLISHED)
+
 
 def get_title(md_file: Path) -> str:
     """Extract first H1 text from a markdown file, fallback to filename."""
@@ -48,6 +64,8 @@ def collect_pages(docs_dir: Path) -> list[dict]:
     pages = []
     for src in sorted(docs_dir.rglob("*.md")):
         rel = src.relative_to(docs_dir)
+        if not is_published(rel):
+            continue
         parent = rel.parent
         section_key = str(parent) if str(parent) != "." else None
         url_path = "docs/" + str(rel.with_suffix(".html"))

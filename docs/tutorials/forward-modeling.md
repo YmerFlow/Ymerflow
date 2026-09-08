@@ -1,9 +1,5 @@
 # Tutorial: Forward modeling a synthetic survey
 
-> **Draft.** The workflow, parameters and guidance below are accurate. Exact button labels
-> and screenshots still need a pass from someone with the interface open — search for
-> `[verify]` markers.
-
 **What you will do:** build a resistivity model by hand, simulate what an airborne EM
 system would measure over it, add realistic noise, process and invert that simulated data,
 and compare the result against the model you started with.
@@ -42,7 +38,8 @@ an easy target tells you nothing.
 
 ## Step 1 — Build the model
 
-Open the **Model Simulator** and create a new model. `[verify: exact name and location]`
+Open the **AEM Model Simulator** — it is a pane type, so pick it from a pane's widget
+dropdown the way you would a plot — and create a new model.
 
 Set the line geometry first — length and sounding spacing — then draw the layers:
 
