@@ -84,6 +84,20 @@ export default function CustomStringField(props) {
     return <DefaultStringField {...customProps} />;
   }
 
+  // Render a real multi-line textarea (e.g. create_environment's python_packages /
+  // dockerfile_instructions). Without this, x-format:"textarea" fell through to the single-line
+  // StringField. 'textarea' is a built-in RJSF widget, so we just point ui:widget at it.
+  if (schema['x-format'] === 'textarea') {
+    const { fields } = getDefaultRegistry();
+    const DefaultStringField = fields.StringField;
+    return (
+      <DefaultStringField
+        {...props}
+        uiSchema={{ ...props.uiSchema, 'ui:widget': 'textarea' }}
+      />
+    );
+  }
+
   // Otherwise, use the default StringField
   const { fields } = getDefaultRegistry();
   const DefaultStringField = fields.StringField;

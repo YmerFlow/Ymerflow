@@ -34,7 +34,8 @@ async def refresh_storage_credentials(
 ):
     """Re-mint a storage credential for a running job.
 
-    Called by the runner's refresher subprocess (docker/base-runner/storage_credential_refresher.py)
+    Called by the runner's refresher subprocess (ymerflow_runner.storage_credential_refresher,
+    from Ymerflow-process-sdk)
     on a cadence tied to the current credential's expiry, not by end users — there is no rate
     limiting here beyond what the refresher's own backoff/jitter imposes on itself.
 

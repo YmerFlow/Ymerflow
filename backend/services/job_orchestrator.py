@@ -165,7 +165,7 @@ def create_job_manifest(docker_image, process_id, version, process_type, paramet
         image_pull_policy="IfNotPresent",  # Already-present local images skip the pull; anything
                                             # missing (e.g. on a fresh remote cluster) is pulled
                                             # from the registry using image_pull_secrets below.
-        command=["python", "-u", "/app/runner.py"],
+        command=["python", "-u", "-m", "ymerflow_runner"],
         env=env_vars,
         volume_mounts=extra_volume_mounts or None,
         resources=client.V1ResourceRequirements(

@@ -1,8 +1,30 @@
 #!/bin/bash
 set -e
 
-# Accept optional environment name parameter (defaults to "Bootstrap")
-ENV_NAME="${1:-Bootstrap}"
+# Positional arg: environment name (defaults to "Bootstrap"). Optional flags override individual
+# fields of config.env's BASE_RUNNER_PARAMS_JSON for THIS build only (same knobs create_environment
+# exposes):
+#   --base-image IMG                 override base_image
+#   --python-packages TEXT           override python_packages (requirements.txt format)
+#   --dockerfile-instructions TEXT   override dockerfile_instructions
+#   --install-kaniko | --no-install-kaniko   force install_kaniko on/off
+ENV_NAME=""
+OVERRIDE_BASE_IMAGE=""
+OVERRIDE_PYTHON_PACKAGES=""
+OVERRIDE_DOCKERFILE_INSTRUCTIONS=""
+OVERRIDE_INSTALL_KANIKO=""   # "" = inherit from params, "1" = on, "0" = off
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --base-image)              OVERRIDE_BASE_IMAGE="$2"; shift 2;;
+        --python-packages)         OVERRIDE_PYTHON_PACKAGES="$2"; shift 2;;
+        --dockerfile-instructions) OVERRIDE_DOCKERFILE_INSTRUCTIONS="$2"; shift 2;;
+        --install-kaniko)          OVERRIDE_INSTALL_KANIKO="1"; shift;;
+        --no-install-kaniko)       OVERRIDE_INSTALL_KANIKO="0"; shift;;
+        --*) echo "Unknown option: $1" >&2; exit 1;;
+        *)   ENV_NAME="$1"; shift;;
+    esac
+done
+ENV_NAME="${ENV_NAME:-Bootstrap}"
 ENV_TAG=$(echo "$ENV_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
 
 # Change to project root (parent directory of docker/)
@@ -112,7 +134,8 @@ fi
 # See docs/plans/base-infrastructure-via-cluster-provider.md, Design decision 1. Cheap/harmless
 # even when this script's kubectl-using (production) branch doesn't run.
 KUBECONFIG_FILE="$(mktemp)"
-trap 'rm -f "$KUBECONFIG_FILE"' EXIT
+BUILD_CTX=""   # populated below; cleaned up here so both temps go on any exit path
+trap 'rm -f "$KUBECONFIG_FILE"; [ -n "$BUILD_CTX" ] && rm -rf "$BUILD_CTX"' EXIT
 env/bin/python backend/bin/yf-materialize-kubeconfig > "$KUBECONFIG_FILE"
 export KUBECONFIG="$KUBECONFIG_FILE"
 
@@ -125,6 +148,67 @@ export KUBECONFIG="$KUBECONFIG_FILE"
 # the db-update Job below would fail with ImagePullBackOff. The fallback here only fires for a dev
 # build (which builds+pushes its own backend at this very tag).
 APP_IMAGE_VERSION="${APP_IMAGE_VERSION:-$(env/bin/python backend/bin/yf-resolve-app-image-tag)}"
+
+# ── Synthesize the runner Dockerfile from BASE_RUNNER_PARAMS_JSON (context-free build) ─────────
+# config.env's BASE_RUNNER_PARAMS_JSON is the single source of truth for the default params; the
+# --base-image/--python-packages/--dockerfile-instructions/--install-kaniko flags override
+# individual fields for this build. ymerflow_runner.params_to_dockerfile (from the
+# Ymerflow-process-sdk installed into env/) turns the params into a Dockerfile — the SAME function
+# create_environment uses in-pod, so the host build and in-pod builds never drift. Every input is
+# pip-installed or curl'd, so the build context is a temp dir holding only the synthesized
+# Dockerfile: no COPY from the repo, no directory argument. The effective params are baked into the
+# image (ARG→ENV) so create_environment.schema() seeds its field defaults from the very same value.
+BUILD_CTX="$(mktemp -d)"
+EFFECTIVE_PARAMS_JSON=$(
+  BASE_RUNNER_PARAMS_JSON="${BASE_RUNNER_PARAMS_JSON:-}" \
+  OVERRIDE_BASE_IMAGE="$OVERRIDE_BASE_IMAGE" \
+  OVERRIDE_PYTHON_PACKAGES="$OVERRIDE_PYTHON_PACKAGES" \
+  OVERRIDE_DOCKERFILE_INSTRUCTIONS="$OVERRIDE_DOCKERFILE_INSTRUCTIONS" \
+  OVERRIDE_INSTALL_KANIKO="$OVERRIDE_INSTALL_KANIKO" \
+  BUILD_CTX="$BUILD_CTX" \
+  env/bin/python - <<'PY'
+import json, os
+from ymerflow_runner.params_to_dockerfile import params_to_dockerfile
+
+params = json.loads(os.environ.get("BASE_RUNNER_PARAMS_JSON") or "{}")
+if os.environ.get("OVERRIDE_BASE_IMAGE"):
+    params["base_image"] = os.environ["OVERRIDE_BASE_IMAGE"]
+if os.environ.get("OVERRIDE_PYTHON_PACKAGES"):
+    params["python_packages"] = os.environ["OVERRIDE_PYTHON_PACKAGES"]
+if os.environ.get("OVERRIDE_DOCKERFILE_INSTRUCTIONS"):
+    params["dockerfile_instructions"] = os.environ["OVERRIDE_DOCKERFILE_INSTRUCTIONS"]
+if os.environ.get("OVERRIDE_INSTALL_KANIKO"):
+    params["install_kaniko"] = os.environ["OVERRIDE_INSTALL_KANIKO"] == "1"
+
+base_image = params.get("base_image")
+if not base_image:
+    raise SystemExit("BASE_RUNNER_PARAMS_JSON has no base_image "
+                     "(set it in config.env or pass --base-image)")
+python_packages = params.get("python_packages", "")
+dockerfile_instructions = params.get("dockerfile_instructions", "")
+install_kaniko = bool(params.get("install_kaniko", False))
+
+effective = {
+    "base_image": base_image,
+    "python_packages": python_packages,
+    "dockerfile_instructions": dockerfile_instructions,
+    "install_kaniko": install_kaniko,
+}
+
+# Bake the effective params into the image. ARG→ENV keeps the quoted/spaced JSON out of the
+# Dockerfile literal — docker substitutes the --build-arg value passed below.
+baked_instructions = (dockerfile_instructions.rstrip() +
+    "\n\nARG BASE_RUNNER_PARAMS_JSON\nENV BASE_RUNNER_PARAMS_JSON=$BASE_RUNNER_PARAMS_JSON")
+
+dockerfile = params_to_dockerfile(base_image, python_packages, baked_instructions, install_kaniko)
+with open(os.path.join(os.environ["BUILD_CTX"], "Dockerfile"), "w") as f:
+    f.write(dockerfile)
+
+print(json.dumps(effective, separators=(",", ":")))
+PY
+) || exit 1
+RUNNER_DOCKERFILE="$BUILD_CTX/Dockerfile"
+echo "Synthesized runner Dockerfile at $RUNNER_DOCKERFILE"
 
 echo "=== Building YmerFlow Runner Image for ${ENV_NAME} Environment ==="
 echo "    Repository: ymerflow-base-runner:${ENV_TAG}"
@@ -152,10 +236,12 @@ import json, os
 print(json.dumps({"protocol": os.environ["REGISTRY_PROTOCOL"], "config": json.loads(os.environ["REGISTRY_CONFIG_JSON"])}))
 ')
     FULL_IMAGE=$(YMERFLOW_RESOLVED_REGISTRY_JSON="${RESOLVED_JSON}" env/bin/python backend/bin/yf-build-and-push \
-        docker/base-runner/Dockerfile . ymerflow-base-runner "${ENV_TAG}")
+        "$RUNNER_DOCKERFILE" "$BUILD_CTX" ymerflow-base-runner "${ENV_TAG}" \
+        --build-arg "BASE_RUNNER_PARAMS_JSON=${EFFECTIVE_PARAMS_JSON}")
 else
     FULL_IMAGE=$(env/bin/python backend/bin/yf-build-and-push \
-        docker/base-runner/Dockerfile . ymerflow-base-runner "${ENV_TAG}")
+        "$RUNNER_DOCKERFILE" "$BUILD_CTX" ymerflow-base-runner "${ENV_TAG}" \
+        --build-arg "BASE_RUNNER_PARAMS_JSON=${EFFECTIVE_PARAMS_JSON}")
 fi
 
 echo "✓ Image ymerflow-base-runner:${ENV_TAG} built and pushed to: ${FULL_IMAGE}"
