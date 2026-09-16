@@ -101,7 +101,9 @@ print_status "Virtual environment activated"
 # Install/upgrade backend dependencies
 echo "Installing Python dependencies..."
 pip install -q --upgrade pip
-pip install -q -e "${PROJECT_ROOT}"
+# [process-build] extra pulls Ymerflow-process-sdk (ymerflow_runner) into this host venv — the
+# runner-image build (docker/build.sh) imports it. See setup.py extras_require.
+pip install -q -e "${PROJECT_ROOT}[process-build]"
 print_status "Python dependencies installed"
 
 # Install server-side backend plugins listed in BACKEND_PLUGINS (paths / PyPI names / git URLs).

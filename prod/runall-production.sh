@@ -58,7 +58,9 @@ fi
 source "${PROJECT_ROOT}/env/bin/activate"
 echo "Installing backend package + plugins into env/ ..."
 pip install -q --upgrade pip
-pip install -q -e "${PROJECT_ROOT}"
+# [process-build] extra pulls Ymerflow-process-sdk (ymerflow_runner) into this host venv — Step 10's
+# docker/build.sh imports it to synthesize the base-runner Dockerfile. See setup.py extras_require.
+pip install -q -e "${PROJECT_ROOT}[process-build]"
 # YMERFLOW_SKIP_FRONTEND_BUILD=1: this host venv only runs the orchestration entrypoints
 # (bootstrap-provision, image build/push, kubeconfig, secret render) which import each plugin's
 # Python handler classes — it never serves the plugins' browser frontends (those are built into

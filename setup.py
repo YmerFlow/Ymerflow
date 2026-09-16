@@ -48,6 +48,19 @@ setup(
         # scripts/install-backend-plugins.sh).
         'ymerflow-plugin-build @ git+https://github.com/YmerFlow/Ymerflow-plugin-sdk.git',
     ],
+    extras_require={
+        # Host-side deploy/build tooling only — NOT a backend runtime dependency. docker/build.sh
+        # (invoked as runall-production.sh's Step 10) runs `env/bin/python -c "from
+        # ymerflow_runner.params_to_dockerfile import ..."` to synthesize the base-runner Dockerfile
+        # on the host. That module lives in the split-out Ymerflow-process-sdk (the same package the
+        # runner pod installs via BASE_RUNNER_PARAMS_JSON), so the host venv needs it — but the
+        # backend app never imports it, so it stays out of install_requires (and thus out of the
+        # backend pod image built by backend/Dockerfile's `pip install -e .`). runall.sh installs
+        # the host venv with this extra: `pip install -e ".[process-build]"`.
+        'process-build': [
+            'ymerflow-process-sdk @ git+https://github.com/YmerFlow/Ymerflow-process-sdk.git',
+        ],
+    },
     entry_points={
         # Core registers itself in the same groups plugins use, so downstream discovery treats
         # core and plugins identically (see backend/alembic/env.py and backend/bin/yf-*).
