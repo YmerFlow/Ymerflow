@@ -293,11 +293,6 @@ async def create_job(docker_image, process_id, version, process_type, parameters
     return job_name
 
 
-async def delete_job(job_name, k8s_client):
-    """Delete K8s job (for kill operation) on the cluster owning k8s_client."""
-    await k8s_client.delete_job(job_name)
-
-
 async def get_job_status(job_name, k8s_client):
     """Get current job status on the cluster owning k8s_client."""
     status = await k8s_client.get_job_status(job_name)

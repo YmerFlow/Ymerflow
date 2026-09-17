@@ -244,9 +244,21 @@ class K8sClient:
         await self._ensure_initialized()
         return await self.core_api.create_namespaced_secret(self.namespace, secret_manifest, _request_timeout=API_REQUEST_TIMEOUT_SECONDS)
 
-    async def delete_job(self, job_name):
+    async def delete_job(self, job_name, propagation_policy="Background"):
         await self._ensure_initialized()
-        return await self.batch_api.delete_namespaced_job(job_name, self.namespace, _request_timeout=API_REQUEST_TIMEOUT_SECONDS)
+        # Background propagation garbage-collects the Job's dependents — the pod AND
+        # the Kueue Workload (both carry an ownerReference to the Job). Without a
+        # propagation policy the default orphans them, leaving the pod Running and the
+        # Workload admitted, so they keep holding CPU/memory and queue quota (blocking
+        # the next version from being admitted).
+        body = client.V1DeleteOptions(propagation_policy=propagation_policy)
+        return await self.batch_api.delete_namespaced_job(job_name, self.namespace, body=body, _request_timeout=API_REQUEST_TIMEOUT_SECONDS)
+
+    async def delete_pod(self, pod_name, grace_period_seconds=0):
+        await self._ensure_initialized()
+        # grace_period_seconds=0 is a hard kill — the pod is removed immediately instead
+        # of draining through its termination grace period.
+        return await self.core_api.delete_namespaced_pod(pod_name, self.namespace, grace_period_seconds=grace_period_seconds, _request_timeout=API_REQUEST_TIMEOUT_SECONDS)
 
     async def get_job_status(self, job_name):
         await self._ensure_initialized()

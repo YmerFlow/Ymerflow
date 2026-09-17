@@ -472,7 +472,16 @@ async def cancel_process_version(
         from backend.models.cluster import get_cluster_for_process_version
         try:
             cluster = await get_cluster_for_process_version(db, version_obj)
-            await k8s_clients.get(cluster).delete_job(version_obj.k8s_job_name)
+            kc = k8s_clients.get(cluster)
+            # Hard-kill the running pod (grace period 0) so it stops consuming
+            # CPU/memory immediately rather than draining slowly.
+            pod = await kc.get_pod_for_job(version_obj.k8s_job_name)
+            if pod:
+                await kc.delete_pod(pod.metadata.name, grace_period_seconds=0)
+            # Delete the job with cascade propagation so the pod and the Kueue
+            # Workload (which holds the queue quota) are garbage-collected instead
+            # of being orphaned and blocking the next version's admission.
+            await kc.delete_job(version_obj.k8s_job_name)
         except Exception as e:
             # Best-effort cleanup — the version is still marked FAILED below even if the
             # cluster is unreachable (e.g. retired/torn down), but surface the failure
