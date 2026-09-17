@@ -165,7 +165,12 @@ def create_job_manifest(docker_image, process_id, version, process_type, paramet
         image_pull_policy="IfNotPresent",  # Already-present local images skip the pull; anything
                                             # missing (e.g. on a fresh remote cluster) is pulled
                                             # from the registry using image_pull_secrets below.
-        command=["python", "-u", "-m", "ymerflow_runner"],
+        # No command override: each image bakes its own correct ENTRYPOINT. Post-split images use
+        # `python -u -m ymerflow_runner`; pre-split images use `python -u /app/runner.py`. Overriding
+        # the command here forced the module invocation onto old images, whose `ymerflow_runner`
+        # package has no __main__.py, breaking every process in a pre-refactor environment. Letting
+        # the baked ENTRYPOINT run keeps both old and new environments working. The runner takes all
+        # its input from env vars (below), not argv, so there is nothing to pass on the command line.
         env=env_vars,
         volume_mounts=extra_volume_mounts or None,
         resources=client.V1ResourceRequirements(
