@@ -1120,7 +1120,11 @@ class ProcessVersion(Base):
         try:
             # List all directories under datasets/
             # This will give us paths like: bucket/processes/{id}/{version}/datasets/{dataset_id}/
-            items = fs.ls(bucket_and_path, detail=True)
+            # A missing prefix just means the process produced no datasets, which is fine.
+            try:
+                items = fs.ls(bucket_and_path, detail=True)
+            except FileNotFoundError:
+                items = []
 
             # Filter for directories (dataset IDs)
             dataset_dirs = [item for item in items if item.get('type') == 'directory']
