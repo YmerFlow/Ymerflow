@@ -1249,6 +1249,12 @@ class ProcessVersion(Base):
                 process_types=env_info.get('process_types', {}),
                 # Attribution for the admin stats dashboard — inherit the creating process's user.
                 created_by=process.created_by,
+                # Visibility (docs/plans/project-scoped-public-environments.md): home project from the
+                # payload (fall back to the creating process's project), public per the build param,
+                # never super-public — that tier is reserved for docker/build.sh bootstrap images.
+                project_id=env_info.get('project_id') or process.project_id,
+                is_public=env_info.get('is_public', False),
+                superpublic=False,
             )
 
             db.add(environment)
