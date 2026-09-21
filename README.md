@@ -4,7 +4,7 @@
 
 Browser-based AEM and magnetic survey processing, inversion, and pipeline automation — no Windows install, no per-seat licenses, no black-box algorithms.
 
-YmerFlow replaces desktop-bound geophysics tools with a reproducible, versioned workflow platform that runs in any browser. Processing pipelines are defined as visual DAGs, executed in Kubernetes containers, and stored in per-project cloud storage so results are always reproducible. The inversion core is [SimPEG](https://simpeg.xyz/) (GPL v3) — peer-reviewed, auditable, and extensible.
+YmerFlow replaces desktop-bound geophysics tools with a reproducible, versioned workflow platform that runs in any browser. Processing pipelines are defined as visual DAGs, executed in Kubernetes containers, and stored in per-project cloud storage so results are always reproducible. The inversion core is [SimPEG](https://simpeg.xyz/) (MIT) — peer-reviewed, auditable, and extensible.
 
 | Process graph view | Process editor |
 |---|---|
