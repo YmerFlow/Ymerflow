@@ -123,8 +123,9 @@ root writing to `/`, which `restricted` would forbid). Confirm the namespace sta
    `$ROOT/kaniko-executor`, an empty `$ROOT/kaniko` dir, and run kaniko with `KANIKO_DIR=/kaniko-parent`
    (so `install_kaniko` builds whose Dockerfile does `COPY --from=kaniko /kaniko/executor` still work
    — workaround #1, now applied *inside* the chroot).
-2. CA certs (`/etc/ssl/certs`, copytree-dereferenced so the chroot is self-contained) and
-   `/etc/resolv.conf` — so kaniko can pull the base image and push over TLS with DNS.
+2. CA certs (`/etc/ssl/certs`, copytree-dereferenced so the chroot is self-contained),
+   `/etc/resolv.conf` and `/etc/hosts` — so kaniko can pull the base image and push over TLS with DNS
+   and resolve local names.
 3. The docker `config.json` (registry auth, **keyed to `push_registry_url`** — workaround #2). With
    `KANIKO_DIR` set, kaniko resets `DOCKER_CONFIG` to `<KANIKO_DIR>/.docker` at startup and reaches it
    by copying `/kaniko` → `/kaniko-parent`; so write the config to `$ROOT/kaniko/.docker/config.json`
@@ -152,20 +153,28 @@ still working. Isolation holds; **no `CAP_SYS_ADMIN`/`securityContext`/backend c
 Invocation details the spike surfaced:
 - **`--force` is required.** Inside a chroot kaniko's "am I in a container?" heuristic fails and it
   refuses without it. `--force` is correct/safe here precisely *because* we've contained it.
-- **Add `--ignore-path`** for `/proc`, `/dev`, `/kaniko`, `/context` so our staging scaffolding is
-  excluded from the snapshot and doesn't bloat/pollute the built image layers. (Note: these are
+- **`--ignore-path` for `/proc`, `/dev`, `/context` only — NOT `/kaniko`.** These scaffolding
+  ignore-paths keep our staging out of the snapshot. **Do not add `--ignore-path=/kaniko`**: an
+  `install_kaniko=true` Dockerfile does `COPY --from=kaniko /kaniko/executor …`, and ignoring
+  `/kaniko` makes kaniko skip that cross-stage *source* (`Not adding /kaniko/executor because it is
+  ignored`), so the copy fails with `lstat /kaniko-parent/0/kaniko/executor: no such file`. `/kaniko`
+  needs no ignoring anyway — `KANIKO_DIR=/kaniko-parent` makes kaniko relocate and delete `/kaniko`
+  at startup (before any snapshot) and auto-ignore its `/kaniko-parent` workdir. (These are
   *scaffolding* ignore-paths, unrelated to the old #3 crane/extract-dir survival ignore-paths, which
   the chroot removes entirely.)
+- **Stage `/etc/hosts` too** (alongside certs + resolv.conf) so local names resolve.
 
-### ⚠️ Remaining unvalidated risk — the `install_kaniko` + `KANIKO_DIR` interaction inside the chroot
-The spike Dockerfile did **not** contain `COPY --from=kaniko /kaniko/executor` (i.e. it exercised the
-`install_kaniko=false` path only), so it never touched workaround #1. The interaction of
-`KANIKO_DIR=/kaniko-parent` (kaniko copying `/kaniko`→`/kaniko-parent` and deleting `/kaniko`, and
-resetting `DOCKER_CONFIG`) *inside a chroot* — and specifically an `install_kaniko=true` build that
-must both relocate kaniko's workdir AND `COPY --from=kaniko` — is **not yet spike-validated**. Before
-shipping, extend the spike with an `install_kaniko=true` Dockerfile and confirm: (a) the build
-succeeds, (b) auth rides `/kaniko/.docker` → `/kaniko-parent/.docker` correctly, (c) the pushed image
-contains `/kaniko-executor`. This is the one genuinely new risk this revision surfaces.
+### The `install_kaniko` + `KANIKO_DIR` interaction inside the chroot — VALIDATED (spike passed 2026-09-19)
+The original spike exercised only `install_kaniko=false`. This revision extended it to
+`install_kaniko=true` (a Dockerfile with `FROM …/executor AS kaniko` + `COPY --from=kaniko
+/kaniko/executor /kaniko-executor` + `RUN pip install fsspec==2026.9.0`), run through the **real
+`kaniko_build` helper** in a default-cap container (SYS_ADMIN absent) against a throwaway registry.
+Result once `--ignore-path=/kaniko` was removed (see above): build + push clean, the pushed image
+contains `/kaniko-executor`, and the outer image's fsspec stayed **byte-identical** (isolation holds).
+The `install_kaniko=false` regression also passed (builds, no stray `/kaniko-executor` leaked, fsspec
+present in the built image). `KANIKO_DIR=/kaniko-parent` is retained (matches the proven live-pod
+behavior); the auth-ride to `/kaniko-parent/.docker` is covered by the prod smoke test (the throwaway
+registry was unauthenticated).
 
 ### Code shape
 Add a shared helper in the process SDK, e.g.
@@ -224,17 +233,17 @@ The fix lives in the **runner-side SDK** baked into runner images; the backend n
    stored `:443` ref) and rely on the helper for workaround #1 (`/kaniko` + `KANIKO_DIR`).
 3. Confirm the base-runner still bakes `/kaniko-executor` + `ca-certificates` (it does) and the chroot
    copies certs from where they actually live (`/etc/ssl/certs`).
-4. **Extend the spike** to the `install_kaniko=true` case (see the unvalidated-risk note) before push.
-5. Commit + push the SDK repo (git-URL dep).
-6. Rebuild base-runner via `docker/build.sh`; confirm `Bootstrap` re-registered.
+4. Commit + push the SDK repo (git-URL dep).
+5. Rebuild base-runner via `docker/build.sh`; confirm `Bootstrap` re-registered.
 
 ## Testing
 
-- **Spike (gate, common path — passed):** kaniko completes in the chroot; outer `site-packages`
-  unchanged; `import s3fs` works in the outer image afterward.
-- **Spike (gate, `install_kaniko=true` — TODO):** a Dockerfile with `COPY --from=kaniko
-  /kaniko/executor /kaniko-executor` builds in the chroot with `KANIKO_DIR=/kaniko-parent`; auth rides
-  the `/kaniko`→`/kaniko-parent` copy; pushed image contains `/kaniko-executor`.
+- **Spike (gate, `install_kaniko=false` — passed):** kaniko completes in the chroot; outer
+  `site-packages` byte-identical; no stray `/kaniko-executor` leaks into the built image.
+- **Spike (gate, `install_kaniko=true` — passed 2026-09-19):** the real `kaniko_build` helper builds
+  a `COPY --from=kaniko /kaniko/executor` Dockerfile in the chroot and pushes; pushed image contains
+  `/kaniko-executor`; outer fsspec byte-identical. Gated on removing `--ignore-path=/kaniko` (see the
+  invocation-details note above).
 - **Repro-of-original:** in a base-runner container, `import fsspec`, `pip install fsspec==2026.9.0`
   (simulating the old in-place mutation), then `fsspec.open("s3://…")` → reproduces the crash. With
   the chroot build, the outer fsspec is never mutated, so the crash cannot occur.
