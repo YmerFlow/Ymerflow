@@ -330,8 +330,16 @@ export async function getProjectImport(importId) {
   return response.data;
 }
 
-export async function getEnvironments() {
-  const response = await apiClient.get('/environments', { params: { include_schemas: true } });
+export async function getEnvironments(projectId) {
+  // Project-scoped: super-public base runners + this project's own environments. Lightweight
+  // (no process_types schemas) — fetch those per-environment via getEnvironmentProcessTypes.
+  const response = await apiClient.get(`/projects/${projectId}/environments`);
+  return response.data;
+}
+
+export async function getPublicEnvironments() {
+  // The public gallery backing the environment search box (all is_public environments).
+  const response = await apiClient.get('/environments/public');
   return response.data;
 }
 

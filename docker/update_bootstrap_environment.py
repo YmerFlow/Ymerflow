@@ -53,35 +53,44 @@ def update_bootstrap_environment(process_types, env_name="Bootstrap", docker_ima
             # Update existing environment
             env_id = row[0]
             print(f"Updating existing environment: {env_id} ({row[1]})")
+            # Re-mark as a superpublic, project-less bootstrap environment on every rebuild
+            # (the always-available base runner everyone should see).
             session.execute(
                 text("""
                     UPDATE environments
                     SET process_types = :process_types,
-                        docker_image = :docker_image
+                        docker_image = :docker_image,
+                        superpublic = :superpublic,
+                        is_public = :is_public,
+                        project_id = NULL
                     WHERE id = :id
                 """),
                 {
                     "id": env_id,
                     "process_types": json.dumps(process_types),
-                    "docker_image": docker_image
+                    "docker_image": docker_image,
+                    "superpublic": True,
+                    "is_public": True
                 }
             )
         else:
-            # Create new environment
+            # Create new environment — a bootstrap env is superpublic (base runner), project-less.
             env_id = str(uuid.uuid4())
             created_at = datetime.utcnow().isoformat()
             print(f"Creating new environment: {env_id} ({env_name})")
             session.execute(
                 text("""
-                    INSERT INTO environments (id, name, docker_image, process_types, process_id, created_at)
-                    VALUES (:id, :name, :docker_image, :process_types, NULL, :created_at)
+                    INSERT INTO environments (id, name, docker_image, process_types, process_id, created_at, superpublic, is_public, project_id)
+                    VALUES (:id, :name, :docker_image, :process_types, NULL, :created_at, :superpublic, :is_public, NULL)
                 """),
                 {
                     "id": env_id,
                     "name": env_name,
                     "docker_image": docker_image,
                     "process_types": json.dumps(process_types),
-                    "created_at": created_at
+                    "created_at": created_at,
+                    "superpublic": True,
+                    "is_public": True
                 }
             )
 
