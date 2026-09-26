@@ -12,13 +12,20 @@ const CONTAINER_STYLE = {
 };
 
 export default function TagFilterBar({ projectTags, selectedTagIds, onToggle }) {
-  if (!projectTags || projectTags.length === 0) return null;
+  const tagById = new Map((projectTags || []).map(t => [t.id, t]));
 
-  const selectedTags = projectTags.filter(t => selectedTagIds.has(t.id));
-  const availableTags = projectTags.filter(t => !selectedTagIds.has(t.id));
+  // Show ALL selected tags, even ids that don't exist in the current project (e.g. a
+  // filter carried over from another project via a shared workspace). An unknown tag
+  // gets a placeholder chip labelled by its id so the user can still clear it (× or
+  // backspace) — it just can't be re-added by name, since there's nothing to match.
+  const selectedTags = [...selectedTagIds].map(id => tagById.get(id) || { id, name: id });
+  const availableTags = (projectTags || []).filter(t => !selectedTagIds.has(t.id));
+
+  // Nothing to display and nothing to add -> render nothing.
+  if (selectedTags.length === 0 && availableTags.length === 0) return null;
 
   const handleAdd = async (name) => {
-    const tag = projectTags.find(t => t.name === name);
+    const tag = (projectTags || []).find(t => t.name === name);
     if (tag) onToggle(tag.id);
   };
 
