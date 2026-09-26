@@ -11,26 +11,25 @@ const CONTAINER_STYLE = {
   padding: '4px 8px',
 };
 
-export default function TagFilterBar({ projectTags, selectedTagIds, onToggle }) {
-  const tagById = new Map((projectTags || []).map(t => [t.id, t]));
+export default function TagFilterBar({ projectTags, selectedTagNames, onToggle }) {
+  const byName = new Map((projectTags || []).map(t => [t.name, t]));
 
-  // Show ALL selected tags, even ids that don't exist in the current project (e.g. a
-  // filter carried over from another project via a shared workspace). An unknown tag
-  // gets a placeholder chip labelled by its id so the user can still clear it (× or
-  // backspace) — it just can't be re-added by name, since there's nothing to match.
-  const selectedTags = [...selectedTagIds].map(id => tagById.get(id) || { id, name: id });
-  const availableTags = (projectTags || []).filter(t => !selectedTagIds.has(t.id));
+  // Show ALL selected tag names. A name with a matching tag in the current project uses
+  // the real tag object (keeping its color); a name with no match (e.g. a filter carried
+  // over from another project via a shared workspace) gets a placeholder chip so the user
+  // can still clear it (× or backspace) — it just can't be re-added, since nothing matches.
+  const selectedTags = [...selectedTagNames].map(name => byName.get(name) || { name });
+  const availableTags = (projectTags || []).filter(t => !selectedTagNames.has(t.name));
 
   // Nothing to display and nothing to add -> render nothing.
   if (selectedTags.length === 0 && availableTags.length === 0) return null;
 
   const handleAdd = async (name) => {
-    const tag = (projectTags || []).find(t => t.name === name);
-    if (tag) onToggle(tag.id);
+    if (byName.has(name)) onToggle(name);
   };
 
-  const handleRemove = async (tagId) => {
-    onToggle(tagId);
+  const handleRemove = async (tag) => {
+    onToggle(tag.name);
   };
 
   return (

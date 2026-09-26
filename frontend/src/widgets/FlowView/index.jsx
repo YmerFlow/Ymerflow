@@ -19,8 +19,8 @@ function isVersionVisible(visibleVersions, pid, ver) {
 }
 
 // Returns Map<processId, Set<versionNumber>> of visible versions, or null (all visible).
-function computeVisibleVersions(processes, selectedFilterTagIds) {
-  if (selectedFilterTagIds.size === 0) return null;
+function computeVisibleVersions(processes, selectedFilterTagNames) {
+  if (selectedFilterTagNames.size === 0) return null;
 
   const processById = new Map(processes.map(p => [p.id, p]));
   const visible = new Map();
@@ -30,11 +30,12 @@ function computeVisibleVersions(processes, selectedFilterTagIds) {
     visible.get(pid).add(ver);
   };
 
-  // Seed: versions that have all filter tags
+  // Seed: versions that have all filter tags (matched by name, not id — tag ids are
+  // per-project so a filter persisted in a shared workspace only carries over by name)
   processes.forEach(process => {
     process.versions?.forEach(v => {
-      const vTagIds = new Set((v.tags || []).map(t => t.id));
-      if ([...selectedFilterTagIds].every(id => vTagIds.has(id))) {
+      const vTagNames = new Set((v.tags || []).map(t => t.name));
+      if ([...selectedFilterTagNames].every(name => vTagNames.has(name))) {
         markVisible(process.id, v.version);
       }
     });
@@ -169,7 +170,7 @@ function initialise(processes, visibleVersions, activeProcess) {
 
 // ---- Component ----
 
-export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilterTagIds = [], ...nodeProps }) {
+export default function FlowView({ parentUpdate, selectedFilterTagNames: savedFilterTagNames = [], ...nodeProps }) {
   const isMobile = useIsMobile();
   const {
     processes, setProcesses, activeProcess, setActiveProcess, startNewProcess, currentProject, isLoading
@@ -180,14 +181,14 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedVersions, setSelectedVersions] = useState({});
 
-  const selectedFilterTagIds = useMemo(() => new Set(savedFilterTagIds), [savedFilterTagIds]);
+  const selectedFilterTagNames = useMemo(() => new Set(savedFilterTagNames), [savedFilterTagNames]);
   // Stable-by-value key for the active filter. Used in the layout effect deps
   // instead of the Set itself: the Set gets a fresh identity every render (the
   // `= []` default prop churns), but this string compares equal across renders,
   // so it doesn't trigger a re-run/flicker loop.
   const filterKey = useMemo(
-    () => [...selectedFilterTagIds].sort().join(','),
-    [selectedFilterTagIds]
+    () => [...selectedFilterTagNames].sort().join(','),
+    [selectedFilterTagNames]
   );
 
   const { data: projectTags = [] } = useProjectTags(currentProject);
@@ -215,8 +216,8 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
   });
 
   const visibleVersions = useMemo(
-    () => computeVisibleVersions(processes, selectedFilterTagIds),
-    [processes, selectedFilterTagIds]
+    () => computeVisibleVersions(processes, selectedFilterTagNames),
+    [processes, selectedFilterTagNames]
   );
 
   const visibleProcessIds = useMemo(() => {
@@ -321,12 +322,12 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
     onNodesChange(changes);
   }, [onNodesChange, currentProject]);
 
-  const handleToggleFilterTag = useCallback((tagId) => {
-    const next = new Set(selectedFilterTagIds);
-    if (next.has(tagId)) next.delete(tagId);
-    else next.add(tagId);
-    parentUpdate?.('replace', nodeProps.id, { ...nodeProps, selectedFilterTagIds: [...next] });
-  }, [selectedFilterTagIds, parentUpdate, nodeProps]);
+  const handleToggleFilterTag = useCallback((tagName) => {
+    const next = new Set(selectedFilterTagNames);
+    if (next.has(tagName)) next.delete(tagName);
+    else next.add(tagName);
+    parentUpdate?.('replace', nodeProps.id, { ...nodeProps, selectedFilterTagNames: [...next] });
+  }, [selectedFilterTagNames, parentUpdate, nodeProps]);
 
   useEffect(() => {
     if (Object.keys(selectedVersions).length === 0) return;
@@ -442,7 +443,7 @@ export default function FlowView({ parentUpdate, selectedFilterTagIds: savedFilt
     <div style={{ width: "100%", height: isMobile ? "70vh" : "100%", position: "relative", display: "flex", flexDirection: "column" }}>
       <TagFilterBar
         projectTags={projectTags}
-        selectedTagIds={selectedFilterTagIds}
+        selectedTagNames={selectedFilterTagNames}
         onToggle={handleToggleFilterTag}
       />
       <div style={{ flex: 1, position: "relative" }}>

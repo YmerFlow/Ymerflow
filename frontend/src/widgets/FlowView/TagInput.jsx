@@ -20,8 +20,8 @@ export default function TagInput({ selectedTags = [], availableTags = [], onAdd,
     inputRef.current?.focus();
   };
 
-  const handleRemove = async (tagId) => {
-    if (onRemove) await onRemove(tagId);
+  const handleRemove = async (tag) => {
+    if (onRemove) await onRemove(tag);
   };
 
   const tabComplete = () => {
@@ -62,10 +62,10 @@ export default function TagInput({ selectedTags = [], availableTags = [], onAdd,
       e.preventDefault();
       const tag = selectedTags[cursorPos - 1];
       setCursorPos(prev => prev - 1);
-      await handleRemove(tag.id);
+      await handleRemove(tag);
     } else if (e.key === 'Delete' && inputValue === '' && cursorPos < selectedTags.length) {
       e.preventDefault();
-      await handleRemove(selectedTags[cursorPos].id);
+      await handleRemove(selectedTags[cursorPos]);
     }
   };
 
@@ -114,9 +114,9 @@ export default function TagInput({ selectedTags = [], availableTags = [], onAdd,
     >
       {selectedTags.slice(0, cursorPos).map((tag, i) => (
         <TagBadge
-          key={tag.id}
+          key={tag.id ?? tag.name}
           tag={tag}
-          onRemove={() => handleRemove(tag.id)}
+          onRemove={() => handleRemove(tag)}
           onClick={(e) => { e.stopPropagation(); setCursorPos(i + 1); inputRef.current?.focus(); }}
         />
       ))}
@@ -133,9 +133,9 @@ export default function TagInput({ selectedTags = [], availableTags = [], onAdd,
       />
       {selectedTags.slice(cursorPos).map((tag, i) => (
         <TagBadge
-          key={tag.id}
+          key={tag.id ?? tag.name}
           tag={tag}
-          onRemove={() => handleRemove(tag.id)}
+          onRemove={() => handleRemove(tag)}
           onClick={(e) => { e.stopPropagation(); setCursorPos(cursorPos + i + 1); inputRef.current?.focus(); }}
         />
       ))}

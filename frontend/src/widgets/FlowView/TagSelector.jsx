@@ -56,12 +56,12 @@ export default function TagSelector({ processId, version, currentTags = [], proj
     }
   };
 
-  const handleRemove = async (tagId) => {
+  const handleRemove = async (tag) => {
     if (onChange) {
-      onChange(currentTags.filter(t => t.id !== tagId));
+      onChange(currentTags.filter(t => t.id !== tag.id));
     } else {
       try {
-        await removeVersionTag.mutateAsync({ processId, version, tagId, projectId });
+        await removeVersionTag.mutateAsync({ processId, version, tagId: tag.id, projectId });
         await invalidateProject(projectId);
       } catch {
         /* ignore */
