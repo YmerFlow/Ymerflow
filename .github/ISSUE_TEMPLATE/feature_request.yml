@@ -1,0 +1,43 @@
+name: Feature request
+description: Something you need YmerFlow to do that it does not do today.
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This repository is public.** Describe the need in general terms - the kind of
+        survey, system or workflow - without client names, project names or locations.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The task, not the button. What would you have at the end, and what stops you today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you do it now?
+      description: Another tool, a script, a manual step, or not at all.
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would a good solution look like?
+      description: Optional. A processing step, a parameter, a plot, a file format. If you know how another package does it, name it.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Processing steps
+        - Inversion or forward modelling
+        - Import or export formats
+        - Plots and the web interface
+        - Jobs, resources, billing
+        - Documentation
+        - Other

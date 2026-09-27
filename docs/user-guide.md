@@ -531,11 +531,25 @@ billing enabled)
 - **[Development Guide](development.md)**: For contributors
 - **[Deployment Guide](deployment.md)**: For administrators
 
-### Support
+### Reporting a problem
 
-- **GitHub Issues**: https://github.com/emerald-geomodelling/ymerflow/issues
-- **Documentation**: Check `/help` command in application
-- **Logs**: Always include ProcessLog output when reporting issues
+Bugs and feature requests go to
+**[GitHub Issues](https://github.com/YmerFlow/Ymerflow/issues/new/choose)**. The form asks
+for what we need to reproduce the problem:
+
+- the **process type and environment name** from the top of the process log
+  (for example `invert_tem` on `public-launch-2026-09-04-1`);
+- **what you expected and what happened**, and at which step or iteration;
+- the **steps and parameter values** that matter — if it reproduces on the
+  [public demo data](https://github.com/YmerFlow/ymerflow-demo-data), say so;
+- the **last 30 or so lines of the log** from the step that failed.
+
+**The issue tracker is public.** Anyone can read it, and edits keep their history. Before
+posting, take out client and survey names, coordinates, file and project names, and anything
+under a confidentiality agreement. Leave out the log header lines that show storage paths.
+Process ids and version numbers are fine to include. If the problem cannot be described
+without protected data, reproduce it on the demo data, or email **hello@ymerflow.earth**
+instead of opening a public issue. Security concerns go to that address too.
 
 ## Glossary
 
