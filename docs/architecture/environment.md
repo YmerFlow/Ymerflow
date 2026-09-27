@@ -449,14 +449,25 @@ simply travel to the backend as a JSON file in the project's own storage bucket.
 `create_environment` — this check is a no-op.
 
 Once registered, environments and their process types are served to the frontend via
-`backend/routers/environments.py` — there is no bare `/process-types` endpoint. The real
-endpoints are:
-- `GET /environments` - list all environments (id, name, process type names; pass
-  `include_schemas=true` to embed full schemas)
+`backend/routers/environments.py` — there is no bare `/process-types` endpoint. Environments
+carry a visibility model mirroring `Workspace`/`System`: a nullable `project_id` (home project;
+NULL for bootstrap/super-public runners) plus `is_public` and `superpublic` flags (super-public
+implies public). The real endpoints are:
+- `GET /projects/{project_id}/environments` - list the environments available to a project
+  (super-public base runners + project-local). Lightweight rows (id, name, created_at,
+  visibility fields) — no schemas. `project_id` accepts a real project id or a read-only
+  publication id.
+- `GET /environments/public` - the public gallery: every `is_public` environment across all
+  projects (with `project_name`), anonymous-readable. Backs the "Software version" search box.
 - `GET /environments/{env_id}/process-types` - all process type schemas for one environment,
-  keyed by type name
+  keyed by type name. Access-gated: readable if the environment is public/super-public, the
+  caller is a member of its home project, or a `project_id` viewing context resolves to it.
 - `GET /environments/{env_id}/process-types/{type_name}` - the schema for a single named
-  process type
+  process type (same access gate).
+
+Visibility is set only at creation: `docker/build.sh` bootstrap environments are super-public;
+the `create_environment` process produces a public or private (default) environment via its
+`is_public` param — never super-public. There is no endpoint to reclassify an existing row.
 
 ### Bootstrap Environment via `docker/build.sh`
 

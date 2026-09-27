@@ -8,6 +8,7 @@ import {
   searchDatasets,
   getProcessOutputDatasets,
   getEnvironments,
+  getPublicEnvironments,
   createEnvironment,
   getEnvironmentProcessTypes,
   getProjects,
@@ -57,7 +58,8 @@ import {
 // Query keys
 export const queryKeys = {
   projects: ['projects'],
-  environments: ['environments'],
+  environments: (projectId) => ['environments', projectId],
+  publicEnvironments: ['publicEnvironments'],
   environmentProcessTypes: (envId) => ['environmentProcessTypes', envId],
   processes: (projectId) => ['processes', projectId],
   dataset: (id) => ['dataset', id],
@@ -170,13 +172,24 @@ export function useClusterQueues() {
   });
 }
 
-// Hook to fetch all environments
-export function useEnvironments() {
-  const { isAuthenticated } = useContext(AuthContext);
+// Hook to fetch a project's environments (super-public base runners + project-local).
+// Lightweight rows (no process_types) — fetch a selected env's schemas with
+// useEnvironmentProcessTypes.
+export function useEnvironments(projectId) {
   return useQuery({
-    queryKey: queryKeys.environments,
-    queryFn: getEnvironments,
-    enabled: isAuthenticated,
+    queryKey: queryKeys.environments(projectId),
+    queryFn: () => getEnvironments(projectId),
+    enabled: !!projectId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+// Hook to fetch the public environment gallery (all is_public environments, any project) —
+// backs the environment search box.
+export function usePublicEnvironments() {
+  return useQuery({
+    queryKey: queryKeys.publicEnvironments,
+    queryFn: getPublicEnvironments,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
@@ -240,14 +253,15 @@ export function useProcessOutputDatasets(process, version, projectId, options = 
 }
 
 // Hook to create an environment
-export function useCreateEnvironment() {
+export function useCreateEnvironment(projectId) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: createEnvironment,
     onSuccess: () => {
-      // Invalidate and refetch environments list
-      queryClient.invalidateQueries({ queryKey: queryKeys.environments });
+      // Invalidate the project-scoped list and the public gallery.
+      queryClient.invalidateQueries({ queryKey: queryKeys.environments(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.publicEnvironments });
     },
   });
 }

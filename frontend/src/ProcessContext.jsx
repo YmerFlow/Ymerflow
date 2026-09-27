@@ -209,7 +209,7 @@ export function ProcessProvider({ children }) {
 
   const { data: projects = EMPTY_ARRAY, isLoading: projectsLoading, error: projectsError } = useProjects(currentProject);
   const { data: processes = EMPTY_ARRAY, isLoading, error: processesError, refetch } = useProcesses(currentProject);
-  const { data: environments = EMPTY_ARRAY, isLoading: environmentsLoading, error: environmentsError } = useEnvironments();
+  const { data: environments = EMPTY_ARRAY, isLoading: environmentsLoading, error: environmentsError } = useEnvironments(currentProject);
   // Needed by setCurrentProject below to decide whether the currently-selected workspace
   // (which may be owned by a different project, or public) should carry across a project switch.
   const { data: currentWorkspace } = useWorkspace(selectedEnvironment, currentProject);

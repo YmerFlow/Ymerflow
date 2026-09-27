@@ -98,6 +98,12 @@ async def create_process(
     if not environment:
         raise HTTPException(status_code=400, detail="Valid environment_id is required")
 
+    # An environment is runnable only if it is readable from this process's own project
+    # (super/public, or project-local) — never another tenant's private image.
+    from backend.routers.environments import _can_read_environment
+    if not await _can_read_environment(environment, project.id, auth, db):
+        raise HTTPException(status_code=403, detail="Environment is not available in this project")
+
     # Convert Pydantic model back to dict for create_queued (existing contract)
     proc_dict = proc.model_dump(by_alias=True, exclude_none=True)
 

@@ -278,15 +278,24 @@ Use this stats URL to inspect a dataset without downloading the full binary file
 ## Environments
 
 ### `list_environments`
-`GET /environments`
+`GET /projects/{project_id}/environments`
 
-List available compute environments. Returns each environment's `id`, `name`, and `process_types`. By default `process_types` is a list of type name strings only.
+List the compute environments available to a project: the always-available super-public base runners plus this project's own environments. Lightweight rows — no `process_types` schemas (call `get_process_types` for one environment's schemas).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `include_schemas` | boolean | No | Include full JSON Schemas for each process type. Default: `false`. Use `get_process_type_schema` to fetch a single type's schema instead of embedding all schemas here. |
+| `project_id` | string | Yes | Real project id, or a read-only publication id. |
 
-**Returns:** Array of environment objects — `{id, name, docker_image, process_id, process_types, created_at}`.
+**Returns:** Array of environment objects — `{id, name, docker_image, process_id, process_types (type names only), created_at, project_id, is_public, superpublic}`.
+
+---
+
+### `list_public_environments`
+`GET /environments/public`
+
+List every compute environment marked public, across all projects — the public gallery backing the environment search box. Anonymous-readable. Each entry includes its home project's `project_name`. No schemas.
+
+**Returns:** Array of environment objects (same shape as `list_environments`, plus `project_name`).
 
 ---
 
@@ -295,11 +304,12 @@ List available compute environments. Returns each environment's `id`, `name`, an
 
 Return all process types available in an environment, keyed by type name. Each entry is a JSON Schema describing the required and optional `params` for that process type. Fields with `x-format: dataset` expect a file URL from `search_datasets`.
 
-Returns an empty dict if the environment has not finished registering its process types yet (environment setup is itself a process — check `list_processes` to see if it has completed).
+Access-gated: readable if the environment is public/super-public, the caller is a member of its home project, or a `project_id` viewing context resolves to it (404 otherwise). Returns an empty dict if the environment has not finished registering its process types yet (environment setup is itself a process — check `list_processes` to see if it has completed).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `env_id` | string | Yes | Environment ID from `list_environments`. |
+| `project_id` | string | No | Viewing-context project/publication id, to read a project-local environment via a publication link. |
 
 **Returns:** Object mapping type name → JSON Schema.
 
@@ -308,14 +318,15 @@ Returns an empty dict if the environment has not finished registering its proces
 ### `get_process_type_schema`
 `GET /environments/{env_id}/process-types/{type_name}`
 
-Return the JSON Schema for exactly one named process type. Even the largest schemas (~44 KB) fit in a single response.
+Return the JSON Schema for exactly one named process type. Even the largest schemas (~44 KB) fit in a single response. Same access gate as `get_process_types`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `env_id` | string | Yes | Environment ID from `list_environments`. |
 | `type_name` | string | Yes | Process type key, e.g. `import_skytem`. |
+| `project_id` | string | No | Viewing-context project/publication id. |
 
-**Returns:** JSON Schema object. Returns 404 if the environment or type name is not found.
+**Returns:** JSON Schema object. Returns 404 if the environment is not readable/found or the type name is not found.
 
 ---
 
@@ -331,6 +342,8 @@ Register a Docker image as a named compute environment. Typically called automat
 | `name` | string | Yes | Human-readable display name. |
 | `docker_image` | string | Yes | Fully-qualified Docker image reference, e.g. `registry.example.com/myenv:latest`. |
 | `process_id` | string | No | ID of the process that built this environment, if any. Links the environment back to its build job. |
+| `project_id` | string | No | Home project that owns this environment. NULL only for operator/bootstrap environments. |
+| `is_public` | boolean | No | Make the environment visible to every project (public gallery). Default `false`. Super-public is reserved for `docker/build.sh` and cannot be set here. |
 
 **Returns:** Environment object including the generated `id`.
 
