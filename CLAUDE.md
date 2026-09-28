@@ -21,6 +21,7 @@ Comprehensive documentation is available in the `docs/` directory:
 - **[Dependencies](docs/architecture/dependencies.md)** - Open source packages with links (frontend, backend, infrastructure)
 - **[Environment](docs/architecture/environment.md)** - Docker images, entrypoints, runner, schema extraction
 - **[Process Types](docs/architecture/processes.md)** - Creating custom process types, schemas, registration
+- **[Pipelines](docs/architecture/pipelines.md)** - How step chains are built, registered, run and reported; template for a new step library
 - **[Storage](docs/architecture/storage.md)** - Per-project buckets, security model, fsspec usage
 - **[Registry](docs/architecture/registry.md)** - Pluggable container registry backend, push/pull flow, bootstrap provisioning
 

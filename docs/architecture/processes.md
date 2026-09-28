@@ -259,7 +259,7 @@ def run(cls, storage_context=None, **kwargs):
 
 ### Logging
 
-Use `print()` for logging - stdout is captured and streamed to the UI:
+Use `print()` for logging - stdout is captured and streamed to the UI. The log is one of three output channels; what a step *did* belongs in its step report and the output's statistics, not only in the log. See [Pipelines](pipelines.md).
 
 ```python
 print("Starting process...")

@@ -168,7 +168,7 @@ The noise floor at 1ms (in V/m²) accounts for system noise characteristics, wit
 
 ## Entry Points
 
-All processing steps are registered as:
+The step contract, the runner and how each step reports what it did are described in [Pipelines](../architecture/pipelines.md). All processing steps are registered as:
 ```
 emeraldprocessing.pipeline_step:
     - correct_altitude_and_topo = emeraldprocessing.tem.corrections:correct_altitude_and_topo
