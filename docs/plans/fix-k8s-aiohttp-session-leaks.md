@@ -103,6 +103,13 @@ cleanup to the garbage collector.
 
 ### 5. `backend/services/k8s_client.py`
 
+> **Already partially done (2026-10-12):** the shared-`ApiClient` part of this change was
+> implemented by `docs/plans/done/fix-aks-token-refresh-401-shared-apiclient.md` to fix the
+> intermittent AKS 401. `_ensure_initialized()` already builds `self._api_client =
+> client.ApiClient()` and derives `batch_api`/`core_api` from it. When implementing this plan,
+> only *add* `self.apps_api` and the `close()` method below — do not re-do the `batch_api`/
+> `core_api` sharing.
+
 - `_ensure_initialized()`: build one `ApiClient`, pass it to every `*Api` class:
   ```python
   self._api_client = client.ApiClient()

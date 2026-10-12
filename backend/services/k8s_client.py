@@ -232,8 +232,17 @@ class K8sClient:
             except Exception:
                 await config.load_kube_config()
 
-        self.batch_api = client.BatchV1Api()
-        self.core_api = client.CoreV1Api()
+        # Share ONE ApiClient (hence one Configuration / one api_key dict) between both
+        # handles. A bare BatchV1Api()/CoreV1Api() each builds its own ApiClient via
+        # Configuration.get_default_copy(), giving a single K8sClient two independent copies
+        # of the bearer-token header. The AKS/GKE rotating-token refresh hook is gated on the
+        # shared self._access_token but writes the new token into only the one config whose
+        # request triggered it, leaving the other config pinned to the expired token → the
+        # intermittent "Queue unavailable: (401) Unauthorized" on core_api (cluster-queues)
+        # while batch_api (job monitor) stays authenticated. One shared config fixes it.
+        self._api_client = client.ApiClient()
+        self.batch_api = client.BatchV1Api(self._api_client)
+        self.core_api = client.CoreV1Api(self._api_client)
         self._initialized = True
 
     async def create_job(self, job_manifest):
