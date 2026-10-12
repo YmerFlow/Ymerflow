@@ -408,11 +408,10 @@ async def _fetch_job_pod_logs(k8s_client, namespace) -> str:
 
 
 async def _apply_deployment(k8s_client, namespace, deployment, name) -> None:
-    apps_api = client.AppsV1Api()
     await _create_or_patch_namespaced(
-        create=lambda: apps_api.create_namespaced_deployment(
+        create=lambda: k8s_client.apps_api.create_namespaced_deployment(
             namespace, deployment, _request_timeout=API_REQUEST_TIMEOUT_SECONDS),
-        patch=lambda: apps_api.patch_namespaced_deployment(
+        patch=lambda: k8s_client.apps_api.patch_namespaced_deployment(
             name, namespace, deployment, _request_timeout=API_REQUEST_TIMEOUT_SECONDS),
     )
 

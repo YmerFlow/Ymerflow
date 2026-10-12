@@ -41,6 +41,12 @@ app.add_middleware(
 )
 
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    from backend.services.k8s_client import k8s_clients
+    await k8s_clients.close_all()
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and resume monitoring for active jobs"""

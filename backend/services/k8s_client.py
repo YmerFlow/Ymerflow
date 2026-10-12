@@ -3,6 +3,7 @@ import aiohttp
 import os
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -217,6 +218,10 @@ class K8sClient:
         self._initialized = False
         self.batch_api = None
         self.core_api = None
+        self.apps_api = None
+        self._api_client = None
+        self._refresh_task = None
+        self._token_expires_on = 0.0
 
     async def _ensure_initialized(self):
         """Lazily initialize the K8s client"""
@@ -243,7 +248,42 @@ class K8sClient:
         self._api_client = client.ApiClient()
         self.batch_api = client.BatchV1Api(self._api_client)
         self.core_api = client.CoreV1Api(self._api_client)
+        self.apps_api = client.AppsV1Api(self._api_client)   # used by app_deployment.py
         self._initialized = True
+
+    async def close(self):
+        """Cancel any background token-refresh task and close the shared ApiClient (and its
+        aiohttp session). Idempotent — safe to call on a never-initialized client."""
+        if not self._initialized:
+            return
+        if self._refresh_task is not None:
+            self._refresh_task.cancel()
+            try:
+                await self._refresh_task
+            except asyncio.CancelledError:
+                pass
+        await self._api_client.close()
+
+    async def _run_token_refresh(self, mint, margin_seconds):
+        """Keep the shared ApiClient's bearer token fresh WITHOUT ever blocking the event loop.
+
+        `mint` is a *synchronous* callable returning (token_str, expires_on_unix); it is run in a
+        worker thread (asyncio.to_thread) so the blocking Google/Azure-AD token call never stalls the
+        loop — unlike the old synchronous refresh_api_key_hook, which did the mint inline on the loop
+        once per hour. Refreshes `margin_seconds` before expiry and swaps the header in place on the
+        one shared Configuration (which batch/core/apps all share)."""
+        while True:
+            delay = max(0.0, self._token_expires_on - time.time() - margin_seconds)
+            await asyncio.sleep(delay)
+            try:
+                token, self._token_expires_on = await asyncio.to_thread(mint)
+            except Exception:
+                # A transient mint failure must not kill the task (that would let the token go stale
+                # and every later request 401). Log and retry on a short backoff instead of giving up.
+                logger.exception("Background token refresh failed; retrying shortly")
+                self._token_expires_on = time.time() + margin_seconds  # retry in ~margin_seconds
+                continue
+            self._api_client.configuration.api_key['authorization'] = f"Bearer {token}"
 
     async def create_job(self, job_manifest):
         await self._ensure_initialized()
@@ -636,6 +676,10 @@ class K8sClientRegistry:
             provider = get_cluster_provider(cluster.cluster_type)
             self._clients[cluster.id] = provider.connect(cluster.provider_config, cluster.namespace)
         return self._clients[cluster.id]
+
+    async def close_all(self):
+        for c in self._clients.values():
+            await c.close()
 
 
 k8s_clients = K8sClientRegistry()
