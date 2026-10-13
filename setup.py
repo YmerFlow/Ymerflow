@@ -37,7 +37,7 @@ setup(
         'click',
         'python-dotenv',
         'asyncpg',
-        'psycopg2-binary',
+        'psycopg[binary]',  # psycopg3: default sync Postgres driver in SQLAlchemy 2.1+ for bare postgresql:// URLs
         'aiosmtplib',
         'fastapi-mcp',
         'mcp<2.0.0',  # fastapi-mcp 0.4.0 breaks on mcp 2.0.0 (Server.__init__ became kw-only); no fastapi-mcp release supports mcp 2.x yet
