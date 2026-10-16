@@ -10,16 +10,25 @@ import TabbedPage from './TabbedPage';
 
 const MCP_URL = `${ABSOLUTE_API}/mcp`;
 
+// Reduce an API-key label to a valid `claude mcp add` server name (letters,
+// digits, - and _). Falls back to "ymerflow" when a key has no usable label.
+// Using the label avoids two connected accounts both registering as "ymerflow"
+// and colliding in ~/.claude.json.
+function serverNameFromLabel(label) {
+  const cleaned = (label || '').trim().replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return cleaned || 'ymerflow';
+}
+
 function McpConfigCard({ apiKeys }) {
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedCmd, setCopiedCmd] = useState(false);
   const [copiedMcpJson, setCopiedMcpJson] = useState(false);
 
-  const cliCommand = `claude mcp add --scope user --transport http ymerflow ${MCP_URL} --header "Authorization: Bearer <your-api-key>"`;
+  const cliCommand = `claude mcp add --scope user --transport http <label> ${MCP_URL} --header "Authorization: Bearer <your-api-key>"`;
 
   const mcpJson = JSON.stringify({
     mcpServers: {
-      ymerflow: {
+      '<label>': {
         type: 'http',
         url: MCP_URL,
         headers: { Authorization: 'Bearer <your-api-key>' },
@@ -91,7 +100,7 @@ function McpConfigCard({ apiKeys }) {
         Project config{' '}
         <span className="text-muted fw-normal">
           — save as <code>.mcp.json</code> in your project root, then add{' '}
-          <code>"enabledMcpjsonServers": ["ymerflow"]</code> to <code>.claude/settings.json</code>
+          <code>"enabledMcpjsonServers": ["&lt;label&gt;"]</code> to <code>.claude/settings.json</code>
         </span>
       </p>
       <div className="d-flex align-items-start gap-2">
@@ -106,7 +115,9 @@ function McpConfigCard({ apiKeys }) {
         </Button>
       </div>
       <p className="text-muted small mt-2 mb-0">
-        Replace <code>&lt;your-api-key&gt;</code> with a key from the table above.
+        Replace <code>&lt;your-api-key&gt;</code> with a key from the table above, and{' '}
+        <code>&lt;label&gt;</code> with a name for the server (e.g. the key's label) — pick a
+        distinct name per key so connecting a second account doesn't collide with the first.
       </p>
     </div>
   );
@@ -139,6 +150,7 @@ export default function AccountPage() {
 
   // One-time reveal modal
   const [revealedKey, setRevealedKey] = useState(null);
+  const [revealedKeyLabel, setRevealedKeyLabel] = useState('');
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedFullConfig, setCopiedFullConfig] = useState(false);
 
@@ -176,14 +188,16 @@ export default function AccountPage() {
   const handleCreateKey = async (e) => {
     e.preventDefault();
     setKeyCreateError('');
-    if (!newKeyLabel.trim()) { setKeyCreateError('Label is required'); return; }
+    const label = newKeyLabel.trim();
+    if (!label) { setKeyCreateError('Label is required'); return; }
     try {
       const result = await createKeyMutation.mutateAsync({
-        label: newKeyLabel.trim(),
+        label,
         projectIds: newKeyProjects,
         expiresAt: newKeyExpiry || null,
       });
       setRevealedKey(result.key);
+      setRevealedKeyLabel(label);
       setCopiedKey(false);
       setCopiedFullConfig(false);
       setNewKeyLabel('');
@@ -208,7 +222,7 @@ export default function AccountPage() {
   };
 
   const fullConfig = revealedKey
-    ? `claude mcp add --scope user --transport http ymerflow ${MCP_URL} --header "Authorization: Bearer ${revealedKey}"`
+    ? `claude mcp add --scope user --transport http ${serverNameFromLabel(revealedKeyLabel)} ${MCP_URL} --header "Authorization: Bearer ${revealedKey}"`
     : '';
 
   const handleCopyFullConfig = () => {
