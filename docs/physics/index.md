@@ -28,6 +28,7 @@ This directory documents the scientific methods and modelling approaches impleme
 | Document | Description |
 |---|---|
 | [Common Infrastructure](infrastructure.md) | Sensitivity matrix caching, data formats (msgpack, webxtile), entry-point registration, swaggerspect schema generation |
+| [Pipelines](../architecture/pipelines.md) | The pattern every chain above follows: pipeline document, step contract, entry-point registration, and the log / step report / statistics output channels |
 
 ## Key References
 
