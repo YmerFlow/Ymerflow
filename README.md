@@ -94,6 +94,7 @@ Frontend (React) → Backend (FastAPI) → Kubernetes Cluster
 - **[Technology Stack](docs/architecture/technology-stack.md)** - Complete list of technologies, libraries, and tools
 - **[Environment](docs/architecture/environment.md)** - Docker images, entrypoints, runner, schema extraction
 - **[Process Types](docs/architecture/processes.md)** - Creating custom process types, schemas, registration
+- **[Pipelines](docs/architecture/pipelines.md)** - How step chains are built, registered, run and reported; template for a new step library
 - **[Storage](docs/architecture/storage.md)** - Per-project buckets, security model, fsspec usage
 
 ### Frontend

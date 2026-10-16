@@ -112,7 +112,7 @@ distance[i] = Σ_{j=1}^{i} √((easting_j - easting_{j-1})² + (northing_j - nor
 
 ## Pipeline Orchestration
 
-The `MagPipeline` class (`pipeline.py`) loads filter functions from `mag_pipeline.filters` entry points and runs them as a sequence. Each filter receives `(pipeline, data)` and modifies `data.data` (the DataFrame) in place.
+The `MagPipeline` class (`pipeline.py`) loads filter functions from `mag_pipeline.filters` entry points and runs them as a sequence. Each filter receives `(pipeline, data)` and modifies `data.data` (the DataFrame) in place. The general pattern — pipeline document, entry-point registry, step contract, and the log / step report / statistics output channels — is in [Pipelines](../architecture/pipelines.md).
 
 ## Key Source Files
 
