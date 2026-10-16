@@ -1,0 +1,84 @@
+name: Bug report
+description: Something did not work the way the documentation says it should.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This repository is public.** Everything you write here, including attachments, is
+        visible to anyone on the internet and stays in the history even if edited later.
+        Do not include client or survey names, coordinates, data files, project or dataset
+        names, email addresses, or anything under a confidentiality agreement. If the
+        problem cannot be described without them, email hello@ymerflow.earth instead, or
+        reproduce it on the [public demo data](https://github.com/YmerFlow/ymerflow-demo-data)
+        first.
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you post
+      options:
+        - label: I have removed names, coordinates, file names and anything else I am not free to publish. Process ids and version numbers are fine.
+          required: true
+        - label: I searched the open issues and did not find this problem already reported.
+          required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did it go wrong?
+      options:
+        - A process failed or gave a wrong result (import, process, invert, forward, grid)
+        - The web interface (a widget, plot, form, layout, login)
+        - Billing, resources or the job queue
+        - Documentation or a tutorial step does not match what I see
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: process_type
+    attributes:
+      label: Process type and version
+      description: "For a process problem: the process type and the environment (image) name shown at the top of its log, e.g. `invert_tem`, `public-launch-2026-09-04-1`."
+      placeholder: "invert_tem, public-launch-2026-09-04-1"
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect, and what happened instead?
+      description: One or two sentences each. If a job failed, say at which step or iteration.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we reproduce it?
+      description: The steps, with the parameter values that matter. If it reproduces on the public demo data, say so - that is the fastest route to a fix.
+      placeholder: |
+        1. Import the demo line with the system GEX
+        2. process_tem with steps ...
+        3. invert_tem with ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt
+      description: "The last 30 or so lines of the process log, from the step that failed. Leave out the header lines that show storage paths and bucket names, and anything with a file name you cannot share."
+      render: text
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS (interface problems only)
+      placeholder: "Firefox 130 on macOS 14"
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: A screenshot with sensitive parts blanked, a publication link if the project is public, a workaround you found.
