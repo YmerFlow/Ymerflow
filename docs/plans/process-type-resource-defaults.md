@@ -1,5 +1,7 @@
 # Plan: resource defaults per process type
 
+Ticket: https://github.com/YmerFlow/Ymerflow/issues/116
+
 ## Goal
 
 A new process opens with CPU, memory, disk and deadline suited to its type, instead of the same 1 CPU, 2 GB, 10 GB disk and 60 minutes for everything. A user who picks `create_environment` gets resources a build actually finishes with; a user who picks an import gets small ones. Disk becomes settable in the web interface.
