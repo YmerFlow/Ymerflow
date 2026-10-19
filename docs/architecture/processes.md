@@ -139,6 +139,14 @@ Processes read input datasets and write output datasets using fsspec.
 - Path construction patterns
 - Complete code examples
 
+> **AEM amplitude convention.** An importer must land AEM data in the SimPEG
+> `static_instrument` convention — raw `dbdt_chNgt` per unit transmitter moment,
+> with `scalefactor` and `GateFactor` kept as metadata and applied at read, never
+> baked into the arrays. There is no mutable `normalization` field. See
+> [Pipelines - the data object](pipelines.md) and the canonical spec in
+> `deps/simpeg/.../static_instrument/data_format.md` before writing or changing
+> an importer.
+
 ## Registering a New Process Type
 
 ### 1. Create Your Process Class
