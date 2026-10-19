@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useProcesses, useEnvironments, useProcessOutputDatasets, useProjects, useCreateProcess, useWorkspace } from "./datamodel/useQueries";
 import { loadDataset, DatasetCollectionAdapter } from './datamodel/dataset';
 import XYZ from './datamodel/libaarhusxyz';
+import { appendDiff } from './datamodel/inUseDiffs';
 import { useWebSocket } from './hooks/useWebSocket';
 import { WS_API, uploadFile } from './datamodel/api';
 import { recordNavView } from './datamodel/navTracking';
@@ -406,7 +407,8 @@ export function ProcessProvider({ children }) {
       const latestVer = proc.versions[proc.versions.length - 1];
       try {
         await createProcess.mutateAsync({
-          proc: { id: proc.id, type: latestVer.type, environment: { id: latestVer.environment?.id }, name: proc.name, params: { ...latestVer.parameters, diff: diffUrl } },
+          // Earlier rounds' diffs are kept: the new version replays all of them in order.
+          proc: { id: proc.id, type: latestVer.type, environment: { id: latestVer.environment?.id }, name: proc.name, params: { ...latestVer.parameters, diff: appendDiff(latestVer.parameters?.diff, diffUrl) } },
           projectId: currentProject,
         });
       } catch (e) {
