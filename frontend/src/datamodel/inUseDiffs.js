@@ -9,3 +9,10 @@ export function appendDiff(previous, url) {
   const earlier = Array.isArray(previous) ? previous : previous ? [previous] : [];
   return [...earlier, url];
 }
+
+// Whether a process type replays saved edits: its form declares `diff`. Edits saved on
+// the output of one that does not would create a version that re-runs without them.
+// `processTypes` is an environment's process types, keyed by type name.
+export function acceptsEdits(processTypes, typeName) {
+  return Boolean(processTypes?.[typeName]?.schema?.properties?.diff);
+}

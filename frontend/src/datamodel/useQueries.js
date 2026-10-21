@@ -205,6 +205,16 @@ export function useEnvironmentProcessTypes(environmentId, options = {}) {
   });
 }
 
+// The same cache entry as useEnvironmentProcessTypes, for code that cannot call a hook
+// (an event handler or an async callback).
+export function fetchEnvironmentProcessTypes(queryClient, environmentId) {
+  return queryClient.fetchQuery({
+    queryKey: queryKeys.environmentProcessTypes(environmentId),
+    queryFn: () => getEnvironmentProcessTypes(environmentId),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
 // Hook to fetch all processes
 export function useProcesses(projectId = null) {
   return useQuery({
