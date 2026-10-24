@@ -48,3 +48,8 @@ The frontend accumulates. `diff` becomes a list of diff URLs, and each save appe
 - `frontend/src/ProcessContext.jsx`
 - `frontend/src/datamodel/inUseDiffs.js` (new)
 - `frontend/src/datamodel/inUseDiffs.test.js` (new)
+
+## Afterwards (2026-10-19)
+
+- Merged in order: aem-processes#2 (both readers accept a string or a list; `compound_filter` raises instead of continuing, and keeps the dataset's own naming), then this frontend change (#117). aem-processes#4 then renamed `compound_filter` to `apply_manual_edits` ("Apply Manual Edits").
+- `process_tem` replaying `diff` was dropped (Ben: nothing old exists yet). Instead, `saveAllDiffs` now refuses to save edits on the output of a process type whose form declares no `diff`, with a message naming the type. It also keeps unsaved edits in the editor whenever a save is refused or fails, rather than clearing them all. `acceptsEdits` in `frontend/src/datamodel/inUseDiffs.js` makes the check, using the environment's process types from the same cached query as the process editor.

@@ -8,7 +8,6 @@ export default function InUseEditor() {
     setInUseAction,
     undoLastEdit,
     saveAllDiffs,
-    datasets,
   } = useContext(ProcessContext);
 
   // Global keyboard shortcuts: E/D/C for action mode, Ctrl+Z for undo.
@@ -69,7 +68,7 @@ export default function InUseEditor() {
   }
 
   function handleSave() {
-    saveAllDiffs(datasets);
+    saveAllDiffs();
   }
 
   const btnBase = { padding: '4px 12px', border: '1px solid #aaa', borderRadius: 4, cursor: 'pointer', fontSize: 13 };

@@ -233,11 +233,11 @@ The real process type implementations live in three separately-installed package
 
 - **`ymerflow_processes`** (`docker/base-runner/ymerflow_processes/`) - general-purpose process
   types: `create_environment` (builds and pushes a custom environment image; see
-  [Environment](environment.md#create_environment-process)), `compound_filter`,
-  `build_frontend_plugin`
+  [Environment](environment.md#create_environment-process)), `build_frontend_plugin`
 - **`aem_processes`** (`docker/base-runner/aem_processes/`) - the AEM (airborne electromagnetic)
-  process family: `import_skytem`, `import_ymerflow_aem`, `process_tem`, `invert_tem`,
-  `forward_tem`, `grid_tem`
+  process family: `import_skytem`, `import_ymerflow_aem`, `import_geosoft_gdb`, `process_tem`,
+  `invert_tem`, `forward_tem`, `grid_tem`, `apply_manual_edits` (replays in-use edits saved
+  from a plot), `yf_process_tem`, `yf_qc_tem`
 - **`mag_processes`** (`docker/base-runner/mag_processes/`) - the magnetics process family:
   `import_mag`, `process_mag`, `equiv_source_mag`, `inversion_3d_mag`
 

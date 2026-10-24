@@ -84,7 +84,6 @@ Each package contains:
 ymerflow_processes/
 ├── __init__.py
 ├── fake_processes.py          # create_environment
-├── compound_filter.py
 ├── build_frontend_plugin.py
 └── setup.py                   # Entrypoint registration
 ```
