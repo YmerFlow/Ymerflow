@@ -10,14 +10,16 @@ const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === '
 //   2 = auto-disabled  (grey, like legacy bad_color)
 //   3 = manually-disabled  (red tint)
 // Segment state = max(s0, s1) so "worst" endpoint determines segment colour.
-function _soundingState(soundingIdx, gateKey, inuseArr, channelDiff) {
+// Pending edits are keyed by global sounding index (the lasso handler maps through
+// flightlines.apply_idx), while inuseArr is indexed by the part-local index.
+function _soundingState(localIdx, globalIdx, gateKey, inuseArr, channelDiff) {
   if (channelDiff) {
     const gateDiff = channelDiff.get(gateKey);
-    if (gateDiff && gateDiff.has(soundingIdx)) {
-      return gateDiff.get(soundingIdx) === 1 ? 1.0 : 3.0;
+    if (gateDiff && gateDiff.has(globalIdx)) {
+      return gateDiff.get(globalIdx) === 1 ? 1.0 : 3.0;
     }
   }
-  const origInUse = inuseArr ? Number(inuseArr[soundingIdx]) : 1;
+  const origInUse = inuseArr ? Number(inuseArr[localIdx]) : 1;
   return origInUse === 0 ? 2.0 : 0.0;
 }
 
@@ -124,6 +126,11 @@ registerLayerType('ChannelPlot', new LayerType({
       ? (rawData?._inMemoryDiffs?.[datasetName]?.[channel] ?? null)
       : null;
 
+    // Part-local → global sounding index, as the lasso handler maps it when storing
+    // edits (set by libaarhusxyz split_by_line(); absent where local = global).
+    const applyIdx    = flightlines.apply_idx;
+    const globalIdx   = (i) => (applyIdx ? applyIdx[i] : i);
+
     const xdist       = toFloat32Array(xdistRaw);
     const N           = xdist.length;
     const nSegs       = N - 1;
@@ -146,8 +153,8 @@ registerLayerType('ChannelPlot', new LayerType({
         const abs1 = Math.abs(Number(yArr[i + 1]));
         const isInvalid = !isFinite(abs0) || abs0 <= 0 || !isFinite(abs1) || abs1 <= 0;
 
-        const s0 = _soundingState(i,     gateKey, inuseArr, channelDiff);
-        const s1 = _soundingState(i + 1, gateKey, inuseArr, channelDiff);
+        const s0 = _soundingState(i,     globalIdx(i),     gateKey, inuseArr, channelDiff);
+        const s1 = _soundingState(i + 1, globalIdx(i + 1), gateKey, inuseArr, channelDiff);
         const segState = Math.max(s0, s1);
 
         xs[i * 2]             = xdist[i];
