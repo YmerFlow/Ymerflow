@@ -649,3 +649,33 @@ export async function deleteWorkspace(workspaceId) {
   const response = await apiClient.delete(`/workspace/${workspaceId}`);
   return response.data;
 }
+
+// Process default functions — reusable, named snapshots of the process editor. Mirrors the
+// workspace block above (see docs/plans/process-editor-defaults.md).
+export async function getProcessDefaults(projectId) {
+  const response = await apiClient.get(`/projects/${projectId}/process-defaults`);
+  return response.data;
+}
+
+export async function getPublicProcessDefaults() {
+  const response = await apiClient.get('/process-defaults/public');
+  return response.data;
+}
+
+export async function getProcessDefault(defaultId, projectId) {
+  const response = await apiClient.get(`/projects/${projectId}/process-default/${defaultId}`);
+  return response.data;
+}
+
+export async function saveProcessDefault(projectId, body) {
+  const response = await apiClient.post(`/projects/${projectId}/process-default`, body);
+  return response.data;
+}
+
+export async function saveProcessDefaultVersion(projectId, defaultId, versionBody) {
+  const response = await apiClient.post(
+    `/projects/${projectId}/process-default/${defaultId}/versions`,
+    { version: versionBody }
+  );
+  return response.data;
+}

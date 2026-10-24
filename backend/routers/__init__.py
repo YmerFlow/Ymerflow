@@ -5,6 +5,7 @@ from backend.routers.environments import router as environments_router
 from backend.routers.processes import router as processes_router
 from backend.routers.datasets import router as datasets_router
 from backend.routers.workspaces import router as workspaces_router
+from backend.routers.process_defaults import router as process_defaults_router
 from backend.routers.uploads import router as uploads_router
 from backend.routers.utilities import router as utilities_router
 from backend.routers.systems import router as systems_router
@@ -23,6 +24,7 @@ __all__ = [
     "processes_router",
     "datasets_router",
     "workspaces_router",
+    "process_defaults_router",
     "uploads_router",
     "utilities_router",
     "systems_router",

@@ -51,6 +51,11 @@ import {
   updateWorkspace,
   forkWorkspace,
   deleteWorkspace,
+  getProcessDefaults,
+  getPublicProcessDefaults,
+  getProcessDefault,
+  saveProcessDefault,
+  saveProcessDefaultVersion,
   listSystems,
   createSystem,
 } from './api';
@@ -79,6 +84,9 @@ export const queryKeys = {
   workspaces: (projectId) => ['workspaces', projectId],
   publicWorkspaces: ['publicWorkspaces'],
   workspace: (id, projectId) => ['workspace', id, projectId ?? null],
+  processDefaults: (projectId) => ['processDefaults', projectId],
+  publicProcessDefaults: ['publicProcessDefaults'],
+  processDefault: (id, projectId) => ['processDefault', id, projectId ?? null],
   systems: (projectId) => ['systems', projectId],
 };
 
@@ -584,6 +592,62 @@ export function useDeleteWorkspace(projectId) {
     mutationFn: (workspaceId) => deleteWorkspace(workspaceId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaces(projectId) });
+    },
+  });
+}
+
+// ── Process default queries ────────────────────────────────────────────────────
+
+// Each default embeds its full version list, so selecting a default/version in the UI never
+// needs a follow-up fetch (mirrors the workspace hooks above).
+export function useProcessDefaults(projectId) {
+  return useQuery({
+    queryKey: queryKeys.processDefaults(projectId),
+    queryFn: () => getProcessDefaults(projectId),
+    enabled: !!projectId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function usePublicProcessDefaults() {
+  return useQuery({
+    queryKey: queryKeys.publicProcessDefaults,
+    queryFn: getPublicProcessDefaults,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useProcessDefault(defaultId, projectId = null, options = {}) {
+  return useQuery({
+    queryKey: queryKeys.processDefault(defaultId, projectId),
+    queryFn: () => getProcessDefault(defaultId, projectId),
+    enabled: !!defaultId && !!projectId,
+    staleTime: 30 * 1000,
+    ...options,
+  });
+}
+
+export function useSaveProcessDefault(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => saveProcessDefault(projectId, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.processDefaults(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.publicProcessDefaults });
+    },
+  });
+}
+
+export function useSaveProcessDefaultVersion(projectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ defaultId, version }) => saveProcessDefaultVersion(projectId, defaultId, version),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.processDefaults(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.publicProcessDefaults });
+      // Also refresh any single-default reads (the "currently-loaded default" lookup) so the
+      // latest version is reflected — mirrors how useWorkspace reflects a saved version.
+      queryClient.invalidateQueries({ queryKey: ['processDefault'] });
     },
   });
 }

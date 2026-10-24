@@ -3,12 +3,13 @@ import React, { useEffect, useState, useContext, useMemo } from "react";
 import { Modal, Button, Card } from 'react-bootstrap';
 import { CustomForm } from '../jsoneditor';
 import { ProcessContext } from '../ProcessContext';
-import { useEnvironmentProcessTypes, useCreateProcess, useAvailableClusters, useCancelProcess, useAddVersionTag } from "../datamodel/useQueries";
+import { useEnvironmentProcessTypes, useCreateProcess, useAvailableClusters, useCancelProcess, useAddVersionTag, useProjectTags } from "../datamodel/useQueries";
 import { getProcessVersion, getLatestVersion, getLatestProcessType } from '../datamodel/api';
 import { LayoutContext } from '../flexout/LayoutContext';
 import { AuthContext } from '../AuthContext';
 import TagSelector from './FlowView/TagSelector';
 import ProcessTypeSelect from './ProcessTypeSelect';
+import ProcessDefaultSelect from './ProcessDefaultSelect';
 import EnvironmentSelect from './EnvironmentSelect';
 import { hooks } from '../plugins/hooks';
 
@@ -82,6 +83,7 @@ export default function ProcessEditor() {
   // fallback and snapped back — making the sliders jump. Submit-time validation still enforces
   // the real per-cluster limits.
   const { data: clusters = [] } = useAvailableClusters(currentProject);
+  const { data: projectTags = [] } = useProjectTags(currentProject);
   const addVersionTagMutation = useAddVersionTag();
   const selectedCluster = clusters.find(c => c.id === clusterId) ?? clusters[0] ?? null;
   const maxCpu = selectedCluster?.max_cpu_cores ?? 8;
@@ -195,6 +197,61 @@ export default function ProcessEditor() {
     // environment, type, formData, tags, resources all carry over naturally
   };
 
+  // Build the process-default version payload from the current editor state (same fields as
+  // handleSubmit minus name/inputs/outputs; tags resolved to their names — Decision 8).
+  const buildVersionBody = () => ({
+    type: localType,
+    environment_id: localEnvironment,
+    parameters: cleanFormData(formData) || {},
+    resource_requests: {
+      cpu: `${Math.floor(cpuCores * 1000)}m`,
+      memory: `${memoryGb}Gi`,
+      "ephemeral-storage": "10Gi",
+    },
+    deadline_seconds: deadlineMinutes * 60,
+    cluster_id: clusterId || null,
+    tag_names: selectedTags.map(t => t.name),
+  });
+
+  // Apply a default's version to the editor (client-side, lenient on resources — Decision 7).
+  const handleApplyDefault = (def, v) => {
+    setLocalEnvironment(v.environment_id);   // hard pin
+    setLocalType(v.type);
+    setFormData(v.parameters || {});
+
+    // Tags by name: match each stored name against the current project's tags; skip unmatched.
+    const matched = (v.tag_names || [])
+      .map(name => projectTags.find(t => t.name === name))
+      .filter(Boolean);
+    setSelectedTags(matched);
+
+    // Resources (parsed the same way the "edit existing version" effect does).
+    let nextCpu = 1, nextMem = 2, nextDeadline = 60;
+    if (v.resource_requests) {
+      const cpuStr = v.resource_requests.cpu ?? "1000m";
+      nextCpu = cpuStr.endsWith('m') ? parseInt(cpuStr) / 1000 : parseFloat(cpuStr);
+      nextMem = parseFloat(v.resource_requests.memory ?? "2Gi");
+    }
+    if (v.deadline_seconds != null) nextDeadline = v.deadline_seconds / 60;
+
+    // Cluster: use the pinned one only if it's in the user's allowed set, else keep the editor
+    // default (current selection / first allowed). Clamp cpu/mem/deadline to that cluster's
+    // maxima so we never request more than the user may (Decision 7).
+    const pinned = clusters.find(c => c.id === v.k8s_cluster_id);
+    const target = pinned ?? clusters.find(c => c.id === clusterId) ?? clusters[0] ?? null;
+    if (pinned) setClusterId(pinned.id);
+    if (target) {
+      nextCpu = Math.min(nextCpu, target.max_cpu_cores);
+      nextMem = Math.min(nextMem, target.max_memory_gb);
+      if (target.max_runtime_seconds != null) {
+        nextDeadline = Math.min(nextDeadline, target.max_runtime_seconds / 60);
+      }
+    }
+    setCpuCores(nextCpu);
+    setMemoryGb(nextMem);
+    setDeadlineMinutes(nextDeadline);
+  };
+
   const handleSubmit = ({ formData: submittedData }) => {
     const cleanedData = cleanFormData(submittedData);
     const resourceRequests = {
@@ -275,6 +332,21 @@ export default function ProcessEditor() {
               <input
                 type="text" className="form-control" value={processName} required
                 placeholder="Enter process name" onChange={e => setProcessName(e.target.value)}
+              />
+            </div>
+          )}
+
+          {currentProject && (
+            <div className="mb-3">
+              <label className="form-label">Default: </label>
+              <ProcessDefaultSelect
+                types={types}
+                currentProject={currentProject}
+                isAdmin={!!user?.is_admin}
+                buildVersionBody={buildVersionBody}
+                activeSchema={rawSchema}
+                formData={formData}
+                onApply={handleApplyDefault}
               />
             </div>
           )}
