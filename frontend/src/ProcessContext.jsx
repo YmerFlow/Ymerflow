@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useProcesses, useEnvironments, useProcessOutputDatasets, useProjects, useCreateProcess, useWorkspace, fetchEnvironmentProcessTypes } from "./datamodel/useQueries";
 import { loadDataset, DatasetCollectionAdapter } from './datamodel/dataset';
 import XYZ from './datamodel/libaarhusxyz';
-import { acceptsEdits, appendDiff } from './datamodel/inUseDiffs';
+import { acceptsEdits, appendDiff, resolveEditTarget } from './datamodel/inUseDiffs';
 import { useWebSocket } from './hooks/useWebSocket';
 import { WS_API, uploadFile } from './datamodel/api';
 import { recordNavView } from './datamodel/navTracking';
@@ -346,7 +346,7 @@ export function ProcessProvider({ children }) {
     dispatchInUseDiff({ type: 'CLEAR', datasetName });
   }, []);
 
-  const saveAllDiffs = useCallback(async (datasetsArg) => {
+  const saveAllDiffs = useCallback(async () => {
     const diffsToSave = Object.entries(inUseDiffState.diffs).filter(
       ([, d]) => Object.values(d).some(m => m.size > 0)
     );
@@ -354,27 +354,28 @@ export function ProcessProvider({ children }) {
 
     // Only saved datasets are cleared; a refused or failed save keeps its edits in the editor.
     const saved = [];
-    const notSaved = (datasetName, reason) =>
-      addMessage({ level: 'danger', message: `Edits on "${datasetName}" were not saved: ${reason}. They are still in the editor.` });
+    const notSaved = (datasetPath, reason) =>
+      addMessage({ level: 'danger', message: `Edits on "${datasetPath}" were not saved: ${reason}. They are still in the editor.` });
 
-    for (const [datasetName, datasetDiff] of diffsToSave) {
-      // The process that made the dataset gets a new version that replays the edits.
-      const ds = (datasetsArg ?? []).find(d => d.dataset_name === datasetName);
-      const proc = ds && processes.find(p => p.id === ds.process_id);
-      if (!proc) { notSaved(datasetName, 'the process that made it was not found'); continue; }
-      const latestVer = proc.versions[proc.versions.length - 1];
+    // Edits are keyed by the plot layer's dataset path ("current.<dataset>" or
+    // "<process>.<version>.<dataset>"), not by dataset name.
+    for (const [datasetPath, datasetDiff] of diffsToSave) {
+      // The process version whose output was edited gets a new version that replays the edits.
+      const target = resolveEditTarget(datasetPath, activeProcess, processes);
+      if (!target) { notSaved(datasetPath, 'the process version that made it was not found'); continue; }
+      const { process: proc, versionObj: editedVer, datasetName } = target;
 
       // Refuse before uploading: a process type whose form has no `diff` would re-run
       // without the edits, and the new version would look edited while they are gone.
       let processTypes;
       try {
-        processTypes = await fetchEnvironmentProcessTypes(queryClient, latestVer.environment?.id);
+        processTypes = await fetchEnvironmentProcessTypes(queryClient, editedVer.environment?.id);
       } catch (e) {
-        notSaved(datasetName, `could not check whether ${latestVer.type} takes edits (${e.message})`);
+        notSaved(datasetPath, `could not check whether ${editedVer.type} takes edits (${e.message})`);
         continue;
       }
-      if (!acceptsEdits(processTypes, latestVer.type)) {
-        notSaved(datasetName, `${latestVer.type} does not take in-use edits, so a re-run would drop them`);
+      if (!acceptsEdits(processTypes, editedVer.type)) {
+        notSaved(datasetPath, `${editedVer.type} does not take in-use edits, so a re-run would drop them`);
         continue;
       }
 
@@ -418,25 +419,25 @@ export function ProcessProvider({ children }) {
         const uploadResult = await uploadFile(diffFile, null, currentProject);
         diffUrl = uploadResult.url;
       } catch (e) {
-        notSaved(datasetName, `the upload failed (${e.message})`);
+        notSaved(datasetPath, `the upload failed (${e.message})`);
         continue;
       }
 
       try {
         await createProcess.mutateAsync({
           // Earlier rounds' diffs are kept: the new version replays all of them in order.
-          proc: { id: proc.id, type: latestVer.type, environment: { id: latestVer.environment?.id }, name: proc.name, params: { ...latestVer.parameters, diff: appendDiff(latestVer.parameters?.diff, diffUrl) } },
+          proc: { id: proc.id, type: editedVer.type, environment: { id: editedVer.environment?.id }, name: proc.name, params: { ...editedVer.parameters, diff: appendDiff(editedVer.parameters?.diff, diffUrl) } },
           projectId: currentProject,
         });
-        saved.push(datasetName);
+        saved.push(datasetPath);
       } catch (e) {
-        notSaved(datasetName, `the new version of ${proc.name} could not be created (${e.message})`);
+        notSaved(datasetPath, `the new version of ${proc.name} could not be created (${e.message})`);
       }
     }
 
-    for (const datasetName of saved) dispatchInUseDiff({ type: 'CLEAR', datasetName });
+    for (const datasetPath of saved) dispatchInUseDiff({ type: 'CLEAR', datasetName: datasetPath });
     if (saved.length > 0) await invalidateHelpers.invalidateProject(currentProject);
-  }, [inUseDiffState.diffs, processes, currentProject, createProcess, invalidateHelpers, queryClient, addMessage]);
+  }, [inUseDiffState.diffs, processes, activeProcess, currentProject, createProcess, invalidateHelpers, queryClient, addMessage]);
 
   // Stable WebSocket callbacks wrapped in useCallback to prevent reconnection loops
   const handleWebSocketMessage = useCallback(async (update) => {
