@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useMemo } from 'react';
 import { ProcessContext } from '../ProcessContext';
+import { MessageContext } from '../MessageContext';
 
 export default function InUseEditor() {
   const {
@@ -9,6 +10,7 @@ export default function InUseEditor() {
     undoLastEdit,
     saveAllDiffs,
   } = useContext(ProcessContext);
+  const { addMessage } = useContext(MessageContext);
 
   // Global keyboard shortcuts: E/D/C for action mode, Ctrl+Z for undo.
   useEffect(() => {
@@ -67,8 +69,14 @@ export default function InUseEditor() {
     if (names.length > 0) undoLastEdit(names[names.length - 1]);
   }
 
-  function handleSave() {
-    saveAllDiffs();
+  // Anything saveAllDiffs does not handle itself must still reach the user: a failed
+  // Save keeps the edits in the editor, and they exist nowhere else.
+  async function handleSave() {
+    try {
+      await saveAllDiffs();
+    } catch (e) {
+      addMessage({ level: 'danger', message: `Save failed: ${e.message}. The edits are still in the editor.` });
+    }
   }
 
   const btnBase = { padding: '4px 12px', border: '1px solid #aaa', borderRadius: 4, cursor: 'pointer', fontSize: 13 };
