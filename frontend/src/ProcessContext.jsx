@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useProcesses, useEnvironments, useProcessOutputDatasets, useProjects, useCreateProcess, useWorkspace, fetchEnvironmentProcessTypes } from "./datamodel/useQueries";
 import { loadDataset, DatasetCollectionAdapter } from './datamodel/dataset';
 import XYZ from './datamodel/libaarhusxyz';
-import { acceptsEdits, appendDiff, resolveEditTarget } from './datamodel/inUseDiffs';
+import { acceptsEdits, appendDiff, buildDiffColumns, resolveEditTarget } from './datamodel/inUseDiffs';
 import { useWebSocket } from './hooks/useWebSocket';
 import { WS_API, uploadFile } from './datamodel/api';
 import { recordNavView } from './datamodel/navTracking';
@@ -379,34 +379,12 @@ export function ProcessProvider({ children }) {
         continue;
       }
 
-      // Collect all unique global sounding indices across all channels/gates.
-      const allSoundings = new Set();
-      for (const channelMap of Object.values(datasetDiff)) {
-        for (const soundingMap of channelMap.values()) {
-          for (const si of soundingMap.keys()) allSoundings.add(si);
-        }
-      }
-      const sortedSoundings = [...allSoundings].sort((a, b) => a - b);
-      const soundingToRow = new Map(sortedSoundings.map((si, i) => [si, i]));
-      const N = sortedSoundings.length;
-
-      // Build layer_data: one Map<gateKey, Float32Array> per channel, NaN = no override.
-      const layerData = {};
-      for (const [channel, channelMap] of Object.entries(datasetDiff)) {
-        const gateMap = new Map();
-        for (const [gateKey, soundingMap] of channelMap.entries()) {
-          const col = new Float32Array(N).fill(NaN);
-          for (const [si, val] of soundingMap.entries()) {
-            col[soundingToRow.get(si)] = val;
-          }
-          gateMap.set(gateKey, col);
-        }
-        layerData[`InUse_${channel}`] = gateMap;
-      }
+      // apply_idx (global sounding indices) and one InUse column per gate, NaN = no override.
+      const { applyIdx, layerData } = buildDiffColumns(datasetDiff);
 
       // Serialize as libaarhusxyz msgpack diff (apply_idx = global sounding indices).
       const diffXyz = XYZ.fromData({
-        flightlines: { apply_idx: Float32Array.from(sortedSoundings) },
+        flightlines: { apply_idx: Float32Array.from(applyIdx) },
         layer_data: layerData,
         model_info: { diff_dummy: NaN },
       });

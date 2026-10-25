@@ -1,5 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { acceptsEdits, appendDiff, resolveEditTarget } from './inUseDiffs';
+import { acceptsEdits, appendDiff, buildDiffColumns, resolveEditTarget } from './inUseDiffs';
+
+describe('buildDiffColumns', () => {
+  it('serializes edits keyed by BigInt sounding indices (int64 apply_idx)', () => {
+    // As the lasso stored them before keys were normalized: BigInts from a BigInt64Array.
+    const diff = { Ch01: new Map([[0, new Map([[18340n, 0], [18333n, 0]])], [1, new Map([[18333n, 1]])]]) };
+    const { applyIdx, layerData } = buildDiffColumns(diff);
+    expect(applyIdx).toEqual([18333, 18340]);
+    expect(Float32Array.from(applyIdx)).toEqual(new Float32Array([18333, 18340]));
+    expect(Array.from(layerData.InUse_Ch01.get(0))).toEqual([0, 0]);
+    expect(layerData.InUse_Ch01.get(1)[0]).toBe(1);
+    expect(Number.isNaN(layerData.InUse_Ch01.get(1)[1])).toBe(true);
+  });
+
+  it('treats the same sounding keyed as a BigInt and as a number as one row', () => {
+    const diff = { Ch01: new Map([[0, new Map([[5n, 0]])], [1, new Map([[5, 1]])]]) };
+    const { applyIdx, layerData } = buildDiffColumns(diff);
+    expect(applyIdx).toEqual([5]);
+    expect(layerData.InUse_Ch01.get(0)[0]).toBe(0);
+    expect(layerData.InUse_Ch01.get(1)[0]).toBe(1);
+  });
+});
 
 describe('resolveEditTarget', () => {
   const v1 = { version: 1, outputs: { processed_data: 'u1' } };

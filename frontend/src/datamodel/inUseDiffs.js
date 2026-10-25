@@ -35,3 +35,31 @@ export function appendDiff(previous, url) {
 export function acceptsEdits(processTypes, typeName) {
   return Boolean(processTypes?.[typeName]?.schema?.properties?.diff);
 }
+
+// The columns of one saved diff: apply_idx, the sorted global sounding indices that carry
+// an edit, and per channel one InUse column per gate holding the edit (1 or 0) or NaN.
+// `datasetDiff` is { [channel]: Map<gateKey, Map<soundingIndex, 0|1>> }. Sounding indices
+// are taken as Numbers: apply_idx is int64 on disk and decodes to BigInt, which cannot be
+// sorted with (a, b) => a - b or stored in a Float32Array.
+export function buildDiffColumns(datasetDiff) {
+  const soundings = new Set();
+  for (const channelMap of Object.values(datasetDiff)) {
+    for (const soundingMap of channelMap.values()) {
+      for (const si of soundingMap.keys()) soundings.add(Number(si));
+    }
+  }
+  const applyIdx = [...soundings].sort((a, b) => a - b);
+  const row = new Map(applyIdx.map((si, i) => [si, i]));
+
+  const layerData = {};
+  for (const [channel, channelMap] of Object.entries(datasetDiff)) {
+    const gateMap = new Map();
+    for (const [gateKey, soundingMap] of channelMap.entries()) {
+      const col = new Float32Array(applyIdx.length).fill(NaN);
+      for (const [si, val] of soundingMap.entries()) col[row.get(Number(si))] = val;
+      gateMap.set(gateKey, col);
+    }
+    layerData[`InUse_${channel}`] = gateMap;
+  }
+  return { applyIdx, layerData };
+}
