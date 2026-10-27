@@ -465,6 +465,7 @@ pytest  # (TODO: Add tests)
    - Heavy data processing should be done in **process jobs** (Kubernetes pods)
    - Client-side computation should be done in the **frontend** (ideally using GLSL/WebGL for GPU acceleration)
    - The backend is a lightweight coordinator/API server, not a compute engine
+8. **Always run Python unbuffered** - Invoke Python with `python -u` (or set `PYTHONUNBUFFERED=1`), especially for long-running or backgrounded scripts whose stdout is redirected to a file. Without this, `print()` output is block-buffered and nothing appears until the process exits (or a buffer fills), so progress can't be monitored and a hung run looks identical to a slow one.
 
 ## Getting Help
 
