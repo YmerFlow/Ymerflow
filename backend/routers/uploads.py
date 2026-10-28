@@ -47,6 +47,11 @@ async def _write_upload_bytes(content: bytes, project_id: str, upload_id: str, f
     file_url = await get_upload_storage_url(db, project_id, upload_id, filename)
     storage_options = await get_fsspec_storage_options(db, project_id)
 
+    # End the read transaction before the storage write so the pooled connection isn't held across
+    # it; _create_upload_record re-opens one to insert the row. See
+    # docs/plans/db-pool-commit-before-k8s-io.md.
+    await db.commit()
+
     def _write():
         with fsspec.open(file_url, "wb", **storage_options) as f:
             f.write(content)
@@ -65,6 +70,12 @@ async def _stream_upload(request: Request, project_id: str, upload_id: str, file
     """
     file_url = await get_upload_storage_url(db, project_id, upload_id, filename)
     storage_options = await get_fsspec_storage_options(db, project_id)
+
+    # Highest-severity pool offender: an unbounded client→S3 transfer. End the read transaction
+    # before opening the multipart handle so the pooled connection is NOT pinned for the whole
+    # upload; _create_upload_record records the row in a fresh short transaction after a clean
+    # close. See docs/plans/db-pool-commit-before-k8s-io.md.
+    await db.commit()
 
     fh = await asyncio.to_thread(
         lambda: fsspec.open(file_url, "wb", **storage_options).open()
@@ -206,6 +217,11 @@ async def download_file(file_id: str, db: AsyncSession = Depends(get_db)):
     except RuntimeError:
         raise HTTPException(status_code=404, detail="File not found")
     storage_options = await get_fsspec_storage_options(db, project.id)
+
+    # End the read transaction before the file read so the pooled connection isn't held across it.
+    # commit() keeps `upload` readable (used in the closure and the response) under
+    # expire_on_commit=False. See docs/plans/db-pool-commit-before-k8s-io.md.
+    await db.commit()
 
     def _read():
         with fsspec.open(upload.file_url, "rb", **storage_options) as f:

@@ -313,6 +313,11 @@ async def serve_plugin_asset(
     fs = fsspec.filesystem(proto, **storage_options)
     file_path_str = asset_path.split("://", 1)[1]
 
+    # End the read transaction before fs.exists and the streamed response below, so the pooled
+    # connection isn't held for the whole asset download (everything needed is now in local vars).
+    # See docs/plans/db-pool-commit-before-k8s-io.md.
+    await db.commit()
+
     if not fs.exists(file_path_str):
         raise HTTPException(status_code=404, detail="Asset file not found in storage")
 

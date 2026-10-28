@@ -76,6 +76,12 @@ async def refresh_storage_credentials(
         raise HTTPException(status_code=404, detail="Storage backend not found")
 
     strategy = get_strategy(backend.credential_strategy)
+    # Read-only endpoint hit by every running job's runner on a recurring backoff — end the read
+    # transaction (ProcessVersion/Project/StorageBackend lookups) before minting in a worker thread
+    # so the pooled connection isn't held across it. commit() keeps `project`/`backend` readable
+    # (they're passed into the thread) under expire_on_commit=False. See
+    # docs/plans/db-pool-commit-before-k8s-io.md.
+    await db.commit()
     mint_result = await asyncio.to_thread(strategy.mint, project, backend)
 
     handler = get_protocol_handler(backend.protocol)

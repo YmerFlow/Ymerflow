@@ -265,6 +265,13 @@ async def cluster_register_callback(
         db.add(cluster)
 
     provider_config = body
+    # Persist the pending Cluster insert and end the transaction before the provisioning waits
+    # below (test_connection, then connect + ensure_cluster_job_ready, which run asyncio.sleep
+    # polling loops) so the pooled connection isn't held idle-in-transaction across them. commit()
+    # keeps `cluster` readable/attached for the status updates that follow. The failure branches
+    # re-open a short transaction to mark the row failed. See
+    # docs/plans/db-pool-commit-before-k8s-io.md.
+    await db.commit()
     try:
         provider = get_cluster_provider(cluster.cluster_type)
         await provider.test_connection(provider_config)

@@ -578,6 +578,12 @@ async def process_logs_websocket(websocket: WebSocket, process_id: str, version:
             result = await db.execute(stmt)
             logs = result.scalars().all()
 
+            # End the read transaction before streaming the historical dump to the socket so the
+            # pooled connection isn't held across the send loop. The logs are already materialized
+            # and stay readable after commit() under expire_on_commit=False. See
+            # docs/plans/db-pool-commit-before-k8s-io.md.
+            await db.commit()
+
             for log in logs:
                 await websocket.send_json(log.to_dict())
 

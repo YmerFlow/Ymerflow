@@ -141,6 +141,11 @@ async def _build_manifest(db, project_id: str):
             "versions": version_entries,
         })
 
+    # End the read transaction holding the process/version/dataset/tag rows (all already read into
+    # the manifest above) before the blocking bucket listing below. See
+    # docs/plans/db-pool-commit-before-k8s-io.md.
+    await db.commit()
+
     # Uploads aren't project_id-queryable (backend/models/upload.py has no such column) —
     # discover them by listing the bucket, then look up each id's row for metadata.
     storage_base = await get_storage_base_url(db, project_id)
@@ -229,6 +234,9 @@ async def run_export(project_id: str, export_id: str):
                 finally:
                     os.remove(tmp_path)
 
+            # End the read transaction (the Upload lookup in _build_manifest, re-read storage
+            # config here) before the long zip build + upload in a worker thread.
+            await db.commit()
             await asyncio.to_thread(_build_and_upload_zip)
 
             export_row.state = "done"

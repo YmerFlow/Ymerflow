@@ -577,6 +577,12 @@ class ProcessVersion(Base):
                 cluster = await get_cluster_for_process_version(db, process_version)
                 k8s_client = k8s_clients.get(cluster)
 
+                # End the preamble read transaction before the first blocking K8s call so the
+                # pooled connection isn't parked idle-in-transaction across it (see
+                # docs/plans/db-pool-commit-before-k8s-io.md). commit() (not rollback()) keeps the
+                # already-loaded process/process_version readable under expire_on_commit=False.
+                await db.commit()
+
                 # Check current job status immediately
                 try:
                     current_status = await get_job_status(job_name, k8s_client)
@@ -612,6 +618,9 @@ class ProcessVersion(Base):
                     # Refresh process version state
                     await db.refresh(process_version)
 
+                    # The refresh re-opened a read transaction; end it before the next K8s call.
+                    await db.commit()
+
                     # Check if job completed during wait
                     if process_version.state in [ProcessState.QUEUED, ProcessState.STARTING]:
                         final_status = await get_job_status(job_name, k8s_client)
@@ -638,6 +647,12 @@ class ProcessVersion(Base):
                     # Use a bounded timeout so the watch never silently expires and leaves
                     # the process stuck at RUNNING. After each expiry we poll the actual job
                     # status before re-watching.
+                    #
+                    # No DB transaction may be open across watch_job / the re-poll K8s calls.
+                    # The watch-loop body emits no SQL of its own; terminal/TTL paths go through
+                    # _handle_job_completion / update_state / add_log_entry, which all commit. End
+                    # any transaction left by the preamble before entering the loop.
+                    await db.commit()
                     while True:
                         final_status = None
                         async for job in k8s_client.watch_job(job_name, timeout_seconds=300):
@@ -786,6 +801,10 @@ class ProcessVersion(Base):
                 await db.commit()
                 last_status_log_time = current_time
 
+            # No DB transaction may be parked across the poll interval. The status-check and
+            # event-retrieval helpers above (add_log_entry / update_state / _retrieve_* ) each
+            # commit, so this also guarantees a clean slate for the next iteration's K8s calls.
+            await db.commit()
             await asyncio.sleep(5)
 
 
@@ -818,6 +837,10 @@ class ProcessVersion(Base):
             runtime_seconds = (process_version.completed_at - process_version.started_at).total_seconds()
         else:
             runtime_seconds = 0
+
+        # Persist the completed_at write and end the transaction before the K8s call below, so the
+        # pooled connection isn't held idle-in-transaction across it.
+        await db.commit()
 
         # Check if job hit deadline (timeout)
         has_error, error_msg = await k8s_client.get_job_error_status(job_name)
@@ -956,6 +979,9 @@ class ProcessVersion(Base):
                     await process_version.add_log_entry(db, "ERROR: Project has no storage backend assigned")
                     await process_version.update_state(db, ProcessState.FAILED, process.project_id)
                     return
+                # Persist the resolved dependencies and end the read transaction before the storage
+                # provisioning wait inside ensure_ready, so the connection isn't held across it.
+                await db.commit()
                 await ensure_ready(db, project)
 
                 stmt = select(StorageBackend).where(StorageBackend.id == project.storage_backend_id)
@@ -987,6 +1013,8 @@ class ProcessVersion(Base):
                     import hashlib
 
                     strategy = get_strategy(credential_strategy)
+                    # End the read transaction before minting credentials in a worker thread.
+                    await db.commit()
                     mint_result = await asyncio.to_thread(strategy.mint, project, storage_backend)
                     project_scoped_creds = mint_result["credentials"]
                     job_expires_at = mint_result["expires_at"]
@@ -1019,6 +1047,9 @@ class ProcessVersion(Base):
                     return
 
                 registry_handler = get_registry_protocol_handler(registry_backend.protocol)
+                # End the transaction (flushing any refresh_token_hash write above) before the
+                # pull-credential resolution, which may block on the registry.
+                await db.commit()
                 registry_pull_credentials = await registry_handler.pull_credentials(registry_backend.config)
 
                 # --- Create K8s job ---
@@ -1037,6 +1068,10 @@ class ProcessVersion(Base):
                 # _wait_for_pod — when the pod starts coming up — NOT here at submission, so
                 # queue-wait time is not billed. A job that fails before any pod exists keeps
                 # started_at=None → runtime_seconds=0 (see _handle_job_completion).
+                #
+                # End the transaction before the (K8s-only, no-db) job creation so the connection
+                # is free during it; the k8s_job_name/namespace write below re-opens and commits.
+                await db.commit()
                 job_name = await create_job(
                     docker_image=environment.docker_image,
                     process_id=process_version.process_id,
@@ -1112,6 +1147,12 @@ class ProcessVersion(Base):
         # Get fsspec filesystem (backend-side admin credentials)
         storage_options = await get_fsspec_storage_options(db, process.project_id)
         fs = fsspec.filesystem(storage_base.split('://')[0], **storage_options)
+
+        # End the read transaction (storage_base / storage_options resolution) before the storage
+        # scan below, so the pooled connection isn't parked across fs.ls / fs.open. The per-dataset
+        # writes further down re-open a transaction and commit it. (The fs calls themselves are
+        # synchronous — the event-loop-blocking half is a separate plan.)
+        await db.commit()
 
         # Extract bucket and prefix path
         # Format: s3://bucket/processes/{id}/{version}/datasets/

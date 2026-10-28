@@ -48,7 +48,9 @@ def upgrade() -> None:
 
     # Backfill every pre-existing (unscoped) workspace onto the seeded default project as
     # public, and copy its current `layout` column into a version-1 WorkspaceVersion row.
-    now = datetime.utcnow().isoformat()
+    # Bind a real datetime, not .isoformat(): psycopg sends a str as VARCHAR, which Postgres
+    # refuses to coerce into the timestamp `created_at` column (SQLite's dynamic typing hid this).
+    now = datetime.utcnow()
     op.execute(sa.text(
         "UPDATE workspaces SET project_id = :project_id, is_public = TRUE"
     ).bindparams(project_id=DEFAULT_PROJECT_ID))

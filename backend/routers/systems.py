@@ -79,6 +79,11 @@ async def create_system(
 
     storage_options = await get_fsspec_storage_options(db, project.id)
 
+    # End the read transaction before the .gex read + parse (both in worker threads) so the pooled
+    # connection isn't held across them; the System insert below re-opens one. commit() keeps
+    # `upload` readable in the closure. See docs/plans/db-pool-commit-before-k8s-io.md.
+    await db.commit()
+
     def _read():
         with fsspec.open(upload.file_url, "rb", **storage_options) as f:
             return f.read()

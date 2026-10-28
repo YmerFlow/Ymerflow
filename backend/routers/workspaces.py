@@ -781,6 +781,12 @@ async def complete_column_path(
     processes = await _load_project_processes(project.id, db)
     storage_options = await get_fsspec_storage_options(db, project.id)
 
+    # End the read transaction before the per-dataset stats-sidecar reads below (a loop of blocking
+    # storage reads). _load_project_processes eager-loads versions→datasets, so the processes stay
+    # fully readable after commit() under expire_on_commit=False, and the loop emits no SQL. See
+    # docs/plans/db-pool-commit-before-k8s-io.md.
+    await db.commit()
+
     out: List[str] = []
 
     for ds_name, ds in _current_datasets(processes, example_process_id, version):

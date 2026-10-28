@@ -84,6 +84,8 @@ class LogManager:
             return
 
         client = await self._get_k8s_client(pv, db)
+        # End the read transaction before the K8s call; writes below re-open and commit.
+        await db.commit()
         pod = await client.get_pod_for_job(pv.k8s_job_name)
 
         if not pod:
@@ -150,6 +152,7 @@ class LogManager:
 
     async def _stream_logs(self, pod_name: str):
         """Stream logs with checkpoint tracking"""
+        pending = []  # (message, timestamp) buffered since the last checkpoint flush
         try:
             since_time = None
             async with async_session_maker() as db:
@@ -166,8 +169,32 @@ class LogManager:
                 since_time=since_time
             )
 
+            # The DB session object is held open for the whole stream, but — crucially — NO SQL is
+            # emitted between checkpoints, so no transaction (and thus no pooled connection) is held
+            # while the `async for` awaits the next line. Lines are buffered in a Python list and
+            # persisted in a batch only at each checkpoint, where the transaction opens, commits,
+            # and closes. Each line is still broadcast live as it arrives (broadcast needs no DB).
+            # See docs/plans/db-pool-commit-before-k8s-io.md.
+            from backend.services.websocket_service import ws_manager
+
             async with async_session_maker() as db:
                 pv = await self._get_process_version(db)
+                # pv was just loaded; end that read transaction so nothing is held while buffering.
+                await db.commit()
+
+                async def _flush():
+                    """Persist buffered lines + advance the checkpoint, in one short transaction."""
+                    if not pending:
+                        return
+                    last_ts = None
+                    for msg, ts in pending:
+                        await self._add_log_deduplicated(pv, db, msg, ts, broadcast=False)
+                        last_ts = ts
+                    if last_ts is not None:
+                        pv.log_stream_position = last_ts.isoformat()
+                        pv.log_last_timestamp = last_ts
+                    await db.commit()
+                    pending.clear()
 
                 async for line in log_stream.content:
                     log_line = line.decode('utf-8').strip()
@@ -176,24 +203,22 @@ class LogManager:
 
                     timestamp = datetime.utcnow()
 
-                    # Add with deduplication
-                    await self._add_log_deduplicated(
-                        pv, db, log_line, timestamp
+                    # Broadcast live (no DB); persistence is batched below.
+                    await ws_manager.broadcast_log(
+                        pv.process_id, {"timestamp": timestamp.isoformat(), "message": log_line}
                     )
-
-                    # Update checkpoint
-                    pv.log_stream_position = timestamp.isoformat()
-                    pv.log_last_timestamp = timestamp
+                    pending.append((log_line, timestamp))
                     self._checkpoint_counter += 1
 
-                    # Commit periodically (every N logs or time interval)
+                    # Flush periodically (every N logs or time interval)
                     if self._should_checkpoint():
-                        await db.commit()
+                        await _flush()
                         self._checkpoint_counter = 0
                         self._last_checkpoint_time = datetime.utcnow()
 
                 # Stream ended naturally
                 logger.info(f"Log stream ended for pod {pod_name}")
+                await _flush()
                 pv.log_retrieval_state = LogRetrievalState.STREAM_ENDED
                 await db.commit()
 
@@ -204,10 +229,13 @@ class LogManager:
             logger.error(f"Stream error for pod {pod_name}: {e}", exc_info=True)
             async with async_session_maker() as db:
                 pv = await self._get_process_version(db)
+                # Persist whatever was buffered but not yet flushed (already broadcast live), then
+                # the interruption warning. Keep state STREAMING so it can be resumed.
+                for msg, ts in pending:
+                    await self._add_log_deduplicated(pv, db, msg, ts, broadcast=False)
                 await self._add_log_deduplicated(
                     pv, db, f"WARNING: Log stream interrupted: {e}", datetime.utcnow()
                 )
-                # Keep state as STREAMING - can be resumed
                 await db.commit()
 
     async def _resume_streaming(self, pv: ProcessVersion, db: AsyncSession):
@@ -217,6 +245,8 @@ class LogManager:
             return
 
         client = await self._get_k8s_client(pv, db)
+        # End the read transaction before the K8s call; writes below re-open and commit.
+        await db.commit()
         pod = await client.get_pod_for_job(pv.k8s_job_name)
 
         if not pod:
@@ -261,6 +291,9 @@ class LogManager:
                 return
 
             client = await self._get_k8s_client(pv, db)
+            # End the read transaction (pv fetch + possible cluster SELECT) before the K8s calls
+            # below; the sub-helpers and the COMPLETE-state write re-open and commit as needed.
+            await db.commit()
             pod = await client.get_pod_for_job(pv.k8s_job_name)
             if pod:
                 pod_name = pod.metadata.name
@@ -284,11 +317,14 @@ class LogManager:
 
     async def _retrieve_historical_logs(self, pv: ProcessVersion, pod_name: str, db: AsyncSession, since_time: Optional[str] = None):
         """Retrieve logs from terminated/stopped container"""
+        # Resolve the client (may SELECT the cluster on first use) and set state in one
+        # transaction, then commit so nothing is held across the K8s log fetch below. See
+        # docs/plans/db-pool-commit-before-k8s-io.md.
+        client = await self._get_k8s_client(pv, db)
         pv.log_retrieval_state = LogRetrievalState.HISTORICAL
         await db.commit()
 
         logger.info(f"Retrieving historical logs from pod {pod_name}, since_time={since_time}")
-        client = await self._get_k8s_client(pv, db)
 
         # Retry logic
         for attempt in range(3):
@@ -336,6 +372,8 @@ class LogManager:
 
         logger.info(f"Retrieving job events for {pv.k8s_job_name}")
         client = await self._get_k8s_client(pv, db)
+        # End any read transaction (client resolution may SELECT the cluster) before the K8s fetch.
+        await db.commit()
         events = await client.get_job_events(pv.k8s_job_name)
 
         for event in events:
@@ -352,6 +390,8 @@ class LogManager:
         """Retrieve pod-level events (image pull, container errors, etc.)"""
         logger.info(f"Retrieving pod events for {pod_name}")
         client = await self._get_k8s_client(pv, db)
+        # End any read transaction (client resolution may SELECT the cluster) before the K8s fetch.
+        await db.commit()
         events = await client.get_pod_events(pod_name)
 
         for event in events:
@@ -374,8 +414,12 @@ class LogManager:
         pv.log_retrieval_state = LogRetrievalState.UNAVAILABLE
         await db.commit()
 
-    async def _add_log_deduplicated(self, pv: ProcessVersion, db: AsyncSession, message: str, timestamp: datetime):
-        """Add log with deduplication"""
+    async def _add_log_deduplicated(self, pv: ProcessVersion, db: AsyncSession, message: str, timestamp: datetime, broadcast: bool = True):
+        """Add log with deduplication.
+
+        broadcast=False suppresses the WebSocket fan-out — used by the streaming flush, which
+        broadcasts each line live as it arrives and only persists (in batches) at checkpoints.
+        """
         # Check if exact message already exists (within 1 second window)
         stmt = select(ProcessLog).where(
             ProcessLog.process_id == pv.process_id,
@@ -402,8 +446,9 @@ class LogManager:
         db.add(log_entry)
 
         # Broadcast to WebSocket (existing code)
-        from backend.services.websocket_service import ws_manager
-        await ws_manager.broadcast_log(pv.process_id, log_entry.to_dict())
+        if broadcast:
+            from backend.services.websocket_service import ws_manager
+            await ws_manager.broadcast_log(pv.process_id, log_entry.to_dict())
 
     def _event_id(self, event_message: str) -> str:
         """Generate unique ID for event (for deduplication)"""
