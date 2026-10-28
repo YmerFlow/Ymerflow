@@ -214,7 +214,10 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
               const si = vi % 2 === 0 ? vi / 2 : (vi + 1) / 2;
               if (!seen.has(si)) {
                 seen.add(si);
-                entries.push({ soundingIndex: applyIdx ? applyIdx[si] : si, gateIndex: gateKeys[t] });
+                // Number(): apply_idx is int64 on disk, which msgpack-numpy-js decodes to a
+                // BigInt64Array. A BigInt key never matches a number in a Map, and BigInts
+                // cannot be sorted with (a, b) => a - b or put in a Float32Array on save.
+                entries.push({ soundingIndex: applyIdx ? Number(applyIdx[si]) : si, gateIndex: gateKeys[t] });
               }
             }
           }

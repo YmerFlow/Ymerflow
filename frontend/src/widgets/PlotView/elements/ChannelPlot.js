@@ -128,8 +128,10 @@ registerLayerType('ChannelPlot', new LayerType({
 
     // Part-local → global sounding index, as the lasso handler maps it when storing
     // edits (set by libaarhusxyz split_by_line(); absent where local = global).
+    // apply_idx is int64 on disk and decodes to a BigInt64Array; edits are keyed by
+    // Number, so convert here as the lasso does.
     const applyIdx    = flightlines.apply_idx;
-    const globalIdx   = (i) => (applyIdx ? applyIdx[i] : i);
+    const globalIdx   = (i) => (applyIdx ? Number(applyIdx[i]) : i);
 
     const xdist       = toFloat32Array(xdistRaw);
     const N           = xdist.length;
