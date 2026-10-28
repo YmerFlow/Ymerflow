@@ -115,9 +115,9 @@ async def ensure_project(client, cfg, findings):
 async def ensure_environment(client, cfg, project_id, findings):
     if cfg["environment_id"]:
         return cfg["environment_id"]
-    r = await client.get("/environments", params={"project_id": project_id})
+    r = await client.get(f"/projects/{project_id}/environments")
     if r.status_code >= 300:
-        findings.bad(f"could not list environments: {r.status_code}")
+        findings.bad(f"could not list environments: {r.status_code} {r.text[:150]}")
         sys.exit(2)
     envs = r.json()
     if not envs:
@@ -252,7 +252,7 @@ async def check_failure_mode(client, cfg, project_id, proc_ids, states, findings
 async def _login(cfg):
     """Mint a JWT from username/password via POST /login when no token was supplied."""
     async with httpx.AsyncClient(base_url=cfg["base_url"], timeout=cfg["timeout"]) as c:
-        r = await c.post("/login", json={"username": cfg["username"], "password": cfg["password"]})
+        r = await c.post("/auth/login", json={"username": cfg["username"], "password": cfg["password"]})
         r.raise_for_status()
         return r.json()["access_token"]
 
