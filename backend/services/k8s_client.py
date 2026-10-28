@@ -283,7 +283,7 @@ class K8sClient:
                 logger.exception("Background token refresh failed; retrying shortly")
                 self._token_expires_on = time.time() + margin_seconds  # retry in ~margin_seconds
                 continue
-            self._api_client.configuration.api_key['authorization'] = f"Bearer {token}"
+            self._api_client.configuration.api_key['BearerToken'] = f"Bearer {token}"
 
     async def create_job(self, job_manifest):
         await self._ensure_initialized()
