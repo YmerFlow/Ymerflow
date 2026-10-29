@@ -21,6 +21,81 @@ export function resolveEditTarget(path, activeProcess, processes) {
   return { process: ref.process, versionObj: ref.versionObj, datasetName };
 }
 
+// ── In-memory edits ──────────────────────────────────────────────────────────
+// The store every in-use editing layer writes to and reads from (ProcessContext holds it):
+// diffs:   { [datasetPath]: { [channel]: Map<gateIndex, Map<soundingIndex, 0|1>> } }
+// history: { [datasetPath]: snapshot[] }  (per-dataset undo stack)
+
+function _deepCopyDatasetDiff(datasetDiff) {
+  const result = {};
+  for (const [channel, channelMap] of Object.entries(datasetDiff)) {
+    const newMap = new Map();
+    for (const [gateIdx, soundingMap] of channelMap.entries()) {
+      newMap.set(gateIdx, new Map(soundingMap));
+    }
+    result[channel] = newMap;
+  }
+  return result;
+}
+
+export function inUseDiffReducer(state, action) {
+  switch (action.type) {
+    case 'APPLY_EDIT': {
+      const { datasetName, channel, entries, value } = action;
+      const prevDatasetDiff = state.diffs[datasetName] ?? {};
+
+      // Push snapshot before mutating
+      const snapshot = _deepCopyDatasetDiff(prevDatasetDiff);
+      const newHistory = {
+        ...state.history,
+        [datasetName]: [...(state.history[datasetName] ?? []), snapshot],
+      };
+
+      // Apply edits
+      const newDatasetDiff = _deepCopyDatasetDiff(prevDatasetDiff);
+      if (!newDatasetDiff[channel]) newDatasetDiff[channel] = new Map();
+      const channelMap = newDatasetDiff[channel];
+
+      for (const { soundingIndex, gateIndex } of entries) {
+        if (!channelMap.has(gateIndex)) channelMap.set(gateIndex, new Map());
+        const soundingMap = channelMap.get(gateIndex);
+        if (value === undefined || value === null) {
+          soundingMap.delete(soundingIndex);
+        } else {
+          soundingMap.set(soundingIndex, value);
+        }
+        if (soundingMap.size === 0) channelMap.delete(gateIndex);
+      }
+
+      return {
+        diffs: { ...state.diffs, [datasetName]: newDatasetDiff },
+        history: newHistory,
+      };
+    }
+    case 'UNDO': {
+      const { datasetName } = action;
+      const history = state.history[datasetName] ?? [];
+      if (history.length === 0) return state;
+      const prevSnapshot = history[history.length - 1];
+      return {
+        diffs: { ...state.diffs, [datasetName]: prevSnapshot },
+        history: { ...state.history, [datasetName]: history.slice(0, -1) },
+      };
+    }
+    case 'CLEAR': {
+      const { datasetName } = action;
+      return {
+        diffs: { ...state.diffs, [datasetName]: {} },
+        history: { ...state.history, [datasetName]: [] },
+      };
+    }
+    case 'CLEAR_ALL':
+      return { diffs: {}, history: {} };
+    default:
+      return state;
+  }
+}
+
 // The diffs of the version being built on, with the new round's URL added.
 // `previous` is a list, a single URL (versions saved before diffs accumulated),
 // or nothing. The input is not modified.

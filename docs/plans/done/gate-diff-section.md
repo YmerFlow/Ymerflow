@@ -1,6 +1,6 @@
 # GateDiffSection — a second editing view of the same in-use edits
 
-**Status:** planned, decisions made (Ben, 2026-10-28). Not started.
+**Status:** implemented. Decisions made (Ben, 2026-10-28); the ones taken during implementation are under [Implementation](#implementation).
 
 ## Motivation
 
@@ -83,3 +83,19 @@ line) and gate (tile), which fits the section's layout directly.
   numpy reference; the cell-to-(sounding, gate) mapping, including `apply_idx` on single-line parts.
 - Integration: an edit made in GateDiffSection appears in ChannelPlot's overlay and the reverse; one
   Save writes one diff containing both.
+
+## Implementation
+
+Decided with Ben during implementation (2026-10-28):
+
+- The y axis numbers gates from 1 (layer_data key + 1), as the sheets do; the diff keeps the key.
+- In the section, manually enabled is tinted blue, since ChannelPlot's green would read as data on the brown-green scale; manually disabled is red, and cells not in use are grey 0.82, as on the sheets.
+- A cell has no median, and shows grey, when fewer than a quarter of the soundings in its window are in use, as the sheets' pandas `min_periods` did.
+
+Where it went:
+
+- `frontend/src/widgets/PlotView/gateDiff.js`: the running median (a sorted window over `xdist`, line by line) and the per-gate column, kept free of gladly so they are unit-tested against numpy.
+- `frontend/src/widgets/PlotView/inUseEdits.js`: what both layers share, the lasso-to-entries mappings for ChannelPlot's segments and the section's cells, and `soundingState`, the one lookup of pending edits. If the GPU `DiffColumn` lands, this lookup is what changes.
+- `frontend/src/datamodel/inUseDiffs.js`: the in-memory store's reducer, moved out of `ProcessContext.jsx` so the two-pane test drives the real store.
+- A lasso selects a cell when the cell's center is inside it: in gladly's capture pass the layer reports the center.
+- The two editing layers go in separate panes. Layers in one pane share its selection channel, and PlotView skips, with a console error, a layer whose mask does not fit it. PlotViews in a workspace link selections of the same name, but each pane clears its selection inside its own handler, before the link passes it on, so the other pane receives an empty selection.

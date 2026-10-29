@@ -6,6 +6,7 @@ import { registerQuantityKinds } from './quantityKinds';
 import { loadDataset } from '../../datamodel/dataset';
 import { encodeSeg } from '../../datamodel/datasetPath';
 import { getKeys, resolveDataPath } from './colorUtils.js';
+import { cellEditEntries, segmentEditEntries } from './inUseEdits.js';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import './elements/index.js';
 
@@ -13,6 +14,9 @@ import './elements/index.js';
 registerQuantityKinds();
 
 const PLOT_MARGIN = { top: 50, right: 80, bottom: 60, left: 80 };
+
+// Layer types that edit in-use flags with the InUse Editor's lasso.
+const IN_USE_LAYER_TYPES = ['ChannelPlot', 'GateDiffSection'];
 
 export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...rest }) {
   const isMobile = useIsMobile();
@@ -185,11 +189,11 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
       console.log('[InUse] action:', action, 'value:', value, 'layers:', layers);
 
       for (const spec of layers) {
-        if (!spec?.ChannelPlot?.inUseMode) {
+        const [type, params] = Object.entries(spec ?? {}).find(([, v]) => v != null) ?? [];
+        if (!IN_USE_LAYER_TYPES.includes(type) || !params?.inUseMode) {
           console.log('[InUse] skipping layer (no inUseMode):', spec);
           continue;
         }
-        const params  = spec.ChannelPlot;
         const dsName  = params.dataset;
         const channel = params.channel || 'Ch01';
         console.log('[InUse] processing layer dsName:', dsName, 'channel:', channel);
@@ -201,27 +205,19 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
         const gateKeys = getKeys(yDataDict).sort((a, b) => a - b);
         console.log('[InUse] gateKeys:', gateKeys, 'arrays size:', arrays.size ?? arrays.length);
 
-        // arrays[t] is the selection mask for tile t (= gate t), local indices only.
-        // Vertices 2*i and 2*i+1 in a tile correspond to soundings i and i+1.
-        // apply_idx maps part-local sounding index → global index in the full dataset
-        // (set by libaarhusxyz split_by_line(); absent for the 'all' part where local = global).
+        // The mask is per part-local sounding; entries carry the global index, through
+        // apply_idx. ChannelPlot has one tile per gate, GateDiffSection one tile of cells.
+        // Layers in one pane share its selection channel, so a mask only fits the layer
+        // type that drew it: the two editing layers go in separate panes.
         const applyIdx = ds.flightlines?.apply_idx;
-        const entries = [];
-        arrays.forEach((tileArr, t) => {
-          const seen = new Set();
-          for (let vi = 0; vi < tileArr.length; vi++) {
-            if (tileArr[vi] > 0.5) {
-              const si = vi % 2 === 0 ? vi / 2 : (vi + 1) / 2;
-              if (!seen.has(si)) {
-                seen.add(si);
-                // Number(): apply_idx is int64 on disk, which msgpack-numpy-js decodes to a
-                // BigInt64Array. A BigInt key never matches a number in a Map, and BigInts
-                // cannot be sorted with (a, b) => a - b or put in a Float32Array on save.
-                entries.push({ soundingIndex: applyIdx ? Number(applyIdx[si]) : si, gateIndex: gateKeys[t] });
-              }
-            }
-          }
-        });
+        const entries = type === 'ChannelPlot'
+          ? (arrays.length === gateKeys.length ? segmentEditEntries(arrays, gateKeys, applyIdx) : null)
+          : (arrays.length === 1 ? cellEditEntries(arrays[0], ds.flightlines.xdist.length, gateKeys, applyIdx) : null);
+        if (!entries) {
+          console.error(`[InUse] the selection does not fit the ${type} layer on ${dsName}; ` +
+            'put ChannelPlot and GateDiffSection editing layers in separate panes');
+          continue;
+        }
         console.log('[InUse] entries to apply:', entries.length, entries.slice(0, 5));
         if (entries.length > 0) apply(dsName, channel, entries, value);
         else console.log('[InUse] no entries selected, skipping apply');
@@ -256,10 +252,12 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
         if (!spec || typeof spec !== 'object') return spec;
         const validEntries = Object.entries(spec).filter(([, v]) => v != null);
         let cleanSpec = validEntries.length <= 1 ? spec : Object.fromEntries([validEntries[0]]);
-        // Register inUseMode ChannelPlot layers under the 'inuse_brush' selection channel.
+        // Register inUseMode editing layers under the 'inuse_brush' selection channel.
         // Only inject when selection is absent (null/undefined); empty string means no selection.
-        if (cleanSpec.ChannelPlot?.inUseMode && cleanSpec.ChannelPlot?.selection == null) {
-          cleanSpec = { ...cleanSpec, ChannelPlot: { ...cleanSpec.ChannelPlot, selection: 'inuse_brush' } };
+        for (const type of IN_USE_LAYER_TYPES) {
+          if (cleanSpec[type]?.inUseMode && cleanSpec[type]?.selection == null) {
+            cleanSpec = { ...cleanSpec, [type]: { ...cleanSpec[type], selection: 'inuse_brush' } };
+          }
         }
         return cleanSpec;
       }),
