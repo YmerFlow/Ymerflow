@@ -1,6 +1,6 @@
 import { LayerType, registerLayerType, AXIS_GEOMETRY } from 'gladly-plot';
 import { resolveDataPath, getFrom, getKeys, toFloat32Array } from '../colorUtils.js';
-import { gateDiffColumn } from '../gateDiff.js';
+import { gateAnomalyColumn } from '../gateAnomaly.js';
 import { globalSoundingIndex, soundingState } from '../inUseEdits.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
@@ -12,7 +12,7 @@ const QUAD_CY = new Float32Array([0, 0, 1, 0, 1, 1]);
 
 // A gate-by-distance section of one channel: x is xdist, y the gate (1-based, early at
 // the top), and each cell is colored by the gate's value against its own running median
-// along the line (see gateDiff.js), brown below and green above, clipped at
+// along the line (see gateAnomaly.js), brown below and green above, clipped at
 // ±range_decades. Cells are laid out gate by gate (cell t * nSoundings + i), the order
 // cellEditEntries() in inUseEdits.js maps a lasso back through.
 
@@ -39,7 +39,7 @@ function buildCells(xdist, yDataDict, inuseDict, windowM) {
   const x0 = new Float32Array(nCells), x1 = new Float32Array(nCells), gate = new Float32Array(nCells);
   const diff = new Float32Array(nCells), hasDiff = new Float32Array(nCells);
   gateKeys.forEach((gateKey, t) => {
-    const column = gateDiffColumn(xdist, getFrom(yDataDict, gateKey), inuseDict ? getFrom(inuseDict, gateKey) : null, windowM);
+    const column = gateAnomalyColumn(xdist, getFrom(yDataDict, gateKey), inuseDict ? getFrom(inuseDict, gateKey) : null, windowM);
     for (let i = 0; i < nS; i++) {
       const c = t * nS + i;
       x0[c] = left[i];
@@ -68,8 +68,8 @@ function cachedCells(xdist, yDataDict, inuseDict, windowM) {
   return cells;
 }
 
-registerLayerType('GateDiffSection', new LayerType({
-  name: 'GateDiffSection',
+registerLayerType('GateAnomalyPlot', new LayerType({
+  name: 'GateAnomalyPlot',
 
   getAxisConfig: (parameters) => ({
     xAxis: parameters.xAxis ?? 'xaxis_bottom',

@@ -16,7 +16,7 @@ registerQuantityKinds();
 const PLOT_MARGIN = { top: 50, right: 80, bottom: 60, left: 80 };
 
 // Layer types that edit in-use flags with the InUse Editor's lasso.
-const IN_USE_LAYER_TYPES = ['ChannelPlot', 'GateDiffSection'];
+const IN_USE_LAYER_TYPES = ['ChannelPlot', 'GateAnomalyPlot'];
 
 export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...rest }) {
   const isMobile = useIsMobile();
@@ -206,7 +206,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
         console.log('[InUse] gateKeys:', gateKeys, 'arrays size:', arrays.size ?? arrays.length);
 
         // The mask is per part-local sounding; entries carry the global index, through
-        // apply_idx. ChannelPlot has one tile per gate, GateDiffSection one tile of cells.
+        // apply_idx. ChannelPlot has one tile per gate, GateAnomalyPlot one tile of cells.
         // Layers in one pane share its selection channel, so a mask only fits the layer
         // type that drew it: the two editing layers go in separate panes.
         const applyIdx = ds.flightlines?.apply_idx;
@@ -215,7 +215,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
           : (arrays.length === 1 ? cellEditEntries(arrays[0], ds.flightlines.xdist.length, gateKeys, applyIdx) : null);
         if (!entries) {
           console.error(`[InUse] the selection does not fit the ${type} layer on ${dsName}; ` +
-            'put ChannelPlot and GateDiffSection editing layers in separate panes');
+            'put ChannelPlot and GateAnomalyPlot editing layers in separate panes');
           continue;
         }
         console.log('[InUse] entries to apply:', entries.length, entries.slice(0, 5));

@@ -1,4 +1,4 @@
-// The GateDiffSection layer's numbers: each gate against its own running median along
+// The GateAnomalyPlot layer's numbers: each gate against its own running median along
 // the line, in decades, log10(value) - log10(median of that gate's in-use values within
 // ±halfWidth meters along xdist). Kept free of gladly so it can be unit-tested.
 
@@ -69,7 +69,7 @@ export function runningMedian(x, values, halfWidth) {
 // use. NaN where the value is not positive or there is no median.
 // `gate` and `inUse` are the dataset's Gate_<channel> and InUse_<channel> columns for this
 // gate (InUse may be missing: all in use); x is xdist [m].
-export function gateDiffColumn(x, gate, inUse, halfWidth) {
+export function gateAnomalyColumn(x, gate, inUse, halfWidth) {
   const n = x.length;
   const logValue = new Float64Array(n);
   const logInUse = new Float64Array(n);

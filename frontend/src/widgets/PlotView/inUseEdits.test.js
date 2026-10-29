@@ -14,7 +14,7 @@ vi.mock('gladly-plot', () => {
 });
 import { registeredLayerTypes } from 'gladly-plot';
 import './elements/ChannelPlot.js';
-import './elements/GateDiffSection.js';
+import './elements/GateAnomalyPlot.js';
 
 // A single-line part: 5 soundings that are rows 100-104 of the whole dataset. apply_idx is
 // int64 on disk and decodes to a BigInt64Array.
@@ -104,7 +104,7 @@ describe('editing in either pane', () => {
     state = lasso(state, segmentEditEntries(tiles, GATES, applyIdx));
 
     // The section draws both cells as manually disabled, and no others.
-    const section = draw('GateDiffSection', state.diffs);
+    const section = draw('GateAnomalyPlot', state.diffs);
     const disabled = [];
     section.forEach((s, c) => { if (s === 3) disabled.push(c); });
     expect(disabled).toEqual([1 * N + 2, 2 * N + 4]);

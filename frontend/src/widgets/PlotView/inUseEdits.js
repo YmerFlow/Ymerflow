@@ -1,4 +1,4 @@
-// In-use editing shared by the ChannelPlot and GateDiffSection layers: how a lasso
+// In-use editing shared by the ChannelPlot and GateAnomalyPlot layers: how a lasso
 // selection becomes edit entries, and how a layer reads pending edits back. Both layers
 // key edits the same way (dataset path, channel, gate key, global sounding index), so an
 // edit made in either one shows in both and Save writes one diff.
@@ -41,7 +41,7 @@ export function segmentEditEntries(arrays, gateKeys, applyIdx) {
   return entries;
 }
 
-// GateDiffSection's lasso: one value per cell, cells laid out gate by gate, so cell
+// GateAnomalyPlot's lasso: one value per cell, cells laid out gate by gate, so cell
 // t * nSoundings + i is sounding i of gate gateKeys[t]. Returns null when the mask is not
 // that shape, i.e. it came from some other layer sharing the selection channel.
 export function cellEditEntries(mask, nSoundings, gateKeys, applyIdx) {

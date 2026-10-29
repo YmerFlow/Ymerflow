@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gateDiffColumn, lineRuns, runningMedian } from './gateDiff';
+import { gateAnomalyColumn, lineRuns, runningMedian } from './gateAnomaly';
 
 // A synthetic part with two lines (xdist restarts at 0 on the second), one gate.
 const x = [0, 2.5, 5, 8, 10, 12.5, 15, 17, 20, 23, 25, 27.5, 30, 33, 35, 37.5, 40, 43, 45, 48,
@@ -16,9 +16,9 @@ const NUMPY_DIFF = [0.0, 0.030798, -0.0563521, 0.0, 0.6243364, 0.6232493, -0.013
   0.0086002, -0.0088635, 0.0043431, 0.0044317, NaN, 0.0, 0.0, 0.5063159, 0.0023476, 0.0, -0.0047464,
   -0.0085167, 0.0085167, -0.0262454, NaN, NaN, 0.0227682, 0.00467, -0.00467];
 
-describe('gateDiffColumn', () => {
+describe('gateAnomalyColumn', () => {
   it('matches the numpy reference, with culled soundings left out of the median', () => {
-    const diff = gateDiffColumn(Float32Array.from(x), Float32Array.from(v), Float32Array.from(inUse), 6);
+    const diff = gateAnomalyColumn(Float32Array.from(x), Float32Array.from(v), Float32Array.from(inUse), 6);
     NUMPY_DIFF.forEach((expected, i) => {
       if (Number.isNaN(expected)) expect(diff[i]).toBeNaN();
       else expect(diff[i]).toBeCloseTo(expected, 5);
@@ -27,12 +27,12 @@ describe('gateDiffColumn', () => {
 
   it('gives a culled cell a value against the in-use cells around it', () => {
     // Within 6 m of x = 10 m the in-use values are 90, 105 and 95; 400 and 420 are culled.
-    const diff = gateDiffColumn(x, v, inUse, 6);
+    const diff = gateAnomalyColumn(x, v, inUse, 6);
     expect(diff[4]).toBeCloseTo(Math.log10(400 / 95), 5);
   });
 
   it('treats a missing InUse column as all in use', () => {
-    const diff = gateDiffColumn([0, 1, 2], [10, 1000, 10], null, 5);
+    const diff = gateAnomalyColumn([0, 1, 2], [10, 1000, 10], null, 5);
     expect(diff[0]).toBeCloseTo(0, 6);
     expect(diff[1]).toBeCloseTo(2, 6);
   });
