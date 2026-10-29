@@ -143,7 +143,7 @@ async def _build_manifest(db, project_id: str):
 
     # End the read transaction holding the process/version/dataset/tag rows (all already read into
     # the manifest above) before the blocking bucket listing below. See
-    # docs/plans/db-pool-commit-before-k8s-io.md.
+    # docs/plans/done/db-pool-commit-before-k8s-io.md.
     await db.commit()
 
     # Uploads aren't project_id-queryable (backend/models/upload.py has no such column) —

@@ -57,10 +57,11 @@ STALE_JOB_DELETE_TIMEOUT_SECONDS = 60
 REGISTRY_EDGE_WAIT_TIMEOUT_SECONDS = 300
 REGISTRY_EDGE_WAIT_POLL_INTERVAL_SECONDS = 5
 
-# Matches job_orchestrator.py's hardcoded BACKEND_URL ("http://backend-service:8000") and
-# k8s/backend/service.yaml's ExternalName Service in the ymerflow-jobs namespace, which points
-# at this exact name — job pods reach the backend through that ExternalName, which this module
-# does not create or touch (it lives in a different namespace and is unrelated to app hosting).
+# The backend's in-namespace ClusterIP Service name, which the frontend nginx uses as its static
+# `proxy_pass http://backend-service:8000` upstream (see apply_app_workloads / app-locations.conf).
+# This is a legitimate same-cluster reference: nginx and the backend share this namespace. It is
+# NOT how job pods reach the backend — those run on arbitrary (possibly remote) clusters and reach
+# it via the public app origin + /api (job_orchestrator.py's BACKEND_URL), through this same nginx.
 BACKEND_SERVICE_NAME = "backend-service"
 BACKEND_DEPLOYMENT_NAME = "backend"
 FRONTEND_DEPLOYMENT_NAME = "frontend"

@@ -37,7 +37,7 @@ async def compute_dataset_content_hash(db, project_id, process_id, process_versi
     # End the read transaction (storage_base / fsspec kwargs resolution) before the storage
     # traversal below, so the pooled connection isn't parked across fs.find / fs.open. The caller
     # (register_built_plugin) re-opens a transaction for its upserts afterwards. See
-    # docs/plans/db-pool-commit-before-k8s-io.md.
+    # docs/plans/done/db-pool-commit-before-k8s-io.md.
     await db.commit()
 
     manifest = {}

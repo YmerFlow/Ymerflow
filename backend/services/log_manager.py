@@ -174,7 +174,7 @@ class LogManager:
             # while the `async for` awaits the next line. Lines are buffered in a Python list and
             # persisted in a batch only at each checkpoint, where the transaction opens, commits,
             # and closes. Each line is still broadcast live as it arrives (broadcast needs no DB).
-            # See docs/plans/db-pool-commit-before-k8s-io.md.
+            # See docs/plans/done/db-pool-commit-before-k8s-io.md.
             from backend.services.websocket_service import ws_manager
 
             async with async_session_maker() as db:
@@ -319,7 +319,7 @@ class LogManager:
         """Retrieve logs from terminated/stopped container"""
         # Resolve the client (may SELECT the cluster on first use) and set state in one
         # transaction, then commit so nothing is held across the K8s log fetch below. See
-        # docs/plans/db-pool-commit-before-k8s-io.md.
+        # docs/plans/done/db-pool-commit-before-k8s-io.md.
         client = await self._get_k8s_client(pv, db)
         pv.log_retrieval_state = LogRetrievalState.HISTORICAL
         await db.commit()

@@ -63,7 +63,15 @@ def create_job_manifest(docker_image, process_id, version, process_type, paramet
         client.V1EnvVar(name="VERSION", value=str(version)),
         client.V1EnvVar(name="PROJECT_ID", value=str(project_id)),
         client.V1EnvVar(name="PARAMETERS_JSON", value=json.dumps(parameters)),
-        client.V1EnvVar(name="BACKEND_URL", value="http://backend-service:8000"),
+        # The already-known PUBLIC backend URL (= ${SERVER_URL}/api in prod, see
+        # prod/runall-production.sh) — the SAME address the frontend reaches the backend on, through
+        # the nginx /api proxy. Must be a public URL, not the in-cluster "backend-service" Service
+        # name: process pods run on arbitrary clusters (remote AKS/GKE) where that name does not
+        # resolve. The only pod->backend caller today is the short-lived storage-credential refresher
+        # (ymerflow_runner.storage_credential_refresher); it was failing every refresh on remote
+        # Azure clusters, so SAS tokens died at their 1h expiry and long jobs couldn't write outputs.
+        # Same cross-cluster reasoning as the registry's public-vs-direct address split.
+        client.V1EnvVar(name="BACKEND_URL", value=settings.backend_base_url.rstrip("/")),
         client.V1EnvVar(name="STORAGE_BASE", value=storage_base),
         client.V1EnvVar(name="STORAGE_KWARGS_JSON", value=json.dumps(storage_kwargs)),
     ]
