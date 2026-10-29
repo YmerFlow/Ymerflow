@@ -19,7 +19,7 @@ the Estancia `processing_tests/manual_cull_L1060-L1080/scripts/`.
 | | |
 |---|---|
 | **A view, computed in the browser** | the running median is computed when the layer is built; nothing is stored, and the backend does no work |
-| **Window and colour range are layer parameters** | defaults ±1000 m and ±0.5 decades (×0.3 to ×3), as on the sheets |
+| **Window and colour range are layer parameters** | defaults: a ±500 m half-width window (1000 m end to end, what the sheets used; their "±1 km" label was wrong) and ±0.5 decades (×0.3 to ×3) |
 | **The median uses in-use data only** | automatic culls do not pull the baseline |
 | **Same InUse tools, either window** | freehand lasso with the InUse Editor's Enable / Disable / Clear, undo and Save, unchanged |
 | **Name: `GateDiffSection`** | PascalCase, like the other layer types |
@@ -37,7 +37,7 @@ For one channel of one dataset part:
   manually enabled, manually disabled), drawn as tints over the cells.
 
 Layer parameters: `dataset`, `channel` (default `Ch01`), `inUseMode`, `selection`
-(default `inuse_brush`, injected the same way as for ChannelPlot), `window_m` (1000),
+(default `inuse_brush`, injected the same way as for ChannelPlot), `window_m` (500, the half-width),
 `range_decades` (0.5), `xAxis`, `yAxis`.
 
 The median is computed per gate per line part with a sliding window over soundings within
