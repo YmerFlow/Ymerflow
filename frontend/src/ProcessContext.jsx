@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useProcesses, useEnvironments, useProcessOutputDatasets, useProjects, useCreateProcess, useWorkspace, fetchEnvironmentProcessTypes } from "./datamodel/useQueries";
 import { loadDataset, DatasetCollectionAdapter } from './datamodel/dataset';
 import XYZ from './datamodel/libaarhusxyz';
-import { acceptsEdits, appendDiff, buildDiffColumns, resolveEditTarget } from './datamodel/inUseDiffs';
+import { acceptsEdits, buildDiffColumns, editedVersionRequest, resolveEditTarget } from './datamodel/inUseDiffs';
 import { useWebSocket } from './hooks/useWebSocket';
 import { WS_API, uploadFile } from './datamodel/api';
 import { recordNavView } from './datamodel/navTracking';
@@ -403,8 +403,7 @@ export function ProcessProvider({ children }) {
 
       try {
         await createProcess.mutateAsync({
-          // Earlier rounds' diffs are kept: the new version replays all of them in order.
-          proc: { id: proc.id, type: editedVer.type, environment: { id: editedVer.environment?.id }, name: proc.name, params: { ...editedVer.parameters, diff: appendDiff(editedVer.parameters?.diff, diffUrl) } },
+          proc: editedVersionRequest(proc, editedVer, diffUrl),
           projectId: currentProject,
         });
         saved.push(datasetPath);

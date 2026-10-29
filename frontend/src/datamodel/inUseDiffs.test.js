@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptsEdits, appendDiff, buildDiffColumns, resolveEditTarget } from './inUseDiffs';
+import { acceptsEdits, appendDiff, buildDiffColumns, editedVersionRequest, resolveEditTarget } from './inUseDiffs';
 
 describe('buildDiffColumns', () => {
   it('serializes edits keyed by BigInt sounding indices (int64 apply_idx)', () => {
@@ -45,6 +45,41 @@ describe('resolveEditTarget', () => {
     expect(resolveEditTarget('current.processed_data', null, processes)).toBe(null);
     expect(resolveEditTarget('current.missing', { processId: 'p1', version: 2 }, processes)).toBe(null);
     expect(resolveEditTarget('Other.1.processed_data', null, processes)).toBe(null);
+  });
+});
+
+describe('editedVersionRequest', () => {
+  const proc = { id: 'p1', name: 'Manual cull' };
+  const edited = {
+    type: 'yf_process_tem',
+    environment: { id: 'env1', name: 'Env' },
+    parameters: { input_data: 'u0', diff: ['d1'] },
+    resource_requests: { cpu: '16000m', memory: '24Gi', 'ephemeral-storage': '10Gi' },
+    deadline_seconds: 14400,
+    cluster: { id: 'c2', name: 'Big node' },
+  };
+
+  it('keeps the edited version\'s cluster, CPU, memory and deadline', () => {
+    const request = editedVersionRequest(proc, edited, 'd2');
+    expect(request.cluster).toEqual({ id: 'c2' });
+    expect(request.resource_requests).toEqual({ cpu: '16000m', memory: '24Gi', 'ephemeral-storage': '10Gi' });
+    expect(request.deadline_seconds).toBe(14400);
+  });
+
+  it('re-runs the same process, type, environment and parameters with the new diff added', () => {
+    expect(editedVersionRequest(proc, edited, 'd2')).toEqual({
+      id: 'p1', name: 'Manual cull', type: 'yf_process_tem', environment: { id: 'env1' },
+      params: { input_data: 'u0', diff: ['d1', 'd2'] },
+      resource_requests: edited.resource_requests, deadline_seconds: 14400, cluster: { id: 'c2' },
+    });
+  });
+
+  it('leaves what the version does not have to the server defaults, never sending a null deadline', () => {
+    const bare = { type: 'yf_process_tem', environment: { id: 'env1' }, parameters: {} };
+    const request = editedVersionRequest(proc, bare, 'd1');
+    expect(request.resource_requests).toBe(null);
+    expect(request.cluster).toBe(null);
+    expect('deadline_seconds' in request).toBe(false);
   });
 });
 
