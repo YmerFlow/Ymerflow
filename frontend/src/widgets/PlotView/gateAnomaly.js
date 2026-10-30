@@ -63,6 +63,66 @@ export function runningMedian(x, values, halfWidth) {
   return median;
 }
 
+// ── Transmitter height ───────────────────────────────────────────────────────
+// Height changes slower than the window are absorbed by the running median; fast ones,
+// such as climbs over powerlines, show as columns. Height enters a 1D forward response only
+// through a factor e^(-2·λ·h), so to first order log amplitude is linear in height in
+// meters, and one slope per gate removes it (see docs/plans/gate-anomaly-altitude.md).
+
+// Transmitter height columns, in libaarhusxyz's alt_column order; matched in any case.
+export const HEIGHT_COLUMNS = ['tx_altitude', 'alt', 'TxAltitude', 'tx_alt'];
+
+// The transmitter height column among `flightlines`: `override` when given, else the first
+// of HEIGHT_COLUMNS in any capitalization. Null when there is none.
+export function findHeightColumn(flightlines, override) {
+  if (override) return override in flightlines ? override : null;
+  const columns = Object.keys(flightlines);
+  for (const name of HEIGHT_COLUMNS) {
+    const hit = columns.find(c => c.toLowerCase() === name.toLowerCase());
+    if (hit) return hit;
+  }
+  return null;
+}
+
+// The height anomaly [m]: transmitter height above ground [m] minus its running median
+// over ±halfWidth [m] along x, line by line. Heights that are not positive count as
+// missing; their soundings get NaN.
+export function heightAnomaly(x, height, halfWidth) {
+  const n = x.length;
+  const h = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const v = Number(height[i]);
+    h[i] = Number.isFinite(v) && v > 0 ? v : NaN;
+  }
+  const median = runningMedian(x, h, halfWidth);
+  const eta = new Float64Array(n);
+  for (let i = 0; i < n; i++) eta[i] = h[i] - median[i];
+  return eta;
+}
+
+// One gate's anomaly [decades] with the height term removed. Per line, the least-squares
+// slope b [decades/m] of the anomaly on the height anomaly `eta` [m], through the origin
+// since both are median-centered, over in-use cells where both are finite; then
+// anomaly - b·eta for every cell. A line whose height does not vary gets b = 0; a cell
+// without a height anomaly gets NaN. Returns { column, slopes } with one slope per line.
+export function heightCorrectedColumn(x, anomaly, eta, inUse) {
+  const column = new Float32Array(anomaly.length);
+  const slopes = [];
+  for (const [start, end] of lineRuns(x)) {
+    let sxy = 0, sxx = 0;
+    for (let i = start; i < end; i++) {
+      if (inUse && Number(inUse[i]) === 0) continue;
+      if (!Number.isFinite(anomaly[i]) || !Number.isFinite(eta[i])) continue;
+      sxy += anomaly[i] * eta[i];
+      sxx += eta[i] * eta[i];
+    }
+    const b = sxx > 0 ? sxy / sxx : 0;
+    slopes.push(b);
+    for (let i = start; i < end; i++) column[i] = anomaly[i] - b * eta[i];
+  }
+  return { column, slopes };
+}
+
 // One gate's column of the section [decades]: log10(value) minus the running median of
 // log10 of the gate's in-use values. Every positive value gets a number, in use or not,
 // so a cell that is manually re-enabled can be colored; the layer greys what is not in
