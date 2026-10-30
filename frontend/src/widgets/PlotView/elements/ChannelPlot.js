@@ -1,27 +1,16 @@
 import { LayerType, registerLayerType, AXIS_GEOMETRY } from 'gladly-plot';
 import { resolveDataPath, getFrom, getKeys, toFloat32Array } from '../colorUtils.js';
+import { globalSoundingIndex, soundingState } from '../inUseEdits.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
 
-// inuse_state encoding:
-//   0 = auto-enabled  (normal gate colour)
+// inuse_state encoding (see inUseEdits.js):
+//   0 = auto-enabled  (normal gate color)
 //   1 = manually-enabled  (green tint)
 //   2 = auto-disabled  (grey, like legacy bad_color)
 //   3 = manually-disabled  (red tint)
-// Segment state = max(s0, s1) so "worst" endpoint determines segment colour.
-// Pending edits are keyed by global sounding index (the lasso handler maps through
-// flightlines.apply_idx), while inuseArr is indexed by the part-local index.
-function _soundingState(localIdx, globalIdx, gateKey, inuseArr, channelDiff) {
-  if (channelDiff) {
-    const gateDiff = channelDiff.get(gateKey);
-    if (gateDiff && gateDiff.has(globalIdx)) {
-      return gateDiff.get(globalIdx) === 1 ? 1.0 : 3.0;
-    }
-  }
-  const origInUse = inuseArr ? Number(inuseArr[localIdx]) : 1;
-  return origInUse === 0 ? 2.0 : 0.0;
-}
+// Segment state = max(s0, s1) so "worst" endpoint determines segment color.
 
 registerLayerType('ChannelPlot', new LayerType({
   name: 'ChannelPlot',
@@ -126,12 +115,9 @@ registerLayerType('ChannelPlot', new LayerType({
       ? (rawData?._inMemoryDiffs?.[datasetName]?.[channel] ?? null)
       : null;
 
-    // Part-local → global sounding index, as the lasso handler maps it when storing
-    // edits (set by libaarhusxyz split_by_line(); absent where local = global).
-    // apply_idx is int64 on disk and decodes to a BigInt64Array; edits are keyed by
-    // Number, so convert here as the lasso does.
+    // Pending edits are keyed by global sounding index, inuseArr by part-local index.
     const applyIdx    = flightlines.apply_idx;
-    const globalIdx   = (i) => (applyIdx ? Number(applyIdx[i]) : i);
+    const globalIdx   = (i) => globalSoundingIndex(applyIdx, i);
 
     const xdist       = toFloat32Array(xdistRaw);
     const N           = xdist.length;
@@ -155,8 +141,8 @@ registerLayerType('ChannelPlot', new LayerType({
         const abs1 = Math.abs(Number(yArr[i + 1]));
         const isInvalid = !isFinite(abs0) || abs0 <= 0 || !isFinite(abs1) || abs1 <= 0;
 
-        const s0 = _soundingState(i,     globalIdx(i),     gateKey, inuseArr, channelDiff);
-        const s1 = _soundingState(i + 1, globalIdx(i + 1), gateKey, inuseArr, channelDiff);
+        const s0 = soundingState(i,     globalIdx(i),     gateKey, inuseArr, channelDiff);
+        const s1 = soundingState(i + 1, globalIdx(i + 1), gateKey, inuseArr, channelDiff);
         const segState = Math.max(s0, s1);
 
         xs[i * 2]             = xdist[i];

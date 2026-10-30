@@ -21,12 +21,107 @@ export function resolveEditTarget(path, activeProcess, processes) {
   return { process: ref.process, versionObj: ref.versionObj, datasetName };
 }
 
+// ── In-memory edits ──────────────────────────────────────────────────────────
+// The store every in-use editing layer writes to and reads from (ProcessContext holds it):
+// diffs:   { [datasetPath]: { [channel]: Map<gateIndex, Map<soundingIndex, 0|1>> } }
+// history: { [datasetPath]: snapshot[] }  (per-dataset undo stack)
+
+function _deepCopyDatasetDiff(datasetDiff) {
+  const result = {};
+  for (const [channel, channelMap] of Object.entries(datasetDiff)) {
+    const newMap = new Map();
+    for (const [gateIdx, soundingMap] of channelMap.entries()) {
+      newMap.set(gateIdx, new Map(soundingMap));
+    }
+    result[channel] = newMap;
+  }
+  return result;
+}
+
+export function inUseDiffReducer(state, action) {
+  switch (action.type) {
+    case 'APPLY_EDIT': {
+      const { datasetName, channel, entries, value } = action;
+      const prevDatasetDiff = state.diffs[datasetName] ?? {};
+
+      // Push snapshot before mutating
+      const snapshot = _deepCopyDatasetDiff(prevDatasetDiff);
+      const newHistory = {
+        ...state.history,
+        [datasetName]: [...(state.history[datasetName] ?? []), snapshot],
+      };
+
+      // Apply edits
+      const newDatasetDiff = _deepCopyDatasetDiff(prevDatasetDiff);
+      if (!newDatasetDiff[channel]) newDatasetDiff[channel] = new Map();
+      const channelMap = newDatasetDiff[channel];
+
+      for (const { soundingIndex, gateIndex } of entries) {
+        if (!channelMap.has(gateIndex)) channelMap.set(gateIndex, new Map());
+        const soundingMap = channelMap.get(gateIndex);
+        if (value === undefined || value === null) {
+          soundingMap.delete(soundingIndex);
+        } else {
+          soundingMap.set(soundingIndex, value);
+        }
+        if (soundingMap.size === 0) channelMap.delete(gateIndex);
+      }
+
+      return {
+        diffs: { ...state.diffs, [datasetName]: newDatasetDiff },
+        history: newHistory,
+      };
+    }
+    case 'UNDO': {
+      const { datasetName } = action;
+      const history = state.history[datasetName] ?? [];
+      if (history.length === 0) return state;
+      const prevSnapshot = history[history.length - 1];
+      return {
+        diffs: { ...state.diffs, [datasetName]: prevSnapshot },
+        history: { ...state.history, [datasetName]: history.slice(0, -1) },
+      };
+    }
+    case 'CLEAR': {
+      const { datasetName } = action;
+      return {
+        diffs: { ...state.diffs, [datasetName]: {} },
+        history: { ...state.history, [datasetName]: [] },
+      };
+    }
+    case 'CLEAR_ALL':
+      return { diffs: {}, history: {} };
+    default:
+      return state;
+  }
+}
+
 // The diffs of the version being built on, with the new round's URL added.
 // `previous` is a list, a single URL (versions saved before diffs accumulated),
 // or nothing. The input is not modified.
 export function appendDiff(previous, url) {
   const earlier = Array.isArray(previous) ? previous : previous ? [previous] : [];
   return [...earlier, url];
+}
+
+// The createProcess request for the version a Save makes: the edited version re-run with
+// this round's diff added. It keeps the edited version's cluster, resources and deadline;
+// left out, the server would use its defaults (first cluster, 1 CPU, 2 Gi, 1 h), and a
+// large dataset re-run in 2 Gi runs out of memory. Fields the version does not have are
+// left to those defaults; deadline_seconds may not be null, so it is then omitted.
+export function editedVersionRequest(proc, editedVer, diffUrl) {
+  const request = {
+    id: proc.id,
+    name: proc.name,
+    type: editedVer.type,
+    environment: { id: editedVer.environment?.id },
+    // Earlier rounds' diffs are kept: the new version replays all of them in order.
+    params: { ...editedVer.parameters, diff: appendDiff(editedVer.parameters?.diff, diffUrl) },
+    resource_requests: editedVer.resource_requests ?? null,
+    cluster: editedVer.cluster?.id ? { id: editedVer.cluster.id } : null,
+  };
+  if (editedVer.deadline_seconds != null) request.deadline_seconds = editedVer.deadline_seconds;
+  return request;
 }
 
 // Whether a process type replays saved edits: its form declares `diff`. Edits saved on

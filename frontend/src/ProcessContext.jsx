@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useProcesses, useEnvironments, useProcessOutputDatasets, useProjects, useCreateProcess, useWorkspace, fetchEnvironmentProcessTypes } from "./datamodel/useQueries";
 import { loadDataset, DatasetCollectionAdapter } from './datamodel/dataset';
 import XYZ from './datamodel/libaarhusxyz';
-import { acceptsEdits, appendDiff, buildDiffColumns, resolveEditTarget } from './datamodel/inUseDiffs';
+import { acceptsEdits, buildDiffColumns, editedVersionRequest, inUseDiffReducer, resolveEditTarget } from './datamodel/inUseDiffs';
 import { useWebSocket } from './hooks/useWebSocket';
 import { WS_API, uploadFile } from './datamodel/api';
 import { recordNavView } from './datamodel/navTracking';
@@ -16,79 +16,6 @@ export const ProcessContext = createContext();
 const INITIAL_DATASET_OBJECTS = {};
 const INITIAL_FETCHED_DATA = {};
 
-// ── InUse diff state ─────────────────────────────────────────────────────────
-// diffs:   { [datasetName]: { [channel]: Map<gateIndex, Map<soundingIndex, 0|1>> } }
-// history: { [datasetName]: snapshot[] }  (per-dataset undo stack)
-
-function _deepCopyDatasetDiff(datasetDiff) {
-  const result = {};
-  for (const [channel, channelMap] of Object.entries(datasetDiff)) {
-    const newMap = new Map();
-    for (const [gateIdx, soundingMap] of channelMap.entries()) {
-      newMap.set(gateIdx, new Map(soundingMap));
-    }
-    result[channel] = newMap;
-  }
-  return result;
-}
-
-function inUseDiffReducer(state, action) {
-  switch (action.type) {
-    case 'APPLY_EDIT': {
-      const { datasetName, channel, entries, value } = action;
-      const prevDatasetDiff = state.diffs[datasetName] ?? {};
-
-      // Push snapshot before mutating
-      const snapshot = _deepCopyDatasetDiff(prevDatasetDiff);
-      const newHistory = {
-        ...state.history,
-        [datasetName]: [...(state.history[datasetName] ?? []), snapshot],
-      };
-
-      // Apply edits
-      const newDatasetDiff = _deepCopyDatasetDiff(prevDatasetDiff);
-      if (!newDatasetDiff[channel]) newDatasetDiff[channel] = new Map();
-      const channelMap = newDatasetDiff[channel];
-
-      for (const { soundingIndex, gateIndex } of entries) {
-        if (!channelMap.has(gateIndex)) channelMap.set(gateIndex, new Map());
-        const soundingMap = channelMap.get(gateIndex);
-        if (value === undefined || value === null) {
-          soundingMap.delete(soundingIndex);
-        } else {
-          soundingMap.set(soundingIndex, value);
-        }
-        if (soundingMap.size === 0) channelMap.delete(gateIndex);
-      }
-
-      return {
-        diffs: { ...state.diffs, [datasetName]: newDatasetDiff },
-        history: newHistory,
-      };
-    }
-    case 'UNDO': {
-      const { datasetName } = action;
-      const history = state.history[datasetName] ?? [];
-      if (history.length === 0) return state;
-      const prevSnapshot = history[history.length - 1];
-      return {
-        diffs: { ...state.diffs, [datasetName]: prevSnapshot },
-        history: { ...state.history, [datasetName]: history.slice(0, -1) },
-      };
-    }
-    case 'CLEAR': {
-      const { datasetName } = action;
-      return {
-        diffs: { ...state.diffs, [datasetName]: {} },
-        history: { ...state.history, [datasetName]: [] },
-      };
-    }
-    case 'CLEAR_ALL':
-      return { diffs: {}, history: {} };
-    default:
-      return state;
-  }
-}
 const EMPTY_ARRAY = [];
 
 // Helper to parse URL pathname into params
@@ -403,8 +330,7 @@ export function ProcessProvider({ children }) {
 
       try {
         await createProcess.mutateAsync({
-          // Earlier rounds' diffs are kept: the new version replays all of them in order.
-          proc: { id: proc.id, type: editedVer.type, environment: { id: editedVer.environment?.id }, name: proc.name, params: { ...editedVer.parameters, diff: appendDiff(editedVer.parameters?.diff, diffUrl) } },
+          proc: editedVersionRequest(proc, editedVer, diffUrl),
           projectId: currentProject,
         });
         saved.push(datasetPath);
