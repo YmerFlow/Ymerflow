@@ -3,7 +3,7 @@
 ## Goal
 
 Make the cluster's host-facing services reachable on the **host's own interfaces** (`0.0.0.0` — the
-LAN IP `192.168.1.142` and localhost) instead of only at the **minikube bridge IP** (`192.168.49.2`)
+LAN IP `192.0.2.142` and localhost) instead of only at the **minikube bridge IP** (`192.168.49.2`)
 or via `socat` / `kubectl port-forward` hacks. This is the prerequisite for a second machine on the
 LAN reaching this cluster (arch 2 in the multi-cluster discussion).
 
@@ -165,13 +165,13 @@ services already require auth over TLS by the time they're exposed.
 - Fresh `runall` (accepts the one-time silent recreate). `docker port minikube` then shows
   `0.0.0.0:30080`, `0.0.0.0:30500`, `0.0.0.0:9000`, `0.0.0.0:9001` bound; no `socat` process runs.
 - From **another LAN machine** (`192.168.1.x`) — services are HTTPS + authenticated (prerequisite):
-  - `curl http://192.168.1.142:30080/` reaches the app (and `/api` reaches the backend). The frontend
+  - `curl http://192.0.2.142:30080/` reaches the app (and `/api` reaches the backend). The frontend
     stays plain HTTP from nginx (TLS, if any, terminated upstream — unchanged by this plan).
-  - `curl -k -u "$REGISTRY_USER:$REGISTRY_PASSWORD" https://192.168.1.142:30500/v2/` returns `{}`;
+  - `curl -k -u "$REGISTRY_USER:$REGISTRY_PASSWORD" https://192.0.2.142:30500/v2/` returns `{}`;
     the same request **without** `-u` is rejected (auth is enforced).
-  - `mc alias set r https://192.168.1.142:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --insecure &&
+  - `mc alias set r https://192.0.2.142:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --insecure &&
     mc ls r --insecure` works.
-- kube-apiserver: from the other machine, a kubeconfig pointing at `https://192.168.1.142:<apiserver
+- kube-apiserver: from the other machine, a kubeconfig pointing at `https://192.0.2.142:<apiserver
   host port>` with this cluster's client cert connects **without** a TLS SAN error (proves
   `--apiserver-ips` took). Confirm the host port via `docker port minikube 8443`.
 - Dev backend on the host still reaches MinIO at `https://localhost:9000` (docker publish covers

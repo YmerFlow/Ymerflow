@@ -177,7 +177,7 @@ auth). Every consumer of "the registry" bakes in assumptions specific to that se
    - `config.env` gains a uniform shape for all three axes:
      ```bash
      REGISTRY_PROTOCOL=docker-v2
-     REGISTRY_CONFIG_JSON={"user":"nagelfluh","password":"nagelfluh","public_host":"192.168.1.142"}
+     REGISTRY_CONFIG_JSON={"user":"nagelfluh","password":"nagelfluh","public_host":"192.0.2.142"}
 
      STORAGE_PROTOCOL=s3
      STORAGE_CONFIG_JSON={...}

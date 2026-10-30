@@ -62,7 +62,7 @@ MINIKUBE_CPUS=4
 MINIKUBE_MEMORY=8192
 
 # Production only — public URL clients use to reach the app:
-# SERVER_URL=http://192.168.1.100:30080
+# SERVER_URL=http://192.0.2.100:30080
 
 # Admin credentials for pgAdmin and the Kubernetes dashboard (production only).
 # Used once on first run to create the ymerflow-admin-secret K8s secret.
@@ -83,7 +83,7 @@ configure a **plugin-provided** protocol (e.g. Google Artifact Registry, GCS, GK
 
 ```bash
 # REGISTRY_PROTOCOL=docker-v2
-# REGISTRY_CONFIG_JSON={"user":"ymerflow","password":"ymerflow","host":"192.168.1.142","port":30500}
+# REGISTRY_CONFIG_JSON={"user":"<registry-user>","password":"<registry-password>","host":"192.0.2.142","port":30500}
 
 # STORAGE_PROTOCOL=s3
 # STORAGE_CONFIG_JSON={...}

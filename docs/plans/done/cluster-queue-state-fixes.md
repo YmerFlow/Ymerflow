@@ -2,7 +2,7 @@
 
 ## Context
 
-Two state-reporting bugs surfaced on prod (`griffon@192.168.1.206`) after the Cluster Queue
+Two state-reporting bugs surfaced on prod (`<prod-host>`) after the Cluster Queue
 widget (`docs/plans/done/cluster-queue-widget.md`) shipped. Both trace to conflating **Kueue
 admission** with the actual per-process lifecycle:
 

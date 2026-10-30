@@ -132,7 +132,7 @@ There is no longer a static, namespace-wide `ymerflow-registry-pull` Secret prov
 # Defaults are turnkey (ymerflow/ymerflow); change on any host exposed off a trusted LAN.
 REGISTRY_USER=ymerflow
 REGISTRY_PASSWORD=ymerflow
-REGISTRY_PUBLIC_HOST=192.168.1.142   # required for remote-cluster registration; see below
+REGISTRY_PUBLIC_HOST=192.0.2.142   # required for remote-cluster registration; see below
 ```
 
 These are consumed by a one-time Alembic seed migration
