@@ -224,7 +224,7 @@ Interactive editor for hand-building or editing synthetic AEM (airborne electrom
 
 ### InUseEditor
 
-Companion control panel for bulk-editing per-sounding, per-gate "in use" flags on AEM data, driven by lasso selections made in a `PlotView` pane's `ChannelPlot` layers.
+Companion control panel for bulk-editing per-sounding, per-gate "in use" flags on AEM data, driven by lasso selections made in a `PlotView` pane's `ChannelPlot` or `GateAnomalyPlot` layers (see [In-use editing layers](#in-use-editing-layers)).
 
 **Features:**
 - Enable/Disable/Clear action modes, selectable via buttons or keyboard shortcuts (E/D/C)
@@ -352,6 +352,45 @@ These are two unrelated conventions that happen to share the word "schema" — d
 - `frontend/src/widgets/PlotView/elements/ChannelPlot.js`
 - `frontend/src/widgets/PlotView/elements/FlightlinePlot.js`
 - `frontend/src/widgets/PlotView/elements/ResistivityCurtain.js`
+
+#### In-use editing layers
+
+Two layer types edit a dataset's in-use flags with the InUse Editor: `ChannelPlot`, the gate profiles along the line, and `GateAnomalyPlot`, a gate-by-distance section. With `inUseMode: true`, a Shift+drag lasso in either one applies the InUse Editor's current action (Enable / Disable / Clear) to the selected soundings and gates.
+
+`GateAnomalyPlot` draws one channel of one dataset as cells: x is `xdist`, the same axis as ChannelPlot, so stacked panes line up; y is the gate, numbered from 1, early gates at the top. Each cell is colored by `log10(value) − log10(running median)`, where the running median is taken over that gate's in-use values within ±`window_m` meters along the line. The scale is brown below the median, white at it, and green above, clipped at ±`range_decades`. Coupling, fences and IP then show as columns and bands against the decay. Cells not in use are grey, as are cells with no value: a non-positive value, or a window where fewer than a quarter of the soundings are in use. Pending edits are drawn as tints: red for manually disabled and blue for manually enabled. The median is recomputed when the dataset, the window or the in-use mask changes, not on every edit. See `frontend/src/widgets/PlotView/gateAnomaly.js`.
+
+| Parameter | Default | |
+|---|---|---|
+| `dataset`, `channel` | `Ch01` | the dataset path and channel, as for ChannelPlot |
+| `inUseMode` | `false` | draw pending edits and edit with the lasso |
+| `selection` | `inuse_brush` | injected by PlotView when `inUseMode` is on |
+| `window_m` | `500` | running median half-width along the line [m] |
+| `range_decades` | `0.5` | color range, ±0.5 decades = ×0.3 to ×3 the median |
+| `bad_color` | grey | color of cells not in use or without a value |
+
+Both layers write to one in-memory store in `ProcessContext` (`inMemoryDiffs`, see `frontend/src/datamodel/inUseDiffs.js`). Edits are keyed by dataset path, channel, gate and global sounding index, the part-local index mapped through `flightlines.apply_idx`. So an edit made in one pane is drawn in the other before saving, and Save writes one diff for the dataset. Both panes must use the same dataset path for this to happen. The lasso mapping and the lookup of pending edits are shared in `frontend/src/widgets/PlotView/inUseEdits.js`.
+
+Put each editing layer in its own pane. The layers in one pane share its selection channel, and a lasso mask only fits the layer type that drew it, so PlotView logs an error and skips a layer whose mask does not fit. A layout with the profiles above the section, sharing the x axis, and the InUse Editor beside them:
+
+```javascript
+{
+  id: "cull", widget: "VerticalSplit", size: 0.85,
+  children: [
+    { id: "cull-plots", widget: "HorizontalSplit", size: 0.5,
+      children: [
+        { id: "profiles", widget: "PlotView", layoutConfig: {
+            layers: [{ ChannelPlot: { dataset: "current.processed_data", channel: "Ch01", inUseMode: true } }],
+            // ChannelPlot gives gladly no axis domains, so set the ranges here.
+            axes: { xaxis_bottom: { min: 0, max: 50000 }, yaxis_left: { scale: "log", min: 1e-4, max: 1e4 } } } },
+        { id: "section", widget: "PlotView", layoutConfig: {
+            layers: [{ GateAnomalyPlot: { dataset: "current.processed_data", channel: "Ch01", inUseMode: true } }] } },
+      ] },
+    { id: "editor", widget: "InUseEditor" },
+  ],
+}
+```
+
+PlotViews in one workspace link axes of the same quantity kind, so zooming along `xdist` in one pane moves the other. The section's y axis comes out reversed so that early gates are at the top; to set its range by hand, give `min` the late gate and `max` the early one.
 
 ## Widget State Management
 
