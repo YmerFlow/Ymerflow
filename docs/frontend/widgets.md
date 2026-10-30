@@ -255,6 +255,7 @@ GPU/WebGL scientific plotting built on the `gladly-plot` npm package, with a plu
 - **Layer Type Registry**: Pluggable layer types register themselves with `registerLayerType(name, new LayerType({...}))` at module load time (side-effect imports)
 - **Config-driven layers**: The pane's `layoutConfig` (`{ transforms, layers, axes }`) is handed to `plot.update({ data, config })`; each entry in `layers` names a registered layer type plus its parameters
 - **Dataset Integration**: `ProcessContext`'s `datasetCollection` is converted to a `DataGroup` (`dc.toDataGroup()`) for gladly's built-in resolution; custom layer types instead read raw dataset objects directly off `plot._rawData` (see the `gladly 0.0.6 DataGroup/_children Pattern` notes in project memory for why)
+- **Pinned datasets**: a layer parameter `<processName>.<version>.<datasetName>[.<column>]` pins an output of another process version beside the `current.*` ones. Pinned datasets are loaded lazily for the part selected in the top bar, like `current.*` datasets, and again when the part changes, so a pinned pane shows the same line as the panes beside it; `all` loads every part as before. A pinned dataset needs the same part names as the active process: for a part it lacks, the pinned layers draw nothing and the console says which part was not found. See `frontend/src/widgets/PlotView/pinnedDatasets.js`
 - **Picking & interaction**: `plot.on('mousemove'|'click', handler)` and `plot.pick(x, y)` drive the status bar and sounding-selection logic in `PlotView`
 
 **Layer Type Structure:**
