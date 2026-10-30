@@ -49,7 +49,7 @@ async def _write_upload_bytes(content: bytes, project_id: str, upload_id: str, f
 
     # End the read transaction before the storage write so the pooled connection isn't held across
     # it; _create_upload_record re-opens one to insert the row. See
-    # docs/plans/db-pool-commit-before-k8s-io.md.
+    # docs/plans/done/db-pool-commit-before-k8s-io.md.
     await db.commit()
 
     def _write():
@@ -74,7 +74,7 @@ async def _stream_upload(request: Request, project_id: str, upload_id: str, file
     # Highest-severity pool offender: an unbounded client→S3 transfer. End the read transaction
     # before opening the multipart handle so the pooled connection is NOT pinned for the whole
     # upload; _create_upload_record records the row in a fresh short transaction after a clean
-    # close. See docs/plans/db-pool-commit-before-k8s-io.md.
+    # close. See docs/plans/done/db-pool-commit-before-k8s-io.md.
     await db.commit()
 
     fh = await asyncio.to_thread(
@@ -220,7 +220,7 @@ async def download_file(file_id: str, db: AsyncSession = Depends(get_db)):
 
     # End the read transaction before the file read so the pooled connection isn't held across it.
     # commit() keeps `upload` readable (used in the closure and the response) under
-    # expire_on_commit=False. See docs/plans/db-pool-commit-before-k8s-io.md.
+    # expire_on_commit=False. See docs/plans/done/db-pool-commit-before-k8s-io.md.
     await db.commit()
 
     def _read():

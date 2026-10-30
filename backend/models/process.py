@@ -579,7 +579,7 @@ class ProcessVersion(Base):
 
                 # End the preamble read transaction before the first blocking K8s call so the
                 # pooled connection isn't parked idle-in-transaction across it (see
-                # docs/plans/db-pool-commit-before-k8s-io.md). commit() (not rollback()) keeps the
+                # docs/plans/done/db-pool-commit-before-k8s-io.md). commit() (not rollback()) keeps the
                 # already-loaded process/process_version readable under expire_on_commit=False.
                 await db.commit()
 

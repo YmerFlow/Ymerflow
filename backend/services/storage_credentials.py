@@ -105,7 +105,7 @@ async def ensure_ready(db, project, force: bool = False) -> dict:
     # End the read transaction opened by the StorageBackend fetch above before either returning
     # (the fast path used to leak it to the caller) or blocking on provisioning. commit() (not
     # rollback()) keeps the passed-in `project` and the fetched `backend` readable afterwards under
-    # expire_on_commit=False. See docs/plans/db-pool-commit-before-k8s-io.md.
+    # expire_on_commit=False. See docs/plans/done/db-pool-commit-before-k8s-io.md.
     await db.commit()
 
     if not force and project.storage_access_key and project.storage_secret_key:

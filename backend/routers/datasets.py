@@ -200,7 +200,7 @@ async def get_dataset_part_data(
 
     storage_options = await get_fsspec_storage_options(db, dataset.project_id)
     # End the read transaction before the full-file read so the pooled connection isn't held across
-    # it (everything needed is now in local vars). See docs/plans/db-pool-commit-before-k8s-io.md.
+    # it (everything needed is now in local vars). See docs/plans/done/db-pool-commit-before-k8s-io.md.
     await db.commit()
     def _read():
         with fsspec.open(part_file_url, 'rb', **storage_options) as f:
@@ -267,7 +267,7 @@ async def get_dataset_part_geography(
 
     storage_options = await get_fsspec_storage_options(db, dataset.project_id)
     # End the read transaction before the full-file read so the pooled connection isn't held across
-    # it (everything needed is now in local vars). See docs/plans/db-pool-commit-before-k8s-io.md.
+    # it (everything needed is now in local vars). See docs/plans/done/db-pool-commit-before-k8s-io.md.
     await db.commit()
     def _read():
         with fsspec.open(part_geography_url, 'r', **storage_options) as f:
@@ -395,7 +395,7 @@ async def get_file(
     # End the read transaction before the file read so the pooled connection isn't held across it.
     # This is the primary, auth-free, highest-concurrency file endpoint. (The attachment branch's
     # _download_filename re-opens a brief transaction for its single SELECT, freed at request end.)
-    # See docs/plans/db-pool-commit-before-k8s-io.md.
+    # See docs/plans/done/db-pool-commit-before-k8s-io.md.
     await db.commit()
     try:
         mode = 'r' if mime_type in TEXT_MIME_TYPES else 'rb'

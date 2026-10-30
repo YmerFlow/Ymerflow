@@ -336,7 +336,7 @@ async def run_import(import_id: str):
                     return f.read()
             # End the read transaction (Upload + resolve_bucket lookups) before reading the whole
             # export zip in a worker thread. commit() keeps `upload` readable inside the closure
-            # under expire_on_commit=False. See docs/plans/db-pool-commit-before-k8s-io.md.
+            # under expire_on_commit=False. See docs/plans/done/db-pool-commit-before-k8s-io.md.
             await db.commit()
             zip_bytes = await asyncio.to_thread(_read_zip_bytes)
 
