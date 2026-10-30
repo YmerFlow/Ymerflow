@@ -1,124 +1,215 @@
-# Manual edit points inside one processing process
+# Save in-use edits onto a pipeline's save-point step
 
-**Status:** planned. Decisions 1-9 below are open. Not started.
+**Status:** planned. Not started. Frontend only.
 
 **Ticket:** ymerflow-business#125.
 
-## Motivation
+## What this is
 
-A real processing chain needs a person's in-use edits at more than one stage: at full rate after the automatic culls but before averaging, and again on the averaged data. Today `yf_process_tem` replays saved edits only after its last step, and the InUse Editor can only edit a process's output. So a chain with two edit points runs as several processes, one per point, and every Save means rerunning the processes downstream by hand.
+The InUse editor lets a person edit a dataset's in-use masks, Save, and have the re-run replay
+the edit. Today Save understands exactly one place to put a saved edit: a **process-level `diff`
+array** on the version's parameters, which it appends a diff URL to. That is the shape
+`apply_manual_edits` uses, and the shape `yf_process_tem` uses *as built today*.
 
-ymerflow-processing is adding a `manual_edit_point` step for this (its plan: `docs/plans/edit-points.md` in that repository, YmerFlow/ymerflow-processing#42). That plan is the contract this one builds on. This plan is the platform half: `yf_process_tem` writes the state at each point as an output dataset, the editor opens it, and Save puts the new diff in that point's list, so the rerun applies it before the steps that follow.
+Pipeline process types carry edits differently — on a **`save_intermediate_and_apply_diff` step
+inside the pipeline**, which holds the edit as a single `diff` URL on the step itself, keyed to a
+named save point. Two pipeline libraries use this step:
 
-## What exists
+- **emerald-processing-em** (process type `process_tem`) already ships it — `emeraldprocessing/
+  diff.py:save_intermediate_and_apply_diff(processing, name, diff=None)`.
+- **ymerflow-processing** (process type `yf_process_tem`) gains it in its edit-points plan
+  (`deps/ymerflow-processing/docs/plans/edit-points.md`, YmerFlow/ymerflow-processing#42), which
+  also **removes** `yf_process_tem`'s current process-level `diff` array (`takes_edits`,
+  `properties["diff"]`, `_replay_edits`, `EDIT_CHECKPOINT` in `aem_processes/
+  yf_processing_process.py`).
 
-- **The library step (decided, not built).** `manual_edit_point: {name, diff: [url, ...]}` hands the runner the state *before* its own diffs through a sink, a callable `(name, dataset) -> None`, then replays its diffs in order. The library never writes the snapshot. The sink writes each snapshot as soon as the step calls it, so nothing is held until the end. No sink means the snapshot is skipped and the run report says so. Point names are unique and may not be `output` or `processed_data`. The end-of-pipeline `diff` list, which the library treats as an implicit last point named `output`, stays for now, deprecated: using it adds a warning to the run report, because edits replayed after the clean-up steps can leave a sounding with fewer gates than `cull_sparse_soundings` requires.
-- **aem-processes PR #6.** A step parameter that reads data can be a storage URL, fetched before the run (`fetch_step_inputs` in `aem_processes/yf_processing_process.py`). It handles a single string, not a list.
-- **The end list.** `_replay_edits` replays `diff` after every step with `EDIT_CHECKPOINT = "output of the steps above"`.
-- **The editor and Save** (`docs/plans/done/inuse-flag-editor.md`, `docs/plans/done/accumulate-manual-edit-diffs.md`). `saveAllDiffs` in `frontend/src/ProcessContext.jsx` uploads one diff per edited dataset and creates a new version of the process that made it, with `diff: appendDiff(...)`. `resolveEditTarget` finds that version and the output's name; `acceptsEdits` refuses a process type whose form has no `diff`.
-- **What ChannelPlot draws.** In `inUseMode` it draws four states from the dataset's own `InUse_<channel>` and the editor's *unsaved* edits. Saved edits are not drawn as edits anywhere today. On a final output they are already applied, so they look the same as automatic culls. (The library plan says the editor overlays saved diffs "as it does today"; it does not, and this plan adds it.)
-- **The clone endpoint.** `POST /projects/{project_id}/process/{process_id}/versions/{version}/clone` copies a version's type, environment, parameters, resources, deadline and cluster, with optional overrides.
+Both register the step with the *identical* `name` + `diff` signature and the byte-identical
+`ManualEditUrl` annotation (`x-url-media-type: application/x-geophysics-xyz-model`). After
+edit-points.md lands, `yf_process_tem` has no process-level `diff` for Save to append to, and its
+edits live on a step — the same place emerald's already do.
+
+This plan teaches the frontend Save to write a saved edit onto a `save_intermediate_and_apply_diff`
+step, **in addition to** the process-level array it already handles. Nothing about the editing
+experience changes — same lasso, same Save button, same re-run-replays-the-edit. The change is
+purely *where* Save writes the URL. Because the step is matched by its argument shape, one code
+path serves both libraries' pipelines.
+
+## What exists (verified against the source)
+
+- **The save loop** is `saveAllDiffs`, `frontend/src/ProcessContext.jsx:349-418`. Per edited
+  dataset it: `resolveEditTarget` → `{ process, versionObj, datasetName }`; fetches the
+  environment's process types and gates on `acceptsEdits(processTypes, type)` (true iff the type's
+  schema declares a top-level `diff`) **before uploading** the diff; builds and uploads the msgpack
+  diff; then `createProcess` with `params: { ...editedVer.parameters, diff:
+  appendDiff(editedVer.parameters?.diff, diffUrl) }`. A refusal/failure calls `notSaved` and
+  `continue`s, keeping the edits in the editor; only saved datasets are cleared.
+- **Helpers** in `frontend/src/datamodel/inUseDiffs.js`: `resolveEditTarget`, `buildDiffColumns`
+  (unchanged here); `appendDiff` (process-level array builder, kept); `acceptsEdits` (the
+  pre-upload gate, generalised here).
+- **The process types** (registered by `aem-processes` under `ymerflow.process_types`):
+  - `apply_manual_edits` — standalone; schema has a top-level `diff` **array** (append per save,
+    replayed oldest-first). *Keeps* this shape. Already works.
+  - `process_tem` — **emerald-processing-em** pipeline; schema is `input_data` + `steps`, **no
+    top-level `diff`**. Its steps can include emerald's `save_intermediate_and_apply_diff`.
+  - `yf_process_tem` — **ymerflow-processing** pipeline; *today* `input_data` + `steps` + top-level
+    `diff` array + `label`. edit-points.md removes the array and moves edits onto the step.
+  - `yf_qc_tem` — no edits.
+- **A step's on-the-wire shape.** The pipeline param `steps` is swaggerspect's `multi=True`
+  encoding: an **array** of single-key objects `{ "<step key>": { ...grouped args } }`
+  (`deps/swaggerspect/swaggerspect/__init__.py:124-128`). The step key is the **entry-point name**
+  (`get_apis_entrypoints` uses `local_names=True`), which differs between the libraries:
+  - emerald: `{ "Save intermediate results and apply manual edits": { "name": ..., "diff": ... } }`
+  - ymerflow: `{ "save_intermediate_and_apply_diff": { "name": ..., "diff": ... } }`
+
+  So the frontend **must not** key on the step name. Both carry the same args — a `name` (the
+  save point's output dataset name) and a `diff` (one optional URL) — and that argument shape is
+  what the frontend matches on.
 
 ## Design
 
-### 1. aem-processes: `yf_process_tem` writes each point as a dataset
+### Match a save-point step by its arguments, not its key
 
-- **The sink.** `yf_process_tem` is the runner the library plan describes. When the pipeline contains a `manual_edit_point`, `run()` passes `ProcessingRunner` a sink, the callable `(name, dataset) -> None`. Each call writes an output dataset named `name`, next to `processed_data`, with `write_dataset`, at once, and adds `{name: url}` to the version's outputs. A pipeline without a point runs exactly as now, so a new aem-processes still works with an older library for those pipelines.
-- **The sink leaves the running dataset as it found it.** Before writing the final output, `run()` renames columns in place (`normalize_naming`). Doing that partway through would change column names under the steps that follow, so the sink writes a renamed copy, or restores the names after writing. A copy of the full-rate state doubles that state's memory while it is written.
-- **The point's saved edits travel with the snapshot** (if Decision 2 is A). The sink is built in `run()`, which has the pipeline document, so when it is called with `name` it finds the `manual_edit_point` of that name and its diffs, which `fetch_step_inputs` has already fetched. It merges them in order into one layer per channel (1 enable, 0 disable, NaN none) and writes that layer into the output dataset, so it is split per line like every other layer. The library's sink contract stays `(name, dataset) -> None`.
-- **Diff lists are fetched.** `manual_edit_point`'s `diff` is a list of URLs. `fetch_step_inputs` learns to fetch every URL in a list, and `data_parameters` to recognize a list-of-data parameter. The pipeline keeps the URLs, so the run report and the dataset's processing history name the stored diffs, as they do for a single URL today. The library's type annotation for `diff` has to be one `data_parameters` can read, for example `list[str | XYZ]`; this is agreed with the library change.
-- **The end list warns.** `_replay_edits` adds the library's deprecation note to its step report, since on the platform the end list is replayed here and not by the library's runner. The `diff` property's form description says the same and points to `manual_edit_point`.
+A save-point step, for an edited dataset, is the step entry in `parameters.steps` whose args carry
+a `name` equal to the edited dataset's name **and** a `diff` field (present, possibly null). The
+`name` is the save point's output dataset name (the runner writes the snapshot under it), so
+`name === datasetName` is the discriminator; the `diff` field confirms the step takes an edit.
+This matches emerald's and ymerflow's steps alike without naming either key.
 
-**Size.** A full-rate survey of about a million soundings is a couple of GB as XYZ text before averaging. With the msgpack, GeoJSON and per-line parts that `write_dataset` also writes, one full-rate snapshot is a few GB per version, and every Save writes it again. At blob-storage prices that is small, but it adds write time to every rerun.
+```
+saveIntermediateStep(steps, datasetName)
+  -> { step, key, args }   // the matching entry, its single key, and its args object
+   | null
+```
 
-### 2. Frontend: open a point, save into it
+It tolerates a missing/non-array `steps` (returns `null`), and ignores a step whose args lack a
+`diff` field or whose `name` differs.
 
-- **Opening.** A point's snapshot is an ordinary output named after the point, so a ChannelPlot or GateAnomalyPlot layer points at `current.<name>` or `<process>.<version>.<name>` like any other dataset. No layout change.
-- **Where Save goes.** `resolveEditTarget` already returns the edited version and the dataset's name. A new helper, `editPointFor(parameters, datasetName)` in `frontend/src/datamodel/inUseDiffs.js`, finds the `manual_edit_point` step with that name. If there is one, the new version's parameters are the edited version's with the diff's URL appended to that step's `diff`. If the dataset is the process's final output, Save uses the end list as today, with the warning in section 4. Otherwise Save refuses and says the dataset has no edit point.
-- **One new version per edited version.** Save today creates one version per edited dataset, each built from the edited version's parameters. With two points of one version edited, that makes two versions, and the second does not carry the first one's diff. Save instead groups pending edits by process version and creates one new version with every edited point's list appended (Decision 4).
-- **Saved edits are drawn.** In `inUseMode`, ChannelPlot reads the point's saved edits (Decision 2) and draws them as manual states. Precedence: unsaved edit, then saved edit, then the dataset's own in-use flag. Saved edits are drawn lighter than unsaved ones, so what the next Save will write stands out, and the editor's counter counts unsaved edits only. GateAnomalyPlot, the gate-anomaly section layer, reads the same edits.
-- **Clear on a saved edit** follows Decision 3.
-- **`acceptsEdits`.** A snapshot accepts edits when the edited version's steps contain a point of that name. The process-type check stays for the end list.
+### `acceptsEdits` becomes step-aware (the pre-upload gate)
 
-Data fetching goes through TanStack Query hooks and invalidation through `invalidateProject`, as everywhere else.
+```
+acceptsEdits(processTypes, editedVer, datasetName)
+  -> saveIntermediateStep(editedVer.parameters?.steps, datasetName) is non-null      // step shape
+   || processTypes?.[editedVer.type]?.schema?.properties?.diff is present             // array shape
+```
 
-### 3. Save keeps the version's cluster, resources and deadline
+It needs no diff URL, so it stays the pre-upload gate exactly where it is today
+(`ProcessContext.jsx:377`). It gains `editedVer` and `datasetName` because the step case depends on
+the version's parameters, not only on the type schema.
 
-Save calls `createProcess` without resources, deadline or cluster, so the server falls back to 1 CPU, 2 Gi of memory, a one-hour deadline and the first cluster the project may use. A full-rate pipeline on a survey of that size peaks above 10 GB resident before any snapshot is written. A Save on it would fail for memory. The first allowed cluster is the first by sort order, which need not be where the edited version ran, and can be a paid one.
+### `editedParameters` builds the new version's parameters
 
-Save instead calls the clone endpoint with `parameter_overrides`, through a new `useCloneProcessVersion` hook (Decision 5). The server copies everything else from the edited version. If that version's cluster is no longer allowed, the create fails with a 400; the editor keeps the edits and shows the reason, and nothing falls back to another cluster. The success message names the cluster, CPU, memory and deadline of the rerun.
+```
+editedParameters(editedVer, datasetName, diffUrl)
+  -> the new `params` object for createProcess
+```
 
-This part does not depend on edit points, and it fixes Saves on today's chains of processes too (Decision 6).
+- **Save-point step** (emerald `process_tem`, ymerflow `yf_process_tem`): if `saveIntermediateStep`
+  matches, return a copy of `editedVer.parameters` with **that one step's `diff` set to `diffUrl`**
+  (a single string), leaving every other step, that step's other args, and all other parameters
+  untouched, and not mutating the input. The step carries **one** edit per point and its snapshot
+  is the fixed pre-edit state, so a second Save **replaces** the step's `diff` rather than appending
+  (Decision 2).
+- **Process-level array** (`apply_manual_edits`): otherwise return `{ ...editedVer.parameters, diff:
+  appendDiff(editedVer.parameters?.diff, diffUrl) }` — exactly today's behaviour.
 
-### 4. The end-of-pipeline list: deprecate, then remove
+`acceptsEdits` gated the call with the same `saveIntermediateStep`, so the builder always has a
+target; it does not re-decide refusal.
 
-**Phase 1, with this plan.** Save on a `yf_process_tem`'s final output still works. While edits are pending on a final output, the editor shows: "Edits on a final output are applied after every step, including the clean-up steps, so they can leave a sounding with fewer gates than the minimum. Add a manual_edit_point before the clean-up steps and edit there." The run report carries the same note.
+### `saveAllDiffs` wires them in
 
-**Phase 2, a later change, at the point Decision 7 sets.** The editor refuses Save on a `yf_process_tem`'s final output, with that message. What happens to versions that already use the end list is Decision 7. The platform does not insert a point automatically, because it cannot tell where a pipeline's clean-up steps begin.
+Two edits to `ProcessContext.jsx`, structure otherwise unchanged:
 
-The `apply_manual_edits` process type keeps its `diff`: its output is the edited dataset and nothing runs after it.
+- The gate at line 377 → `acceptsEdits(processTypes, editedVer, datasetName)`, with the refusal
+  message generalised (e.g. `${editedVer.type} has no edit point for "${datasetName}", so a re-run
+  would drop the edits`).
+- The `params` at line 407 → `params: editedParameters(editedVer, datasetName, diffUrl)`.
 
-**Moving a chain's diffs into one process.** A diff addresses soundings by their position in the dataset at its point. Diffs saved on a chain of processes can be moved into one process's points by copying their URLs only when the one process runs on the same input as the chain. A chain run on a subset of lines needs its diffs re-indexed first.
+The refuse-before-upload ordering is preserved: the gate is unchanged in position and needs no URL.
 
-### 5. Environment
+### What a person edits
 
-A project's environment needs ymerflow-processing at the release that adds `manual_edit_point` and the runner's sink, and aem-processes at the merge of section 1. The rest can stay as the project's current environment has it. aem-processes PR #6 is in any environment that pins `06894c8` or later. Which library release to build on is Decision 8.
+A `save_intermediate_and_apply_diff` step emits its save point as an output dataset named after the
+step's `name` (ymerflow's runner sink; emerald already dumps it, pending its wrapper exposing it as
+a platform output — see Dependencies). `processed_data` and `output` are reserved and cannot be
+save-point names. That output opens in a plot like any other. Editing it and Saving sets that
+step's `diff`; the re-run writes the snapshot, replays the edit, and continues. A pipeline keeps its
+final output editable by carrying a terminal save point. A plot of the bare `processed_data` output
+has no matching step, so Save refuses it — correct, because `processed_data` is the post-edit state.
 
-The frontend and Save changes reach users with a platform deploy, not with an environment.
+## Out of scope — explicitly not this plan
+
+- **Any change to the editing experience.** Same lasso, action modes, undo, Save button, re-run
+  semantics. No ChannelPlot/GateAnomalyPlot change, no overlay, no precedence/counter work.
+- **Rendering an already-saved save-point edit as a reversible overlay.** A save point's output is
+  the *pre-edit* snapshot, so after saving + re-running, reopening it shows the pre-edit state until
+  the library's follow-on editor renders the step's `diff` as an overlay (edit-points.md, "the
+  editor follows"). The data re-run is correct meanwhile. (On a final output, saved edits are
+  already applied as the dataset's own in-use flags, today and after.)
+- **Opening or editing more than one save point at once, or any per-point UI.** A save-point output
+  opens like any other output.
+- **Carrying cluster, resources and deadline across a Save** (the clone-endpoint change). Separate.
+- **Library / aem-processes work.** `save_intermediate_and_apply_diff`, its sink, and the removal of
+  `yf_process_tem`'s process-level `diff` are edit-points.md and the aem-processes plan; this plan
+  assumes they ship as specified.
 
 ## Decisions (open)
 
 | # | Question | Options | Recommendation |
-|---|---|---|---|
-| 1 | What the editor shows at a point | A: the state before the point's edits, with its saved edits drawn over it (the library's decision 2). B: the state after them, as the final output is today; no overlay, and Decisions 2 and 3 fall away. | A. Reviewing a model's or a colleague's culls needs manual and automatic culls shown apart, and B draws them the same. |
-| 2 | How the editor gets a point's saved edits | A: the snapshot carries them as one layer per channel, split per line; the platform's sink merges the point's diffs from the pipeline it is running, and the library's sink contract is unchanged. B: the browser fetches the point's diff files and merges them. | A. The plot already loads one line at a time. With B every view loads the whole survey's diffs, and a model-cull diff covering a few dozen lines is already tens of MB. |
-| 3 | What Clear does to a saved edit | A: Clear removes unsaved edits only; a saved edit is reversed by drawing the opposite, which pins the gate. B: Save consolidates the point's list into one diff and replaces it; true undo, but the separate diff files (a person's culls, a model's culls) merge into one. C: a "revert" value in the diff format; true undo, append-only, but libaarhusxyz and ymerflow-processing change, and older readers would misread it. | A now, as the editor works on a final output today. C later if pinned gates cause trouble. |
-| 4 | Edits on two points of one version, one Save | A: one new version with both lists appended; the downstream point's edits were drawn before the upstream ones were applied, and the success message says so. B: refuse, one point per Save. | A. |
-| 5 | How Save keeps cluster, resources and deadline | A: Save calls the clone endpoint, and the server copies them. B: Save passes the edited version's values to `createProcess`. | A. One place decides what a rerun inherits, the same one MCP clients use. |
-| 6 | Ship section 3 first, as its own change | Yes / no. | Yes. Saves on today's chains already fall back to 2 Gi and the first cluster. |
-| 7 | Versions that use the end list, at removal | A: keep replaying it; the form keeps the property as read-only, the editor stops writing it, and old versions rerun unchanged. B: the next Save moves it into a trailing point. C: drop it; old versions fail on rerun. And when: after the first full edit pass done on a one-process pipeline, or a date. | A, after the first full edit pass. |
-| 8 | Which ymerflow-processing release environments build on | A: a patch release on the tag the project already uses, adding only edit points, so its culls stay identical. B: current main. | A, settled with the library change. |
-| 9 | Formats written for a snapshot | A: everything `write_dataset` writes, so a snapshot plots, exports and lists like any dataset. B: msgpack and per-line parts only. | A. Revisit if storage or write time hurts. |
+|---|----------|---------|----------------|
+| 1 | How a save-point step is recognised | A: by **argument shape** — a step whose args have `name === datasetName` and a `diff` field. B: by a hardcoded set of step keys (`"save_intermediate_and_apply_diff"`, `"Save intermediate results and apply manual edits"`). C: by consulting the type schema for the step whose `diff` field declares `x-url-media-type: application/x-geophysics-xyz-model`. | **A** — library-agnostic and key-agnostic, so emerald's and ymerflow's steps both match with no list to maintain; `name === datasetName` is already the save-point contract. B is brittle (depends on exact registration strings); C is the most principled but needs the steps form schema and more code for no practical gain here. |
+| 2 | A second Save on the same save point | A: **replace** the step's single `diff`. B: make it a list and append. | **A** — the step fixes `diff` as one optional URL and the snapshot is the pre-edit state, so each save is the whole edit for that point; a list would need a library change. |
+| 3 | `acceptsEdits` when the type has no top-level `diff` but a version's steps carry a matching save point | A: step-match returns true (needs the version + dataset name). B: leave it type-only. | **A** — so the pre-upload gate matches what will actually save, keeping the refuse-before-upload property; `editedParameters` stays the authoritative builder. |
 
-## Found while checking
+## Work (frontend only)
 
-- The clone endpoint's documentation says it falls back to the first allowed cluster when the source version's cluster is no longer allowed. `Process.create_queued` raises a 400 instead. The code is the safer behavior; the documentation should say so.
-- Diffs address soundings by position. If a step between two points dropped soundings depending on the data, an upstream edit would shift the downstream point's soundings, and `apply_manual_edits` only catches indices out of range. A chain that averages between its two points is safe: `average_along_line` decimates by position only, and `cull_sparse_soundings` disables soundings instead of dropping them. This belongs to the library.
+1. `frontend/src/datamodel/inUseDiffs.js`:
+   - add `saveIntermediateStep(steps, datasetName)` (pure, matches by arg shape; returns the entry,
+     its key and its args);
+   - generalise `acceptsEdits(processTypes, editedVer, datasetName)` to step-match **or** top-level
+     `diff`;
+   - add `editedParameters(editedVer, datasetName, diffUrl)` (step-set then array-append), input not
+     mutated;
+   - keep `appendDiff`, `resolveEditTarget`, `buildDiffColumns` unchanged.
+2. `frontend/src/ProcessContext.jsx` `saveAllDiffs`: pass `editedVer` + `datasetName` to
+   `acceptsEdits`, generalise its refusal message, and build `params` via `editedParameters`. Keep
+   the loop, `notSaved`, refuse-before-upload order, and clear-only-saved behaviour.
+3. `docs/frontend/widgets.md`: note that Save targets a save-point step (matched by its `name`/`diff`
+   args, for emerald `process_tem` and ymerflow `yf_process_tem`) or the process-level `diff` array
+   (`apply_manual_edits`).
 
-## Order of merging
+No change to data fetching or invalidation: it stays on the TanStack Query hooks and
+`invalidateProject`.
 
-1. Section 3 (Save keeps cluster, resources and deadline), on its own.
-2. ymerflow-processing: `manual_edit_point` and the runner's sink (YmerFlow/ymerflow-processing#42). A release.
-3. aem-processes: the sink (and, with Decision 2 A, the saved-edit layer), list fetching, the deprecation note.
-4. A project environment on those versions.
-5. Frontend: save into a point, the saved-edit overlay, grouping by version, the deprecation warning.
+## Tests (vitest, `frontend/src/datamodel/inUseDiffs.test.js`)
 
-The frontend can follow aem-processes safely: a point's dataset only exists once an environment writes it.
+- `saveIntermediateStep` matches a step under the **ymerflow** key and under the **emerald**
+  human-readable key when `name === datasetName` and a `diff` field is present; returns `null` for a
+  non-matching `name`, a step with no `diff` field, a missing `steps`, and a non-array `steps`.
+- `editedParameters` sets the matching step's `diff` to the URL and leaves every other step, that
+  step's other args, and all other parameters unchanged; the input object is not mutated.
+- A second `editedParameters` call on the same save point **replaces** that step's `diff` (Decision
+  2).
+- With no matching step but a type-level `diff`, `editedParameters` appends to the process-level
+  array (today's `apply_manual_edits` behaviour) and does not mutate the input.
+- `acceptsEdits` is true for a version whose steps carry a matching save point even when the type
+  schema has no `diff` (`process_tem`); true for a type with a top-level `diff` (`apply_manual_edits`);
+  false for a pipeline version with steps but no matching save point and no top-level `diff`; false
+  for a type the environment does not list.
+- Existing `appendDiff`, `resolveEditTarget`, `buildDiffColumns` tests keep passing unchanged.
+- On the platform: open a `yf_process_tem` save-point output, edit, Save → the new version has the
+  diff on that step, re-runs, and the output shows the edit's effect; open an `apply_manual_edits`
+  output, edit, Save → the URL is appended to its process-level `diff` array, as today.
 
-## Work
+## Dependencies
 
-### aem-processes
-
-1. The sink in `_PipelineProcess.run()`, passed only when the pipeline has a `manual_edit_point`; one output per point; the live dataset left unchanged.
-2. `data_parameters` and `fetch_step_inputs`: lists of URLs.
-3. With Decision 2 A, the saved-edit layer written into each snapshot.
-4. `_replay_edits`: the deprecation note; the `diff` description.
-
-### Frontend
-
-1. `frontend/src/datamodel/inUseDiffs.js`: `editPointFor`, appending to a point's list without modifying the input, grouping pending edits by process version.
-2. `saveAllDiffs`: one clone per edited version with the edited points' lists (and the end list) appended; refusals as above.
-3. `useCloneProcessVersion` in `frontend/src/datamodel/useQueries.js` and the clone API call.
-4. ChannelPlot `inUseMode`: the saved-edit overlay and its precedence; the counter counts unsaved edits.
-5. InUse Editor: the deprecation warning for pending edits on a final output.
-6. `docs/frontend/widgets.md`: editing at a point.
-
-### Docs
-
-- `docs/architecture/pipelines.md`: edit points and the sink.
-
-## Tests
-
-- aem-processes: a pipeline with two points writes two extra outputs named after them; a snapshot holds the state before its point's diffs; the dataset after the sink equals the dataset before it; a list of diff URLs is fetched, and the report records the URLs, not local paths; a pipeline without a point runs as before; the end list adds the deprecation note.
-- Frontend (vitest): `editPointFor` finds a point by name and returns nothing for a final output or an unknown name; appending leaves the input unchanged; edits on two points of one version give one new version with both lists appended.
-- On the platform: edit a point's snapshot and Save. The new version has the diff in that point's list, runs on the same cluster with the same resources and deadline, and its next point's snapshot shows the edit's effect.
+- `ymerflow-processing` at the release that adds `save_intermediate_and_apply_diff` and its sink
+  (YmerFlow/ymerflow-processing#42), and `aem-processes` at the merge that gives `yf_process_tem`
+  the sink and removes its process-level `diff` replay. Built into the project's environment.
+- For emerald `process_tem` save points to be openable, its wrapper must expose the step's dumped
+  dataset as a platform output (the emerald step writes to `processing.outdir`, which the current
+  `Processing.run()` does not surface). That is aem-processes work, not this plan; the frontend
+  change is already correct for it because it matches the step by args, not by library.
+- This frontend change ships with a platform deploy, independent of any environment: before a
+  backend emits a save-point output, no dataset resolves to a save-point step, so the step branch is
+  never taken and the array branch keeps `apply_manual_edits` (and today's `yf_process_tem`) working
+  throughout.
