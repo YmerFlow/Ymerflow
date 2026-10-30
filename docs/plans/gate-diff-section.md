@@ -1,25 +1,19 @@
 # GateDiffSection — a second editing view of the same in-use edits
 
-**Status:** planned, decisions made (Ben, 2026-10-28). Not started.
+**Status:** planned, decisions made 2026-10-28. Not started.
 
 ## Motivation
 
-Culling Estancia by hand on drawing sheets (2026-10-28), Ben found a gate-by-distance
-section, each gate shown against its own running median along the line, a better culling view than
-the gate profiles: coupling, fences and IP stand out as coloured columns and bands against
-the decay, where on the log profiles they are small wiggles among fifty curves. He wants it in
-YmerFlow as a plot layer, shown beside ChannelPlot, with in-use edits made in either view
-appearing in both before saving.
+Culling a survey by hand on drawing sheets (2026-10-28), a gate-by-distance section, each gate shown against its own running median along the line, turned out to be a better culling view than the gate profiles: coupling, fences and IP stand out as colored columns and bands against the decay, where on the log profiles they are small wiggles among fifty curves. The request is to have it in YmerFlow as a plot layer, shown beside ChannelPlot, with in-use edits made in either view appearing in both before saving.
 
-Reference implementation (offline, matplotlib): `draw_sheets.py`, the "DRAW HERE" panel, in
-the Estancia `processing_tests/manual_cull_L1060-L1080/scripts/`.
+Reference implementation: the "DRAW HERE" panel of an offline matplotlib drawing-sheet script, kept with that survey's working files rather than in this repository.
 
 ## Decisions
 
 | | |
 |---|---|
 | **A view, computed in the browser** | the running median is computed when the layer is built; nothing is stored, and the backend does no work |
-| **Window and colour range are layer parameters** | defaults: a ±500 m half-width window (1000 m end to end, what the sheets used; their "±1 km" label was wrong) and ±0.5 decades (×0.3 to ×3) |
+| **Window and color range are layer parameters** | defaults: a ±500 m half-width window (1000 m end to end, what the sheets used; their "±1 km" label was wrong) and ±0.5 decades (×0.3 to ×3) |
 | **The median uses in-use data only** | automatic culls do not pull the baseline |
 | **Same InUse tools, either window** | freehand lasso with the InUse Editor's Enable / Disable / Clear, undo and Save, unchanged |
 | **Name: `GateDiffSection`** | PascalCase, like the other layer types |
@@ -30,7 +24,7 @@ For one channel of one dataset part:
 
 - **x** — distance along the line (`xdist`), the same axis as ChannelPlot, so the two panes line up.
 - **y** — gate index, early gates at the top.
-- **colour** — for each gate, `log10(value) − log10(median of that gate's in-use values over ±window m
+- **color** — for each gate, `log10(value) − log10(median of that gate's in-use values over ±window m
   along the line)`, on a diverging scale (green above, brown below, white at zero), clipped at
   ±range decades. Not-in-use cells are grey.
 - **edit overlay** — the same four InUse states as ChannelPlot (auto-enabled, auto-disabled,
@@ -65,7 +59,7 @@ line) and gate (tile), which fits the section's layout directly.
 ## Out of scope
 
 - The model's proposed culls as a third overlay state (a later "proposed edits" layer).
-- A dedicated trapezoid tool (click the core, drag the flanks), the shape Ben draws most; a
+- A dedicated trapezoid tool (click the core, drag the flanks), the shape drawn most on the sheets; a
   possible later addition.
 - Multi-channel stacking in one section.
 
