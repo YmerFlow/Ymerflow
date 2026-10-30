@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """End-to-end stress driver for the DB connection-pool fix.
 
-This is the validation gate for docs/plans/db-pool-commit-before-k8s-io.md. It drives a LIVE
+This is the validation gate for docs/plans/done/db-pool-commit-before-k8s-io.md. It drives a LIVE
 deployment over HTTP — it is NOT a unit test and must run against the real stack:
 
   * a **Postgres-backed** backend with the prod-like 5 + 10 pool. The dev default

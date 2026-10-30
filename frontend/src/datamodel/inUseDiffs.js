@@ -104,6 +104,26 @@ export function appendDiff(previous, url) {
   return [...earlier, url];
 }
 
+// The createProcess request for the version a Save makes: the edited version re-run with
+// this round's diff added. It keeps the edited version's cluster, resources and deadline;
+// left out, the server would use its defaults (first cluster, 1 CPU, 2 Gi, 1 h), and a
+// large dataset re-run in 2 Gi runs out of memory. Fields the version does not have are
+// left to those defaults; deadline_seconds may not be null, so it is then omitted.
+export function editedVersionRequest(proc, editedVer, diffUrl) {
+  const request = {
+    id: proc.id,
+    name: proc.name,
+    type: editedVer.type,
+    environment: { id: editedVer.environment?.id },
+    // Earlier rounds' diffs are kept: the new version replays all of them in order.
+    params: { ...editedVer.parameters, diff: appendDiff(editedVer.parameters?.diff, diffUrl) },
+    resource_requests: editedVer.resource_requests ?? null,
+    cluster: editedVer.cluster?.id ? { id: editedVer.cluster.id } : null,
+  };
+  if (editedVer.deadline_seconds != null) request.deadline_seconds = editedVer.deadline_seconds;
+  return request;
+}
+
 // Whether a process type replays saved edits: its form declares `diff`. Edits saved on
 // the output of one that does not would create a version that re-runs without them.
 // `processTypes` is an environment's process types, keyed by type name.

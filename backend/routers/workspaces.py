@@ -784,7 +784,7 @@ async def complete_column_path(
     # End the read transaction before the per-dataset stats-sidecar reads below (a loop of blocking
     # storage reads). _load_project_processes eager-loads versions→datasets, so the processes stay
     # fully readable after commit() under expire_on_commit=False, and the loop emits no SQL. See
-    # docs/plans/db-pool-commit-before-k8s-io.md.
+    # docs/plans/done/db-pool-commit-before-k8s-io.md.
     await db.commit()
 
     out: List[str] = []

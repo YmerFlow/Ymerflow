@@ -11,17 +11,8 @@ spec:
     name: http
   selector:
     app: backend
----
-# ExternalName so process jobs in ymerflow-jobs can reach the backend
-# (job_orchestrator.py hardcodes http://backend-service:8000 as BACKEND_URL)
-apiVersion: v1
-kind: Service
-metadata:
-  name: backend-service
-  namespace: ymerflow-jobs
-spec:
-  type: ExternalName
-  externalName: backend-service.ymerflow.svc.cluster.local
-  ports:
-  - port: 8000
-    name: http
+# NOTE: there used to be a second `backend-service` ExternalName Service in the ymerflow-jobs
+# namespace so same-cluster job pods could reach the backend by that in-cluster name. It was
+# removed: job pods now reach the backend via the public app origin + /api (job_orchestrator.py's
+# BACKEND_URL), which works uniformly from local AND remote (AKS/GKE) clusters — the in-cluster
+# ExternalName could never resolve on a remote cluster anyway.
