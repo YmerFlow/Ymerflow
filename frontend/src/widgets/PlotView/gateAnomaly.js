@@ -67,7 +67,7 @@ export function runningMedian(x, values, halfWidth) {
 // Height changes slower than the window are absorbed by the running median; fast ones,
 // such as climbs over powerlines, show as columns. Height enters a 1D forward response only
 // through a factor e^(-2·λ·h), so to first order log amplitude is linear in height in
-// meters, and one slope per gate removes it (see docs/plans/gate-anomaly-altitude.md).
+// meters, and one slope per gate removes it (see docs/plans/done/gate-anomaly-altitude.md).
 
 // Transmitter height columns, in libaarhusxyz's alt_column order; matched in any case.
 export const HEIGHT_COLUMNS = ['tx_altitude', 'alt', 'TxAltitude', 'tx_alt'];
