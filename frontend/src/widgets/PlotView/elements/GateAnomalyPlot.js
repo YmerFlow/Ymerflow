@@ -1,6 +1,6 @@
 import { LayerType, registerLayerType, AXIS_GEOMETRY } from 'gladly-plot';
 import { resolveDataPath, getFrom, getKeys, toFloat32Array } from '../colorUtils.js';
-import { gateAnomalyColumn } from '../gateAnomaly.js';
+import { HEIGHT_COLUMNS, findHeightColumn, gateAnomalyColumn, heightAnomaly, heightCorrectedColumn } from '../gateAnomaly.js';
 import { globalSoundingIndex, soundingState } from '../inUseEdits.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
@@ -16,11 +16,12 @@ const QUAD_CY = new Float32Array([0, 0, 1, 0, 1, 1]);
 // ±range_decades. Cells are laid out gate by gate (cell t * nSoundings + i), the order
 // cellEditEntries() in inUseEdits.js maps a lasso back through.
 
-// The section's numbers depend only on the data, the in-use mask and the window, not on
-// pending edits, so they are kept between the re-renders every edit causes.
-const sectionCache = new WeakMap();   // Gate_<channel> column map → { inuseDict, windowM, cells }
+// The section's numbers depend only on the data, the in-use mask, the window and the height
+// correction, not on pending edits, so they are kept between the re-renders every edit causes.
+const sectionCache = new WeakMap();   // Gate_<channel> column map → { inuseDict, windowM, height, cells }
 
-function buildCells(xdist, yDataDict, inuseDict, windowM) {
+// `height` is the transmitter height column [m] when the height correction is on, else null.
+function buildCells(xdist, yDataDict, inuseDict, windowM, height) {
   const gateKeys = getKeys(yDataDict).sort((a, b) => a - b);
   const nS = xdist.length;
   const nCells = nS * gateKeys.length;
@@ -38,8 +39,11 @@ function buildCells(xdist, yDataDict, inuseDict, windowM) {
 
   const x0 = new Float32Array(nCells), x1 = new Float32Array(nCells), gate = new Float32Array(nCells);
   const diff = new Float32Array(nCells), hasDiff = new Float32Array(nCells);
+  const eta = height ? heightAnomaly(xdist, height, windowM) : null;
   gateKeys.forEach((gateKey, t) => {
-    const column = gateAnomalyColumn(xdist, getFrom(yDataDict, gateKey), inuseDict ? getFrom(inuseDict, gateKey) : null, windowM);
+    const inuseArr = inuseDict ? getFrom(inuseDict, gateKey) : null;
+    const anomaly = gateAnomalyColumn(xdist, getFrom(yDataDict, gateKey), inuseArr, windowM);
+    const column = eta ? heightCorrectedColumn(xdist, anomaly, eta, inuseArr).column : anomaly;
     for (let i = 0; i < nS; i++) {
       const c = t * nS + i;
       x0[c] = left[i];
@@ -60,11 +64,12 @@ function buildCells(xdist, yDataDict, inuseDict, windowM) {
   return { gateKeys, nS, x0, x1, gate, diff, hasDiff, domains };
 }
 
-function cachedCells(xdist, yDataDict, inuseDict, windowM) {
+function cachedCells(xdist, yDataDict, inuseDict, windowM, height) {
   const hit = sectionCache.get(yDataDict);
-  if (hit && hit.inuseDict === inuseDict && hit.windowM === windowM && hit.cells.nS === xdist.length) return hit.cells;
-  const cells = buildCells(xdist, yDataDict, inuseDict, windowM);
-  sectionCache.set(yDataDict, { inuseDict, windowM, cells });
+  if (hit && hit.inuseDict === inuseDict && hit.windowM === windowM && hit.height === height
+      && hit.cells.nS === xdist.length) return hit.cells;
+  const cells = buildCells(xdist, yDataDict, inuseDict, windowM, height);
+  sectionCache.set(yDataDict, { inuseDict, windowM, height, cells });
   return cells;
 }
 
@@ -157,6 +162,16 @@ registerLayerType('GateAnomalyPlot', new LayerType({
         exclusiveMinimum: 0,
         description: 'Color range [decades]: ±0.5 is ×0.3 to ×3 the median; values beyond are clipped',
       },
+      altitude_correction: {
+        type: 'boolean',
+        default: false,
+        description: 'Remove the part of each gate\'s anomaly that fast transmitter-height changes explain: one least-squares slope per gate per line, fitted on in-use cells',
+      },
+      altitude_column: {
+        type: 'string',
+        default: '',
+        description: `Transmitter height above ground [m] for altitude_correction; empty means the first of ${HEIGHT_COLUMNS.join(', ')} in any case`,
+      },
       bad_color: {
         type: 'array',
         items: { type: 'number' },
@@ -184,7 +199,19 @@ registerLayerType('GateAnomalyPlot', new LayerType({
     const inuseDict = layer_data[`InUse_${channel}`];
 
     const windowM = parameters.window_m ?? 500;
-    const cells = cachedCells(toFloat32Array(flightlines.xdist), yDataDict, inuseDict, windowM);
+    let height = null;
+    if (parameters.altitude_correction) {
+      const column = findHeightColumn(flightlines, parameters.altitude_column);
+      if (!column) {
+        // Drawing the uncorrected section here would look corrected; draw nothing instead.
+        console.error(`[GateAnomalyPlot] altitude_correction is on but ${parameters.altitude_column
+          ? `the dataset has no column "${parameters.altitude_column}"`
+          : `no height column was found (looked for ${HEIGHT_COLUMNS.join(', ')}, in any case)`}; drawing nothing`);
+        return [];
+      }
+      height = flightlines[column];
+    }
+    const cells = cachedCells(toFloat32Array(flightlines.xdist), yDataDict, inuseDict, windowM, height);
     const { gateKeys, nS } = cells;
 
     // Pending edits: _inMemoryDiffs[datasetPath][channel], as for ChannelPlot.

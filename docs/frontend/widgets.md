@@ -367,6 +367,10 @@ Two layer types edit a dataset's in-use flags with the InUse Editor: `ChannelPlo
 | `window_m` | `500` | running median half-width along the line [m] |
 | `range_decades` | `0.5` | color range, ±0.5 decades = ×0.3 to ×3 the median |
 | `bad_color` | grey | color of cells not in use or without a value |
+| `altitude_correction` | `false` | remove the part of each gate's anomaly that transmitter-height changes explain |
+| `altitude_column` | `""` | transmitter height above ground [m]; empty means the first of `tx_altitude`, `alt`, `TxAltitude`, `tx_alt` in any case, as libaarhusxyz finds it |
+
+The running median absorbs height changes slower than the window, but a fast climb, over a powerline for instance, lowers the early gates and shows as a column. With `altitude_correction` on, each gate's anomaly is fitted, per line and by least squares on in-use cells, against the height anomaly: the height minus its running median, in meters. The fitted term is then removed. The slope is in decades per meter and should be negative and largest at the early gates. Height enters the response only through a factor e^(−2λh), so to first order log amplitude is linear in height; the derivation is in `docs/plans/done/gate-anomaly-altitude.md`. Cells without a height are grey, and if no height column is found the layer draws nothing and logs an error. Pilots often climb over powerlines, so coupled cells that are still in use can bias the slope and the correction can partly hide real coupling: compare a corrected pane with an uncorrected one.
 
 Both layers write to one in-memory store in `ProcessContext` (`inMemoryDiffs`, see `frontend/src/datamodel/inUseDiffs.js`). Edits are keyed by dataset path, channel, gate and global sounding index, the part-local index mapped through `flightlines.apply_idx`. So an edit made in one pane is drawn in the other before saving, and Save writes one diff for the dataset. Both panes must use the same dataset path for this to happen. The lasso mapping and the lookup of pending edits are shared in `frontend/src/widgets/PlotView/inUseEdits.js`.
 

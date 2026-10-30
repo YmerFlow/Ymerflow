@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gateAnomalyColumn, lineRuns, runningMedian } from './gateAnomaly';
+import { findHeightColumn, gateAnomalyColumn, heightAnomaly, heightCorrectedColumn, lineRuns, runningMedian } from './gateAnomaly';
 
 // A synthetic part with two lines (xdist restarts at 0 on the second), one gate.
 const x = [0, 2.5, 5, 8, 10, 12.5, 15, 17, 20, 23, 25, 27.5, 30, 33, 35, 37.5, 40, 43, 45, 48,
@@ -69,5 +69,76 @@ describe('lineRuns', () => {
   it('splits where xdist restarts', () => {
     expect(lineRuns([0, 1, 2, 0, 5, 5, 1])).toEqual([[0, 3], [3, 6], [6, 7]]);
     expect(lineRuns([])).toEqual([]);
+  });
+});
+
+describe('height correction', () => {
+  // Two lines (xdist restarts): a climb to 60 m on the first, constant 30 m on the second.
+  // Each gate's log10 value falls by a known slope per meter of height, plus a small wobble:
+  //   log10 v = 2 - 0.3 g + b_g (h - 30) + 0.01 sin(i),   b = [-0.02, -0.005] decades/m
+  // The top of the climb is culled in gate 0. Window ±20 m.
+  const hx = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 0, 5, 10, 15, 20, 25];
+  const h = [30, 30, 31, 30, 45, 60, 45, 31, 30, 29, 30, 30, 30, 30, 30, 30, 30, 30];
+  const TRUE = [-0.02, -0.005];
+  const value = (g) => h.map((hi, i) => 10 ** (2 - 0.3 * g + TRUE[g] * (hi - 30) + 0.01 * Math.sin(i)));
+  const inUse = [h.map((_, i) => (i === 5 ? 0 : 1)), h.map(() => 1)];
+
+  // numpy, with brute-force running medians as in the test above:
+  //   eta = h - running_median(h);  a = log10 v - running_median(log10 v over in-use)
+  //   per line: m = in-use & finite;  b = sum(a[m] * eta[m]) / sum(eta[m]**2)  (0 if no variation)
+  //   corrected = a - b * eta
+  const NUMPY_ETA = [0, -0.5, 0, -1, 14, 29, 14, 1, -0.5, -1, 0, 0, 0, 0, 0, 0, 0, 0];
+  const NUMPY = [
+    { slopes: [-0.0212852, 0], corrected: [0.0, -0.0022279, -0.0054535, -0.008967, -0.0041211, 0.0124308,
+      0.0033729, 0.0155752, 0.0092509, 0.010556, 0.0022798, -0.0045597, -0.0095674, 0.0035404, 0.0092448,
+      0.0058416, -0.0035404, -0.0138156] },
+    { slopes: [-0.0056443, 0], corrected: [-0.0014112, 0.004887, 0.004093, -0.0049387, -0.0049597, 0.0025242,
+      -0.0001858, 0.0126543, 0.0147915, 0.0089171, -0.003505, -0.0115698, -0.0095674, 0.0035404, 0.0092448,
+      0.0058416, -0.0035404, -0.0138156] },
+  ];
+
+  it('detrends the height with the running median', () => {
+    const eta = heightAnomaly(hx, h, 20);
+    NUMPY_ETA.forEach((e, i) => expect(eta[i]).toBeCloseTo(e, 9));
+  });
+
+  it('matches the numpy least-squares slopes and corrected anomalies, with culled cells left out', () => {
+    const eta = heightAnomaly(hx, h, 20);
+    [0, 1].forEach((g) => {
+      const a = gateAnomalyColumn(hx, value(g), inUse[g], 20);
+      const { column, slopes } = heightCorrectedColumn(hx, a, eta, inUse[g]);
+      NUMPY[g].slopes.forEach((b, k) => expect(slopes[k]).toBeCloseTo(b, 6));
+      NUMPY[g].corrected.forEach((c, i) => expect(column[i]).toBeCloseTo(c, 5));
+    });
+  });
+
+  it('recovers the slopes used to make the data, and gives a line at constant height none', () => {
+    const eta = heightAnomaly(hx, h, 20);
+    const slopes = [0, 1].map(g => heightCorrectedColumn(hx, gateAnomalyColumn(hx, value(g), inUse[g], 20), eta, inUse[g]).slopes);
+    // Within 0.0015 decades/m; the wobble biases the fit a little.
+    expect(Math.abs(slopes[0][0] - TRUE[0])).toBeLessThan(0.0015);
+    expect(Math.abs(slopes[1][0] - TRUE[1])).toBeLessThan(0.0015);
+    expect(slopes[0][1]).toBe(0);
+  });
+
+  it('leaves a cell without a height without a corrected value', () => {
+    const gap = h.slice(); gap[8] = 0;
+    const eta = heightAnomaly(hx, gap, 20);
+    const { column } = heightCorrectedColumn(hx, gateAnomalyColumn(hx, value(1), inUse[1], 20), eta, inUse[1]);
+    expect(column[8]).toBeNaN();
+    expect(column[7]).not.toBeNaN();
+  });
+});
+
+describe('findHeightColumn', () => {
+  it('finds the first of libaarhusxyz\'s height columns, in any capitalization', () => {
+    expect(findHeightColumn({ xdist: [], TXALTITUDE: [] })).toBe('TXALTITUDE');
+    expect(findHeightColumn({ TxAltitude: [], Alt: [] })).toBe('Alt');
+    expect(findHeightColumn({ xdist: [], radar: [] })).toBe(null);
+  });
+
+  it('uses altitude_column as given, or nothing if the dataset lacks it', () => {
+    expect(findHeightColumn({ radar: [], TxAltitude: [] }, 'radar')).toBe('radar');
+    expect(findHeightColumn({ TxAltitude: [] }, 'radar')).toBe(null);
   });
 });

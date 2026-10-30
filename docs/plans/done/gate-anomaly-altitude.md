@@ -1,6 +1,6 @@
 # GateAnomalyPlot: an optional correction for transmitter height
 
-**Status:** planned, decisions made 2026-10-29. The height variable was revised the same day, from log10(height) to height in meters; see [Why height in meters](#why-height-in-meters). Builds on the `GateAnomalyPlot` layer (#123; plan in `docs/plans/done/gate-diff-section.md`).
+**Status:** implemented. Decisions made 2026-10-29. The height variable was revised the same day, from log10(height) to height in meters; see [Why height in meters](#why-height-in-meters). Builds on the `GateAnomalyPlot` layer (#123; plan in `docs/plans/done/gate-diff-section.md`).
 
 ## Motivation
 
