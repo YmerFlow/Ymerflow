@@ -9,12 +9,13 @@ const LINE_COLUMNS = ['title', 'Line', 'line', 'line_id', 'line_no']
   .flatMap(n => [n, n.toLowerCase(), n.toUpperCase(), n[0].toUpperCase() + n.slice(1).toLowerCase()]);
 const TIME_COLUMN = 'gtime';
 
-const _lineColumn = fl => LINE_COLUMNS.find(c => fl?.[c] !== undefined);
+// The name of the line-id column in flightlines (or a stats sidecar's flightlines), if any.
+export const lineColumn = fl => LINE_COLUMNS.find(c => fl?.[c] !== undefined);
 
 // Row of flightlines `to` that matches row `i` of flightlines `from`: the same line, nearest gtime.
 // null when there is none, or when either side has no line or gtime column.
 export function matchSounding(from, i, to) {
-  const fromLine = _lineColumn(from), toLine = _lineColumn(to);
+  const fromLine = lineColumn(from), toLine = lineColumn(to);
   if (i == null || !fromLine || !toLine || !from[TIME_COLUMN] || !to[TIME_COLUMN]) return null;
   if (i < 0 || i >= from[TIME_COLUMN].length) return null;
   // Compared as strings: int64 line numbers decode to BigInt, and a title column holds strings.

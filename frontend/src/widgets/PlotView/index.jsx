@@ -6,7 +6,7 @@ import { registerQuantityKinds } from './quantityKinds';
 import { encodeSeg } from '../../datamodel/datasetPath';
 import { getKeys, resolveDataPath } from './colorUtils.js';
 import { cellEditEntries, segmentEditEntries } from './inUseEdits.js';
-import { loadPinnedData } from './pinnedDatasets.js';
+import { followsLine, loadPinnedData, pinnedEntries, selectedLine } from './pinnedDatasets.js';
 import { currentSoundingFrom } from './soundingMatch.js';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import './elements/index.js';
@@ -22,9 +22,10 @@ const IN_USE_LAYER_TYPES = ['ChannelPlot', 'GateAnomalyPlot'];
 export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...rest }) {
   const isMobile = useIsMobile();
   const { fetchedData, datasetsLoading, dataLoading, currentSounding, setCurrentSounding, datasetCollection, processes,
-    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject } = useContext(ProcessContext);
+    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject, currentPart } = useContext(ProcessContext);
 
-  // Map of "procName.version.dsName[@part]" → raw data object for non-current process datasets
+  // Map of pinnedDataKey → { dsPath, line, dsObj, rawData } (or { dsPath, line, message } when
+  // there is no part to show) for non-current process datasets; see pinnedDatasets.js.
   const [lazilyLoadedData, setLazilyLoadedData] = useState(new Map());
   const { addPlot, removePlot } = useContext(PlotGroupContext);
 
@@ -51,13 +52,28 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
     [layoutConfig],
   );
 
-  // Scan layer parameters for non-current dataset paths and lazily load their data, for the
-  // part each path names (see pinnedDatasets.js).
+  // The current dataset the selected sounding indexes, and the line pinned panels follow.
+  const currentFlightlines = useMemo(
+    () => Object.values(fetchedData || {}).find(d => d?.flightlines)?.flightlines,
+    [fetchedData],
+  );
+  const followed = useMemo(
+    () => (dataLoading ? undefined : selectedLine(currentPart, currentFlightlines)),
+    [dataLoading, currentPart, currentFlightlines],
+  );
+  const pinnedMessages = useMemo(
+    () => [followsLine(config?.layers) && followed?.error,
+      ...pinnedEntries(lazilyLoadedData, followed?.line).map(e => e.message)].filter(Boolean),
+    [config, followed, lazilyLoadedData],
+  );
+
+  // Scan layer parameters for non-current dataset paths and lazily load their data: the part
+  // each path names, or the part with the followed line (see pinnedDatasets.js).
   useEffect(() => {
     if (!config?.layers || !processes?.length) return;
-    loadPinnedData(config.layers, processes, currentProject, lazilyLoadedData,
-      (dsPath, entry) => setLazilyLoadedData(prev => new Map(prev).set(dsPath, entry)));
-  }, [config, processes, currentProject]); // eslint-disable-line react-hooks/exhaustive-deps
+    loadPinnedData(config.layers, processes, currentProject, followed?.line, lazilyLoadedData,
+      (key, entry) => setLazilyLoadedData(prev => new Map(prev).set(key, entry)));
+  }, [config, processes, currentProject, followed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Create / destroy the Plot instance and register gladly event handlers.
   useEffect(() => {
@@ -254,14 +270,15 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
       current: encodedCurrent,
       _currentSounding: currentSounding,
       // The current dataset _currentSounding indexes; pinned layers match its row by line and gtime.
-      _currentFlightlines: Object.values(fetchedData || {}).find(d => d?.flightlines)?.flightlines,
+      _currentFlightlines: currentFlightlines,
       _inMemoryDiffs: inMemoryDiffs,
     });
 
-    // Merge lazily loaded non-current datasets:
+    // Merge lazily loaded non-current datasets, for the followed line:
     // - raw data as own properties so custom layers can access via resolveDataPath
     // - Dataset wrapper in _children chain so DataGroup.getQuantityKind can traverse them
-    for (const [dsPath, { dsObj, rawData }] of lazilyLoadedData) {
+    for (const { dsPath, dsObj, rawData } of pinnedEntries(lazilyLoadedData, followed?.line)) {
+      if (!dsObj) continue;   // no part to show: the panel says why
       const [procName, ver, dsName] = dsPath.split('.');
       dataForPlot[procName] ??= {};
       dataForPlot[procName][ver] ??= {};
@@ -296,7 +313,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
       }
     });
     return () => { cancelled = true; };
-  }, [config, fetchedData, datasetCollection, currentSounding, datasetsLoading, dataLoading, lazilyLoadedData, inMemoryDiffs]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, fetchedData, datasetCollection, currentSounding, datasetsLoading, dataLoading, lazilyLoadedData, inMemoryDiffs, followed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={isMobile ? 'd-flex flex-column' : 'h-100 d-flex flex-column'}
@@ -310,6 +327,12 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
           <div className="d-flex align-items-center justify-content-center"
                style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.85)' }}>
             {datasetsLoading ? 'Loading datasets…' : 'Loading data…'}
+          </div>
+        )}
+        {pinnedMessages.length > 0 && (
+          <div className="alert alert-warning py-1 px-2 mb-0 small"
+               style={{ position: 'absolute', top: 4, left: 4, right: 4, pointerEvents: 'none' }}>
+            {pinnedMessages.map(m => <div key={m}>{m}</div>)}
           </div>
         )}
       </div>

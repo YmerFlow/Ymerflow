@@ -371,6 +371,12 @@ export class Dataset {
     return current;
   }
 
+  // The statistics sidecar of one part ("all" for the whole dataset), or null if it has none.
+  async fetchStats(partPath = "all") {
+    const url = this._getPartMetadata(partPath)?.files?.["application/vnd.ymerflow.stats+json"];
+    return url ? (await this._fetch(url)).json() : null;
+  }
+
   async getGeography(partPath = "all") {
     const cacheKey = `${this.id}-${partPath}`;
 
