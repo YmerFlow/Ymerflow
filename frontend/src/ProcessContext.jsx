@@ -1,10 +1,10 @@
-import React, { createContext, useCallback, useMemo, useState, useEffect, useContext, useReducer } from 'react';
+import React, { createContext, useCallback, useMemo, useState, useEffect, useContext, useReducer, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useProcesses, useEnvironments, useProcessOutputDatasets, useProjects, useCreateProcess, useWorkspace, fetchEnvironmentProcessTypes } from "./datamodel/useQueries";
 import { loadDataset, DatasetCollectionAdapter } from './datamodel/dataset';
 import XYZ from './datamodel/libaarhusxyz';
-import { acceptsEdits, buildDiffColumns, editedVersionRequest, inUseDiffReducer, resolveEditTarget } from './datamodel/inUseDiffs';
+import { acceptsEdits, buildDiffColumns, diffFromColumns, editedVersionRequest, inUseDiffReducer, resolveEditTarget, saveIntermediateStep } from './datamodel/inUseDiffs';
 import { useWebSocket } from './hooks/useWebSocket';
 import { WS_API, uploadFile } from './datamodel/api';
 import { recordNavView } from './datamodel/navTracking';
@@ -143,7 +143,13 @@ export function ProcessProvider({ children }) {
   const { data: currentWorkspace } = useWorkspace(selectedEnvironment, currentProject);
 
   // InUse diff state
-  const [inUseDiffState, dispatchInUseDiff] = useReducer(inUseDiffReducer, { diffs: {}, history: {} });
+  const [inUseDiffState, dispatchInUseDiff] = useReducer(inUseDiffReducer, { diffs: {}, history: {}, dirty: {} });
+  // The version each plot path's save-point edit was loaded for. A path loads once per
+  // version it names; clearing it (after a Save) lets the next call load the step's
+  // then-current edit. Paths whose saved edit is 'loading' or 'failed' cannot be saved:
+  // the save would replace that edit with only the new one.
+  const loadedEditsRef = useRef(new Map());
+  const loadStatusRef = useRef(new Map());
   const [inUseAction, setInUseAction] = useState('enable'); // 'enable' | 'disable' | 'clear'
   const [newProcessToken, setNewProcessToken] = useState(0);
   const [newProcessDefaults, setNewProcessDefaults] = useState(null);
@@ -270,30 +276,84 @@ export function ProcessProvider({ children }) {
   }, []);
 
   const clearDatasetDiff = useCallback((datasetName) => {
+    loadedEditsRef.current.delete(datasetName);
+    loadStatusRef.current.delete(datasetName);
     dispatchInUseDiff({ type: 'CLEAR', datasetName });
   }, []);
 
+  // Load the saved edit of the save point a plot shows into the editor, under the plot's
+  // literal dataset path (the key its overlay reads), so the person edits it in place.
+  // PlotView calls this for each editing layer. It does nothing once the path is loaded for
+  // the version it names, or while the path does not resolve yet.
+  const ensureSavePointEditLoaded = useCallback(async (path) => {
+    const target = resolveEditTarget(path, activeProcess, processes);
+    if (!target) return;
+    const loadedFor = `${target.process.id}.${target.versionObj.version}`;
+    if (loadedEditsRef.current.get(path) === loadedFor) return;
+    loadedEditsRef.current.set(path, loadedFor);
+    loadStatusRef.current.delete(path);
+    // A Save, or the path naming another version, while this loaded makes it stale.
+    const stale = () => loadedEditsRef.current.get(path) !== loadedFor;
+
+    const point = saveIntermediateStep(target.versionObj.parameters?.steps, target.datasetName);
+    let diff = {};
+    if (point?.args.diff) {
+      loadStatusRef.current.set(path, 'loading');
+      try {
+        diff = diffFromColumns(await XYZ.fromURL(point.args.diff));
+      } catch (e) {
+        if (stale()) return;
+        console.error(`Failed to load the saved edit on ${path}:`, e);
+        loadStatusRef.current.set(path, 'failed');
+        addMessage({ level: 'danger', message: `The saved edit on "${path}" could not be loaded (${e.message}), so it is not shown and edits on that plot cannot be saved. Reload the page to try again.` });
+        return;
+      }
+      if (stale()) return;
+      loadStatusRef.current.delete(path);
+    }
+    dispatchInUseDiff({ type: 'LOAD', datasetName: path, diff });
+  }, [activeProcess, processes, addMessage]);
+
   const saveAllDiffs = useCallback(async () => {
-    const diffsToSave = Object.entries(inUseDiffState.diffs).filter(
-      ([, d]) => Object.values(d).some(m => m.size > 0)
-    );
-    if (diffsToSave.length === 0) return;
+    // Only paths changed since their save point's edit loaded, or edited from scratch:
+    // an untouched save point is not uploaded again and its step keeps its `diff`.
+    const { diffs, dirty } = inUseDiffState;
+    const changedPaths = Object.keys(dirty).filter(datasetPath => dirty[datasetPath]);
+    if (changedPaths.length === 0) return;
 
     // Only saved datasets are cleared; a refused or failed save keeps its edits in the editor.
     const saved = [];
     const notSaved = (datasetPath, reason) =>
       addMessage({ level: 'danger', message: `Edits on "${datasetPath}" were not saved: ${reason}. They are still in the editor.` });
 
+    // One new version per edited process version, holding all of its changed datasets:
+    // two save points of one pipeline saved separately would each drop the other's edit.
+    const groups = new Map();
+
     // Edits are keyed by the plot layer's dataset path ("current.<dataset>" or
     // "<process>.<version>.<dataset>"), not by dataset name.
-    for (const [datasetPath, datasetDiff] of diffsToSave) {
+    for (const datasetPath of changedPaths) {
       // The process version whose output was edited gets a new version that replays the edits.
       const target = resolveEditTarget(datasetPath, activeProcess, processes);
       if (!target) { notSaved(datasetPath, 'the process version that made it was not found'); continue; }
       const { process: proc, versionObj: editedVer, datasetName } = target;
+      const loadStatus = loadStatusRef.current.get(datasetPath);
+      if (loadStatus) {
+        notSaved(datasetPath, loadStatus === 'loading'
+          ? 'its saved edit is still loading'
+          : 'its saved edit could not be loaded, so saving would replace it with only the new edits');
+        continue;
+      }
+      const groupKey = `${proc.id}.${editedVer.version}`;
+      const group = groups.get(groupKey) ?? { proc, editedVer, edits: [], paths: [] };
+      if (group.edits.some(edit => edit.datasetName === datasetName)) {
+        notSaved(datasetPath, `"${datasetName}" is also edited in a plot that names it by another path; save that one first`);
+        continue;
+      }
 
-      // Refuse before uploading: a process type whose form has no `diff` would re-run
-      // without the edits, and the new version would look edited while they are gone.
+      // Refuse before uploading: an output with no save point, of a process type whose form
+      // has no `diff`, would re-run without the edits, and the new version would look
+      // edited while they are gone.
       let processTypes;
       try {
         processTypes = await fetchEnvironmentProcessTypes(queryClient, editedVer.environment?.id);
@@ -301,47 +361,65 @@ export function ProcessProvider({ children }) {
         notSaved(datasetPath, `could not check whether ${editedVer.type} takes edits (${e.message})`);
         continue;
       }
-      if (!acceptsEdits(processTypes, editedVer.type)) {
-        notSaved(datasetPath, `${editedVer.type} does not take in-use edits, so a re-run would drop them`);
+      if (!acceptsEdits(processTypes, editedVer, datasetName)) {
+        notSaved(datasetPath, `${editedVer.type} has no edit point for "${datasetName}", so a re-run would drop the edits`);
         continue;
       }
 
-      // apply_idx (global sounding indices) and one InUse column per gate, NaN = no override.
-      const { applyIdx, layerData } = buildDiffColumns(datasetDiff);
+      const datasetDiff = diffs[datasetPath] ?? {};
+      let diffUrl = null;
+      if (Object.values(datasetDiff).some(m => m.size > 0)) {
+        // apply_idx (global sounding indices) and one InUse column per gate, NaN = no override.
+        const { applyIdx, layerData } = buildDiffColumns(datasetDiff);
 
-      // Serialize as libaarhusxyz msgpack diff (apply_idx = global sounding indices).
-      const diffXyz = XYZ.fromData({
-        flightlines: { apply_idx: Float32Array.from(applyIdx) },
-        layer_data: layerData,
-        model_info: { diff_dummy: NaN },
-      });
+        // Serialize as libaarhusxyz msgpack diff (apply_idx = global sounding indices).
+        const diffXyz = XYZ.fromData({
+          flightlines: { apply_idx: Float32Array.from(applyIdx) },
+          layer_data: layerData,
+          model_info: { diff_dummy: NaN },
+        });
 
-      let diffUrl;
-      try {
-        const binary = diffXyz.dump();
-        const diffFile = new File([binary], `inuse_diff_${datasetName}.msgpack`,
-          { type: 'application/x-aarhusxyz-msgpack' });
-        const uploadResult = await uploadFile(diffFile, null, currentProject);
-        diffUrl = uploadResult.url;
-      } catch (e) {
-        notSaved(datasetPath, `the upload failed (${e.message})`);
+        try {
+          const binary = diffXyz.dump();
+          const diffFile = new File([binary], `inuse_diff_${datasetName}.msgpack`,
+            { type: 'application/x-aarhusxyz-msgpack' });
+          const uploadResult = await uploadFile(diffFile, null, currentProject);
+          diffUrl = uploadResult.url;
+        } catch (e) {
+          notSaved(datasetPath, `the upload failed (${e.message})`);
+          continue;
+        }
+      } else if (!saveIntermediateStep(editedVer.parameters?.steps, datasetName)?.args.diff) {
+        // Emptied, and no saved edit to remove: nothing to write.
+        saved.push(datasetPath);
         continue;
       }
+      // Emptied otherwise: diffUrl stays null, which removes the save point's edit.
 
+      group.edits.push({ datasetName, diffUrl });
+      group.paths.push(datasetPath);
+      groups.set(groupKey, group);
+    }
+
+    let created = false;
+    for (const { proc, editedVer, edits, paths } of groups.values()) {
       try {
         await createProcess.mutateAsync({
-          proc: editedVersionRequest(proc, editedVer, diffUrl),
+          proc: editedVersionRequest(proc, editedVer, edits),
           projectId: currentProject,
         });
-        saved.push(datasetPath);
+        saved.push(...paths);
+        created = true;
       } catch (e) {
-        notSaved(datasetPath, `the new version of ${proc.name} could not be created (${e.message})`);
+        for (const datasetPath of paths) {
+          notSaved(datasetPath, `the new version of ${proc.name} could not be created (${e.message})`);
+        }
       }
     }
 
-    for (const datasetPath of saved) dispatchInUseDiff({ type: 'CLEAR', datasetName: datasetPath });
-    if (saved.length > 0) await invalidateHelpers.invalidateProject(currentProject);
-  }, [inUseDiffState.diffs, processes, activeProcess, currentProject, createProcess, invalidateHelpers, queryClient, addMessage]);
+    for (const datasetPath of saved) clearDatasetDiff(datasetPath);
+    if (created) await invalidateHelpers.invalidateProject(currentProject);
+  }, [inUseDiffState, processes, activeProcess, currentProject, createProcess, invalidateHelpers, queryClient, addMessage, clearDatasetDiff]);
 
   // Stable WebSocket callbacks wrapped in useCallback to prevent reconnection loops
   const handleWebSocketMessage = useCallback(async (update) => {
@@ -480,11 +558,13 @@ export function ProcessProvider({ children }) {
       // InUse diff state and helpers
       inMemoryDiffs: inUseDiffState.diffs,
       inMemoryDiffHistory: inUseDiffState.history,
+      inMemoryDiffDirty: inUseDiffState.dirty,
       inUseAction,
       setInUseAction,
       applyInMemoryEdit,
       undoLastEdit,
       clearDatasetDiff,
+      ensureSavePointEditLoaded,
       saveAllDiffs,
     }),
     [
@@ -522,6 +602,7 @@ export function ProcessProvider({ children }) {
       applyInMemoryEdit,
       undoLastEdit,
       clearDatasetDiff,
+      ensureSavePointEditLoaded,
       saveAllDiffs,
     ]
   );

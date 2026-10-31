@@ -87,7 +87,7 @@ describe('editing in either pane', () => {
     inUseDiffReducer(state, { type: 'APPLY_EDIT', datasetName: PATH, channel: 'Ch01', entries, value: 0 });
 
   it('shows a section edit in ChannelPlot, a ChannelPlot edit in the section, and saves both in one diff', () => {
-    let state = { diffs: {}, history: {} };
+    let state = { diffs: {}, history: {}, dirty: {} };
 
     // Disable gate 1, sounding 2 by lassoing its cell in the section.
     const cellMask = new Float32Array(N * GATES.length);

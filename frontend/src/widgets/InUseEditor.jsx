@@ -5,6 +5,7 @@ import { MessageContext } from '../MessageContext';
 export default function InUseEditor() {
   const {
     inMemoryDiffs,
+    inMemoryDiffDirty,
     inUseAction,
     setInUseAction,
     undoLastEdit,
@@ -63,6 +64,9 @@ export default function InUseEditor() {
   }, [inMemoryDiffs]);
 
   const hasPendingEdits = stats.total > 0;
+  // Save writes only what changed since a save point's edit loaded, including an edit the
+  // person emptied, so it follows the dirty flags rather than the edit count.
+  const hasChanges = Object.values(inMemoryDiffDirty).some(Boolean);
 
   function handleUndo() {
     const names = Object.keys(inMemoryDiffs);
@@ -111,8 +115,8 @@ export default function InUseEditor() {
           Undo (Ctrl+Z)
         </button>
         <button
-          style={{ ...btnBase, background: hasPendingEdits ? '#198754' : '#aaa', color: '#fff', borderColor: 'transparent', marginLeft: 'auto' }}
-          disabled={!hasPendingEdits}
+          style={{ ...btnBase, background: hasChanges ? '#198754' : '#aaa', color: '#fff', borderColor: 'transparent', marginLeft: 'auto' }}
+          disabled={!hasChanges}
           onClick={handleSave}
         >
           Save
