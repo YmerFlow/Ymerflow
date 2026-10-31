@@ -1,6 +1,6 @@
 # Sounding links and downline distance
 
-**State:** proposed 2026-10-31, decisions open
+**State:** proposed 2026-10-31; decisions 1, 2, 4, 5 and 6 taken 2026-10-31, decision 3 open
 **Labels:** enhancement, data model, processing, frontend
 
 ## Motivation
@@ -82,13 +82,13 @@ PlotView matches a pinned dataset's soundings to the current dataset's by `Line`
 - ymerflow-processing: a test that every step which drops or merges soundings keeps the four columns, and source recording in `model_info` for `average_along_line` and `select_lines`.
 - Ymerflow frontend: id matching for pinned panels and sounding sync; x range from the line table.
 
-## Decisions
+## Decisions (2026-10-31)
 
-| # | Question | Options | Recommendation |
+| # | Question | Options | Decision |
 |---|---|---|---|
 | 1 | Form of the sounding id | A: index within the line at full rate. B: absolute time. | A, with the absolute time stored beside it, so a later import of the same line cut differently can be re-linked by time. |
 | 2 | Row order on load | A: keep the order in the file. B: keep today's sort by timestamp, built from the absolute time. | B. Once ids are carried, a sort no longer breaks links, and some delivered files are out of order. |
-| 3 | Where the per-line table lives | A: in `model_info`, keyed by line. B: a separate table in the dataset beside `flightlines`. | Open; this is a libaarhusxyz format question. If A, keys must be strings, since `model_info` reads integers back as floats. |
+| 3 | Where the per-line table lives | A: in `model_info`, keyed by line. B: a separate table in the dataset beside `flightlines`. | Open, for Egil: this is a libaarhusxyz format question. If A, keys must be strings, since `model_info` reads integers back as floats. |
 | 4 | `xdist` on reprojection | A: convert by the unit factor. B: recompute. | A. Recomputing is what this plan removes. |
 | 5 | Averaging windows | A: link through the anchor sounding only. B: also record the first and last full-rate sounding in each average's window. | A for now. The window differs per gate, so B needs more than two ids, and nothing uses it yet. |
 | 6 | Where the link builder runs | A: libaarhusxyz function plus a platform process type. B: frontend only. | A, so the CLI, processes and plots share one matcher. |
