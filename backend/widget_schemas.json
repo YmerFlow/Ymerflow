@@ -4909,6 +4909,29 @@
                 }
               },
               "additionalProperties": false
+            },
+            "margin": {
+              "type": "object",
+              "title": "Margin",
+              "description": "Pixels around the plot area. A side left empty gets room for an axis if it has one, and a narrow edge if it does not.",
+              "properties": {
+                "top": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "right": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "bottom": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "left": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
             }
           }
         }

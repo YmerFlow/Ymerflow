@@ -256,6 +256,7 @@ GPU/WebGL scientific plotting built on the `gladly-plot` npm package, with a plu
 - **Config-driven layers**: The pane's `layoutConfig` (`{ transforms, layers, axes }`) is handed to `plot.update({ data, config })`; each entry in `layers` names a registered layer type plus its parameters
 - **Dataset Integration**: `ProcessContext`'s `datasetCollection` is converted to a `DataGroup` (`dc.toDataGroup()`) for gladly's built-in resolution; custom layer types instead read raw dataset objects directly off `plot._rawData` (see the `gladly 0.0.6 DataGroup/_children Pattern` notes in project memory for why)
 - **Picking & interaction**: `plot.on('mousemove'|'click', handler)` and `plot.pick(x, y)` drive the status bar and sounding-selection logic in `PlotView`
+- **Margins**: the plot area fills the pane apart from room for the axes it draws: 48 px for an x axis, 80 px for a y axis, and 12-24 px on a side without one. Gladly places tick labels and the axis title at fixed fractions of the margin, so an axis side much narrower than that lets the labels run into the title. An axis set to `visible: false` in `layoutConfig.axes` is not drawn and gets no room, which suits a strip stacked above another pane on the same x axis. `layoutConfig.margin` (`{ top, right, bottom, left }`, pixels) overrides any side. See `frontend/src/widgets/PlotView/plotMargin.js`
 
 **Layer Type Structure:**
 
