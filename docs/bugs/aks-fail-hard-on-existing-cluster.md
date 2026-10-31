@@ -18,7 +18,7 @@ Concretely, after this change, the flow fails hard when:
 
 ## Background — the incident this prevents
 
-On 2026-10-13 an admin used **New Cluster → AKS** to add a West US cluster for customer AGF. They
+On 2026-10-13 an admin used **New Cluster → AKS** to add a West US cluster for a customer. They
 set Location = `westus` and a custom CPU ceiling (158), but left the pre-filled **AKS Cluster
 Name = `ymerflow-aks`** (the shared default) and **Resource Group = `ymerflow`** unchanged. The
 setup script's `az aks show "ymerflow-aks" -g "ymerflow"` matched the **existing swedencentral
@@ -34,7 +34,7 @@ then:
 No West US cluster was ever created (confirmed: `az aks list` shows one cluster; the only
 `MC_*` node resource group is `MC_ymerflow_ymerflow-aks_swedencentral`; Activity Log shows zero
 `managedClusters` create/delete since Oct 1). The only genuinely-West-US resource from that session
-is the `customeragf` **storage account** (a separate Blob-backend flow, which correctly honored
+is the `customera` **storage account** (a separate Blob-backend flow, which correctly honored
 `westus`). See the first-message analysis; this is unrelated to the minikube-recreate incident
 (`docs/bugs/minikube-recreate-destroys-non-bind-mount-volumes.md`).
 
@@ -119,7 +119,7 @@ Before `test_connection`/persist, after resolving the row by token hash:
 
 ```python
 # Reject a registration that would cross-link to an Azure cluster already registered under a
-# DIFFERENT row (the customer-agf-westus incident: two rows, one swedencentral cluster).
+# DIFFERENT row (the customer-a-westus incident: two rows, one swedencentral cluster).
 identity_dupe = await db.execute(
     select(Cluster).where(
         Cluster.id != (cluster.id if cluster else None),
@@ -158,7 +158,7 @@ how the host already queries `json`/`jsonb` columns — confirm the column type 
 ### 4. `backend/routers/admin.py` `_apply_generic_fields` — name uniqueness on Save
 
 The display name is actually set here (the admin renames the row at Save; this is where
-`customer-agf-azure-westus` came from). Add the host-wide check so it applies to every cluster type:
+`customer-a-azure-westus` came from). Add the host-wide check so it applies to every cluster type:
 
 ```python
 if "name" in body:
@@ -262,5 +262,5 @@ in this plan, or defer to a follow-up? (Recommend: fix the AKS flow here; file a
   one frontend default. The setup script is served live from the backend, so the fix reaches admins
   the moment the backend redeploys — no client action.
 - Stale rows left by the incident (`azure-europe-sweden`, `azure-europe-sweden-1`, and the
-  mislabeled `customer-agf-azure-westus`) are cleaned up separately; this plan only stops new ones.
+  mislabeled `customer-a-azure-westus`) are cleaned up separately; this plan only stops new ones.
 ```
