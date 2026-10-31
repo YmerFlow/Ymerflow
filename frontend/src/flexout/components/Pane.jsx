@@ -1,5 +1,6 @@
-import React, { useContext, useState, useRef, Component, useMemo } from 'react';
+import React, { createContext, useContext, useState, useRef, Component, useMemo } from 'react';
 import { LayoutContext } from '../LayoutContext';
+import { headerMode, inheritedHeader } from '../headerMode';
 import PaneMenuDropdown from './PaneMenuDropdown';
 import Split from './Split';
 import TabSet from './TabSet';
@@ -82,9 +83,15 @@ function stripNoDataSentinels(val) {
   return val;
 }
 
+// The header mode a pane hands down to the panes inside it. A context rather than a prop,
+// because containers and widgets spread their props back into the saved layout node.
+const InheritedHeaderContext = createContext('shown');
+
 export default function Pane({ parentUpdate, onTabMoved, hideHeader, ...node }) {
-  const { updateLayout, widgets, data_context } = useContext(LayoutContext);
+  const { updateLayout, widgets, data_context, layout } = useContext(LayoutContext);
   const isMobile = useIsMobile();
+  const inherited = useContext(InheritedHeaderContext);
+  const mode = hideHeader ? 'none' : headerMode(node, inherited, layout?.flexView, isMobile);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -183,6 +190,12 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, ...node }) 
     setIsEditingTitle(false);
   };
 
+  const handleHeaderToggle = () => {
+    const newNode = { ...node, header: mode === 'compact' ? 'shown' : 'compact' };
+    if (parentUpdate) parentUpdate('replace', node.id, newNode);
+    else updateLayout(newNode);
+  };
+
   const handleTitleKeyDown = (e) => {
     if (e.key === 'Enter') {
       handleTitleSave();
@@ -215,11 +228,13 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, ...node }) 
   });
 
   const style = { opacity: isDragging ? 0.5 : 1 };
+  // Tab contents keep their padding; a compact header or none drops the gap under it.
+  const contentPadding = hideHeader ? 'p-1' : (mode === 'shown' ? 'pt-1' : '');
 
   return (
     <div ref={drop} style={style} className={`${hideHeader ? 'border-top ' : ''}d-flex flex-column ${isMobile ? '' : 'h-100'}`}>
-      {!hideHeader && (
-        <div ref={drag} className="d-flex justify-content-between bg-light border-bottom align-items-center ps-1 pane-header">
+      {mode !== 'none' && (
+        <div ref={drag} className={`d-flex justify-content-between bg-light border-bottom align-items-center ps-1 pane-header${mode === 'compact' ? ' pane-header-compact' : ''}`}>
           <div onClick={handleTitleClick} style={{ cursor: 'pointer', flexGrow: 1, minWidth: 0, minHeight: '1.5em' }}>
             {isEditingTitle ? (
               <input
@@ -249,6 +264,13 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, ...node }) 
                       <i className="fas fa-cog"></i>
                     </button>
                   )}
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    title={mode === 'compact' ? 'Full-size header' : 'Compact header'}
+                    onClick={() => { handleHeaderToggle(); setShowMenu(false); }}
+                  >
+                    <i className={`fas fa-${mode === 'compact' ? 'expand' : 'compress'}`}></i>
+                  </button>
                   <button className="btn btn-sm btn-danger" onClick={() => { handleRemove(); setShowMenu(false); }}>
                     <i className="fas fa-times"></i>
                   </button>
@@ -269,14 +291,12 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, ...node }) 
           </div>
         </div>
       )}
-      <div className={
-        isMobile
-          ? (hideHeader ? 'p-1' : 'pt-1')
-          : `${hideHeader ? 'p-1' : 'pt-1'} flex-grow-1 overflow-auto`
-      }>
-        <WidgetErrorBoundary widgetName={node.widget} node={node}>
-          <Widget parentUpdate={parentUpdate} {...node} />
-        </WidgetErrorBoundary>
+      <div className={isMobile ? contentPadding : `${contentPadding} flex-grow-1 overflow-auto`}>
+        <InheritedHeaderContext.Provider value={inheritedHeader(node, inherited)}>
+          <WidgetErrorBoundary widgetName={node.widget} node={node}>
+            <Widget parentUpdate={parentUpdate} {...node} />
+          </WidgetErrorBoundary>
+        </InheritedHeaderContext.Provider>
       </div>
 
       {/* Configuration Modal */}

@@ -75,6 +75,7 @@ Interactive scientific plotting:
   - Choose plot type (Line, Points, etc.)
   - Configure colors, labels, units
 - **Interactive**: Zoom, pan, hover for details
+- **Status bar**: The bar along the bottom of the workspace shows the cursor coordinates of the plot under the pointer and the point last picked by a click in any plot. To keep a bar under one particular plot as well, tick **Status bar** in that plot's configuration
 - **Multi-dataset**: Overlay multiple datasets
 - **Unit Matching**: Automatic axis assignment by units
 
@@ -111,6 +112,12 @@ Use dropdown in pane header to switch widget (e.g., PlotView → EnvironmentView
 #### Closing Panes
 
 Click **×** button in pane header.
+
+#### Compact Headers and Flex View
+
+To give plots more room, open a pane's header menu and click the compress button to make its header compact. Every pane inside it takes the compact header too, so doing this on a Grid or a split covers the whole group; a pane inside can still be set back to full size with the expand button in its own menu.
+
+**Flex view**, a tick box in the Workspace menu, removes every pane header and leaves a thin line between panes. Panes can still be resized by dragging the lines. To rename, move, configure or remove a pane, untick flex view, make the change and tick it again. Flex view is saved with the workspace, so it opens that way for everyone who views it. It has no effect on a phone, where the headers are kept.
 
 #### Workspaces - Saving and Sharing Layouts
 

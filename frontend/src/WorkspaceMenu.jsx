@@ -6,6 +6,7 @@ import { ProcessContext } from './ProcessContext';
 import { useWorkspaces, useWorkspace, useSaveWorkspace, useSaveWorkspaceVersion, usePublicWorkspaces } from './datamodel/useQueries';
 import WorkspaceSharingModal from './WorkspaceSharingModal';
 import WorkspaceCodeModal from './WorkspaceCodeModal';
+import { useIsMobile } from './hooks/useIsMobile';
 
 // One row per workspace: clickable title (loads the selected version, default latest) plus an
 // inline version <select>. Clicking the title makes this the "current" workspace — that identity
@@ -148,6 +149,31 @@ function SaveCurrentWorkspaceItem({ layoutRef, onSaved }) {
   );
 }
 
+// "Flex view" — no pane headers anywhere and a thin line between panes. Saved on the root
+// layout node, so the workspace opens this way for everyone. Flex view is off on mobile.
+function FlexViewItem() {
+  const { layout, updateLayout } = useContext(LayoutContext);
+  const isMobile = useIsMobile();
+  if (isMobile) return null;
+
+  const handleChange = (e) => {
+    const { flexView, ...rest } = layout;
+    updateLayout(e.target.checked ? { ...rest, flexView: true } : rest);
+  };
+
+  return (
+    <div className="px-3 py-1" title="Hide every pane header. Untick to rename, move or configure a pane.">
+      <Form.Check
+        type="checkbox"
+        id="workspace-flex-view"
+        label="Flex view"
+        checked={!!layout.flexView}
+        onChange={handleChange}
+      />
+    </div>
+  );
+}
+
 // Search combobox at the bottom of the menu — adapted from the deleted AddPublicWorkspacesTab.
 // Selecting a result just navigates to it: no fork, no "add to my list" mutation.
 function PublicWorkspaceSearch({ onSelect }) {
@@ -275,6 +301,7 @@ export default function WorkspaceMenu() {
           >
             <i className="fa fa-code me-2" aria-hidden="true" />Edit as code...
           </button>
+          <FlexViewItem />
           <Dropdown.Divider />
           <PublicWorkspaceSearch onSelect={() => setMenuOpen(false)} />
         </Dropdown.Menu>

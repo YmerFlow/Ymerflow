@@ -43,6 +43,23 @@ _CONTAINER_WIDGETS = {
 
 _NODE_ID_PROP = {"type": "string", "description": "Unique pane identifier (UUID recommended)"}
 
+# Fields any node may carry, whatever its widget: the title typed into its pane header,
+# the header mode its subtree inherits, and flex view, which is read on the root only.
+_NODE_COMMON_PROPS = {
+    "customTitle": {
+        "type": "string",
+        "description": "Title shown in the pane header instead of the widget's own title.",
+    },
+    "header": {
+        "enum": ["shown", "compact"],
+        "description": 'Pane header size. A node without it takes its parent\'s; the root defaults to "shown".',
+    },
+    "flexView": {
+        "type": "boolean",
+        "description": "Read on the root node only: no pane headers anywhere, and a thin line between panes.",
+    },
+}
+
 
 class CreateWorkspaceBody(BaseModel):
     title: str = "Untitled Workspace"
@@ -90,6 +107,7 @@ def _container_node_def(widget_name: str, description: str) -> dict:
                 "items": {"$ref": "#/$defs/Node"},
                 "minItems": 1,
             },
+            **_NODE_COMMON_PROPS,
         },
         "required": ["id", "widget", "children"],
         "additionalProperties": False,
@@ -113,6 +131,7 @@ def _leaf_node_def_raw(widget_name: str, widget_info: dict) -> dict:
         "properties": {
             "id": _NODE_ID_PROP,
             "widget": {"const": widget_name},
+            **_NODE_COMMON_PROPS,
         },
         "required": ["id", "widget"],
         "additionalProperties": False,
@@ -385,6 +404,9 @@ async def get_workspace_schema(verbose: bool = Query(False, include_in_schema=Fa
             "widget": "<name from widgets[].widget>",
             "children?": "[...nodes]  (container widgets only)",
             "layoutConfig?": "{...}  (leaf widgets where has_params is true)",
+            "customTitle?": "pane title shown instead of the widget title",
+            "header?": '"shown" | "compact"  (inherited by the panes inside it)',
+            "flexView?": "true on the root only: no pane headers, a thin line between panes",
         },
     }
 
@@ -427,6 +449,7 @@ async def get_widget_schema(widget: str):
         "properties": {
             "id": _NODE_ID_PROP,
             "widget": {"const": widget},
+            **_NODE_COMMON_PROPS,
         },
         "required": ["id", "widget"],
         "additionalProperties": False,
