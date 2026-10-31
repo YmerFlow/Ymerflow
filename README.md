@@ -10,7 +10,9 @@ YmerFlow replaces desktop-bound geophysics tools with a reproducible, versioned 
 |---|---|
 | ![Flow view showing process graph and 3D resistivity curtain](screenshots/ymerflow_ui_screenshot%20(1).png) | ![Process editor with 3D resistivity curtain](screenshots/ymerflow_ui_screenshot.png) |
 
-![AEM inversion comparison — AGF reference (top) vs. YmerFlow result (bottom)](screenshots/AGF-vs-our-inversion-3.png)
+![AEM inversion comparison: the published reference inversion (top) and a YmerFlow inversion of the same soundings (bottom)](screenshots/published-vs-ymerflow-inversion.png)
+
+*Benchmark data: the ENWRA 2018 airborne electromagnetic survey of eastern Nebraska and its published inversion, available on the [Nebraska GeoCloud](https://geocloud.live).*
 
 ## Features
 
