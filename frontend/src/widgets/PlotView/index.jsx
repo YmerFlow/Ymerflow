@@ -7,6 +7,7 @@ import { encodeSeg } from '../../datamodel/datasetPath';
 import { getKeys, resolveDataPath } from './colorUtils.js';
 import { cellEditEntries, segmentEditEntries } from './inUseEdits.js';
 import { loadPinnedData } from './pinnedDatasets.js';
+import { currentSoundingFrom } from './soundingMatch.js';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import './elements/index.js';
 
@@ -21,10 +22,9 @@ const IN_USE_LAYER_TYPES = ['ChannelPlot', 'GateAnomalyPlot'];
 export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...rest }) {
   const isMobile = useIsMobile();
   const { fetchedData, datasetsLoading, dataLoading, currentSounding, setCurrentSounding, datasetCollection, processes,
-    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject, currentPart } = useContext(ProcessContext);
+    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject } = useContext(ProcessContext);
 
-  // Map of pinnedDataKey("procName.version.dsName", part) → { dsPath, part, dsObj, rawData }
-  // for non-current process datasets, one entry per part they have been loaded for.
+  // Map of "procName.version.dsName[@part]" → raw data object for non-current process datasets
   const [lazilyLoadedData, setLazilyLoadedData] = useState(new Map());
   const { addPlot, removePlot } = useContext(PlotGroupContext);
 
@@ -51,14 +51,13 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
     [layoutConfig],
   );
 
-  // Scan layer parameters for non-current dataset paths and lazily load their data for the
-  // selected part, as ProcessContext does for current datasets; a part change loads it again.
+  // Scan layer parameters for non-current dataset paths and lazily load their data, for the
+  // part each path names (see pinnedDatasets.js).
   useEffect(() => {
     if (!config?.layers || !processes?.length) return;
-
-    loadPinnedData(config.layers, processes, currentPart, currentProject, lazilyLoadedData,
-      (key, entry) => setLazilyLoadedData(prev => new Map(prev).set(key, entry)));
-  }, [config, processes, currentProject, currentPart]); // eslint-disable-line react-hooks/exhaustive-deps
+    loadPinnedData(config.layers, processes, currentProject, lazilyLoadedData,
+      (dsPath, entry) => setLazilyLoadedData(prev => new Map(prev).set(dsPath, entry)));
+  }, [config, processes, currentProject]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Create / destroy the Plot instance and register gladly event handlers.
   useEffect(() => {
@@ -135,6 +134,8 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
             const d = Math.abs(Number(xdist[i]) - coords.xdist_m);
             if (d < bestDist) { bestDist = d; bestSounding = i; }
           }
+          // A pinned dataset's row becomes the current dataset's row by line and gtime.
+          bestSounding = currentSoundingFrom(rawData, params.dataset, bestSounding);
           break; // first dataset with xdist is sufficient
         }
         if (bestSounding !== null) setCurrentSoundingRef.current(bestSounding);
@@ -208,8 +209,8 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
 
   // Update plot whenever config, data or sounding changes.
   // _currentSounding is merged into the data object so LayerTypes that need it
-  // (SoundingMarker, SoundingPlot, ResistivityCurtainLines) can read it from
-  // data._currentSounding in their createLayer function.
+  // (SoundingMarker, SoundingPlot, ResistivityCurtainLines) can read it, through
+  // soundingIndex() for their own dataset, in their createLayer function.
   useEffect(() => {
     const plot = plotRef.current;
     if (!plot || datasetsLoading || dataLoading) return;
@@ -252,14 +253,15 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
     Object.assign(dataForPlot, {
       current: encodedCurrent,
       _currentSounding: currentSounding,
+      // The current dataset _currentSounding indexes; pinned layers match its row by line and gtime.
+      _currentFlightlines: Object.values(fetchedData || {}).find(d => d?.flightlines)?.flightlines,
       _inMemoryDiffs: inMemoryDiffs,
     });
 
-    // Merge lazily loaded non-current datasets for the selected part:
+    // Merge lazily loaded non-current datasets:
     // - raw data as own properties so custom layers can access via resolveDataPath
     // - Dataset wrapper in _children chain so DataGroup.getQuantityKind can traverse them
-    for (const { dsPath, part, dsObj, rawData } of lazilyLoadedData.values()) {
-      if (part !== currentPart) continue;
+    for (const [dsPath, { dsObj, rawData }] of lazilyLoadedData) {
       const [procName, ver, dsName] = dsPath.split('.');
       dataForPlot[procName] ??= {};
       dataForPlot[procName][ver] ??= {};
@@ -294,7 +296,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
       }
     });
     return () => { cancelled = true; };
-  }, [config, fetchedData, datasetCollection, currentSounding, datasetsLoading, dataLoading, lazilyLoadedData, inMemoryDiffs, currentPart]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, fetchedData, datasetCollection, currentSounding, datasetsLoading, dataLoading, lazilyLoadedData, inMemoryDiffs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={isMobile ? 'd-flex flex-column' : 'h-100 d-flex flex-column'}
