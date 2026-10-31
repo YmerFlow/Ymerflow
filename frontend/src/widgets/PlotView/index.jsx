@@ -8,12 +8,11 @@ import { encodeSeg } from '../../datamodel/datasetPath';
 import { getKeys, resolveDataPath } from './colorUtils.js';
 import { cellEditEntries, segmentEditEntries } from './inUseEdits.js';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { MARGIN_SCHEMA, drawnAxes, plotMargin, sameMargin } from './plotMargin.js';
 import './elements/index.js';
 
 // Register quantity kinds once at module load
 registerQuantityKinds();
-
-const PLOT_MARGIN = { top: 50, right: 80, bottom: 60, left: 80 };
 
 // Layer types that edit in-use flags with the InUse Editor's lasso.
 const IN_USE_LAYER_TYPES = ['ChannelPlot', 'GateAnomalyPlot'];
@@ -93,7 +92,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const plot = new Plot(container, { margin: PLOT_MARGIN });
+    const plot = new Plot(container, { margin: plotMargin(null, config.margin) });
     plotRef.current = plot;
     addPlot(id, plot);
 
@@ -310,8 +309,17 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
       : (plot.getConfig() || sanitizedConfig);
 
     let cancelled = false;
-    plot.update({ data: dataForPlot, config: configToApply }).then(() => {
+    plot.margin = plotMargin(drawnAxes(plot), config.margin);
+    plot.update({ data: dataForPlot, config: configToApply }).then(async () => {
       if (cancelled) return;
+      // Which axes a config draws is known only after it renders. If they need
+      // different room than the axes drawn before, lay the plot out again.
+      const margin = plotMargin(drawnAxes(plot), config.margin);
+      if (!sameMargin(margin, plot.margin)) {
+        plot.margin = margin;
+        await plot.forceUpdate();
+        if (cancelled) return;
+      }
       // Propagate the defaults-populated config back to the layout system so
       // axes, colorscales, etc. are visible in the config editor.
       const fullConfig = plot.getConfig();
@@ -434,7 +442,10 @@ PlotView.get_schema = (data_context = {}) => {
     properties: {
       id:           { type: 'string', title: 'ID',          readOnly: true },
       widget:       { type: 'string', title: 'Widget Type', readOnly: true },
-      layoutConfig: gladlySchemaRest,
+      layoutConfig: {
+        ...gladlySchemaRest,
+        properties: { ...gladlySchemaRest.properties, margin: MARGIN_SCHEMA },
+      },
     },
     required: ['layoutConfig'],
   };
