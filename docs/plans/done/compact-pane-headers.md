@@ -1,6 +1,6 @@
 # Compact pane headers, flex view and a workspace status bar
 
-**State:** decided 2026-10-30, ready to implement
+**State:** decided 2026-10-30, implemented 2026-10-30 (see [As built](#as-built))
 **Labels:** enhancement, frontend, layout
 
 ## Motivation
@@ -100,3 +100,14 @@ About a day and a half: half a day for compact headers and inheritance, half a d
 ## Not changing
 
 Saved workspaces without `header` or `flexView` keep their headers exactly as now. The per-plot status bar is the one visible change to existing workspaces, as described above. Widgets other than PlotView are not touched.
+
+## As built
+
+Where the build differs from the implementation list above:
+
+- The inherited header mode is handed down through a React context inside `Pane.jsx`, not an `inheritedHeader` prop. Split, Grid, TabSet and leaf widgets spread their props back into the node they save, so a prop would have been written into every saved layout. `Split.jsx`, `Grid.jsx` and `TabSet.jsx` are unchanged.
+- The shown / compact control is one button in the pane menu (compress / expand icon) that writes `header` on the node.
+- `MainLayout` wraps the tree in a `display: contents` element carrying the `flex-view` class, which scopes the divider-line and borderless-pane styles without changing the layout.
+- The workspace bar clears its coordinates when the pointer leaves a plot, so it never shows one plot's coordinates while the pointer is over another pane.
+- `backend/widget_schemas.json` was patched with the one new `statusBar` entry rather than regenerated, since `npm run export-schemas` reads the widgets from a dev server on port 3000. The backend node schemas also gained the three fields in `get_widget_schema` and in the `get_workspace_schema` node envelope.
+- Tests: besides the header rule and the store, `Pane.test.jsx` renders a layout and counts the headers drawn, for inheritance through Grid, Split and TabSet, for flex view, and for a layout saved before this change.

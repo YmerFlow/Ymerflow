@@ -18,6 +18,15 @@ const PLOT_MARGIN = { top: 50, right: 80, bottom: 60, left: 80 };
 // Layer types that edit in-use flags with the InUse Editor's lasso.
 const IN_USE_LAYER_TYPES = ['ChannelPlot', 'GateAnomalyPlot'];
 
+// layoutConfig.statusBar: the workspace status bar shows every plot's readout, so a plot
+// draws its own bar only when asked to.
+const STATUS_BAR_SCHEMA = {
+  type: 'boolean',
+  title: 'Status bar',
+  description: 'Draw a status bar under this plot. The workspace status bar shows the same readout.',
+  default: false,
+};
+
 export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...rest }) {
   const isMobile = useIsMobile();
   const { fetchedData, datasetsLoading, dataLoading, currentSounding, setCurrentSounding, datasetCollection, processes,
@@ -25,7 +34,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
 
   // Map of "procName.version.dsName" → raw data object for non-current process datasets
   const [lazilyLoadedData, setLazilyLoadedData] = useState(new Map());
-  const { addPlot, removePlot } = useContext(PlotGroupContext);
+  const { addPlot, removePlot, readout } = useContext(PlotGroupContext);
 
   const containerRef          = useRef(null);
   const plotRef               = useRef(null);
@@ -97,16 +106,20 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
     plotRef.current = plot;
     addPlot(id, plot);
 
-    // Show data-space coordinates on the left of the status bar on mousemove.
+    // Show data-space coordinates on the left of the status bars on mousemove: the
+    // workspace bar always, this plot's own bar when it has one.
     const moveHandle = plot.on('mousemove', (e, coords) => {
-      const bar = statusCoordsRef.current;
-      if (!bar) return;
       // Show only quantity-kind keys (skip axis-name duplicates like xaxis_bottom).
-      const parts = Object.entries(coords)
+      const text = Object.entries(coords)
         .filter(([k]) => !k.startsWith('xaxis_') && !k.startsWith('yaxis_'))
-        .map(([k, v]) => `${k}: ${Number(v).toPrecision(5)}`);
-      bar.textContent = parts.join('   ');
+        .map(([k, v]) => `${k}: ${Number(v).toPrecision(5)}`)
+        .join('   ');
+      readout.publish({ coords: text });
+      if (statusCoordsRef.current) statusCoordsRef.current.textContent = text;
     });
+    // The workspace bar is shared, so it drops this plot's coordinates when the pointer leaves.
+    const onMouseLeave = () => readout.publish({ coords: '' });
+    container.addEventListener('mouseleave', onMouseLeave);
 
     // On click: GPU-pick the nearest point, update status bar, and set current sounding.
     const clickHandle = plot.on('click', async (e, coords) => {
@@ -122,24 +135,22 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
         return;
       }
 
-      // Update right side of status bar with the picked point's raw attributes.
-      const pickBar = statusPickRef.current;
-      if (pickBar) {
-        if (result) {
-          const { configLayerIndex, tile, index, layer } = result;
-          const isInstanced = layer.instanceCount !== null;
-          const row = Object.fromEntries(
-            Object.entries(layer.attributes)
-              .filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1)
-              .map(([k, v]) => [k, Number(Array.isArray(v) ? v[tile]?.[index] : v[index]).toPrecision(5)])
-          );
-          pickBar.textContent =
-            `layer ${configLayerIndex}  tile ${tile}  pt ${index}  ` +
-            Object.entries(row).map(([k, v]) => `${k}=${v}`).join('  ');
-        } else {
-          pickBar.textContent = '';
-        }
+      // Update right side of the status bars with the picked point's raw attributes.
+      let pickText = '';
+      if (result) {
+        const { configLayerIndex, tile, index, layer } = result;
+        const isInstanced = layer.instanceCount !== null;
+        const row = Object.fromEntries(
+          Object.entries(layer.attributes)
+            .filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1)
+            .map(([k, v]) => [k, Number(Array.isArray(v) ? v[tile]?.[index] : v[index]).toPrecision(5)])
+        );
+        pickText =
+          `layer ${configLayerIndex}  tile ${tile}  pt ${index}  ` +
+          Object.entries(row).map(([k, v]) => `${k}=${v}`).join('  ');
       }
+      readout.publish({ pick: pickText });
+      if (statusPickRef.current) statusPickRef.current.textContent = pickText;
 
       // --- Sounding selection ---
       // On xdist-axis plots (ChannelPlot, ResistivityCurtain, etc.) always select by
@@ -229,6 +240,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
       selHandle.remove();
       moveHandle.remove();
       clickHandle.remove();
+      container.removeEventListener('mouseleave', onMouseLeave);
       removePlot(id);
       plot.destroy();
       plotRef.current = null;
@@ -339,20 +351,12 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
           </div>
         )}
       </div>
-      <div style={{
-        display: 'flex',
-        fontSize: '12px',
-        fontFamily: 'monospace',
-        background: '#f8f9fa',
-        borderTop: '1px solid #dee2e6',
-        flexShrink: 0,
-        minHeight: '20px',
-        color: '#495057',
-        overflow: 'hidden',
-      }}>
-        <div ref={statusCoordsRef} style={{ flex: '0 1 auto', padding: '2px 8px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }} />
-        <div ref={statusPickRef}   style={{ flex: '1 1 0', padding: '2px 8px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', textAlign: 'right', borderLeft: '1px solid #dee2e6' }} />
-      </div>
+      {config.statusBar && (
+        <div className="plot-status-bar">
+          <div ref={statusCoordsRef} className="plot-status-coords" />
+          <div ref={statusPickRef} className="plot-status-pick" />
+        </div>
+      )}
     </div>
   );
 }
@@ -434,7 +438,10 @@ PlotView.get_schema = (data_context = {}) => {
     properties: {
       id:           { type: 'string', title: 'ID',          readOnly: true },
       widget:       { type: 'string', title: 'Widget Type', readOnly: true },
-      layoutConfig: gladlySchemaRest,
+      layoutConfig: {
+        ...gladlySchemaRest,
+        properties: { ...gladlySchemaRest.properties, statusBar: STATUS_BAR_SCHEMA },
+      },
     },
     required: ['layoutConfig'],
   };

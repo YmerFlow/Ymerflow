@@ -257,6 +257,8 @@ GPU/WebGL scientific plotting built on the `gladly-plot` npm package, with a plu
 - **Dataset Integration**: `ProcessContext`'s `datasetCollection` is converted to a `DataGroup` (`dc.toDataGroup()`) for gladly's built-in resolution; custom layer types instead read raw dataset objects directly off `plot._rawData` (see the `gladly 0.0.6 DataGroup/_children Pattern` notes in project memory for why)
 - **Picking & interaction**: `plot.on('mousemove'|'click', handler)` and `plot.pick(x, y)` drive the status bar and sounding-selection logic in `PlotView`
 
+**Status bars:** the cursor readout and the last picked point go to the **workspace status bar**, one bar under the whole layout (`frontend/src/PlotStatusBar.jsx`, rendered in `App.jsx` under `<MainLayout />`, drawn only when the layout contains a PlotView). PlotView publishes to a small store in `PlotGroupContext` (`readout.publish({ coords })` on mousemove, `readout.publish({ pick })` on click, `coords` cleared when the pointer leaves the plot) and the bar subscribes and writes the text through refs. The store is a plain publish/subscribe object (`frontend/src/readoutStore.js`), not React state, so mousemove does not re-render the PlotViews. A plot draws its own bar underneath as well only when `layoutConfig.statusBar` is `true` (off by default; a boolean in PlotView's schema).
+
 **Layer Type Structure:**
 
 Layer types are defined in `frontend/src/widgets/PlotView/elements/` and registered with `gladly-plot`'s `registerLayerType`. Each one supplies:

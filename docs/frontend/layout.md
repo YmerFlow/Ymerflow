@@ -71,6 +71,8 @@ Node-specific fields live directly on the node (there is no generic `data` wrapp
 }
 ```
 
+Any node, container or leaf, may also carry `customTitle` (the title typed into its pane header), `header` (`"shown"` or `"compact"`, inherited by the panes inside it), and, on the root node only, `flexView: true`. See [Pane headers and flex view](#pane-headers-and-flex-view).
+
 ## LayoutContext
 
 The `LayoutContext` provides global state and read access for the layout tree. Tree *mutation* does not go through the context (see [Tree Operations](#tree-operations) below) - the context is mainly used to read the current tree, look up available widget types, and jump to a specific widget instance.
@@ -273,18 +275,38 @@ An `Empty` node renders nothing but a blank pane; use the pane's chevron menu (s
 
 `Pane` (`frontend/src/flexout/components/Pane.jsx`) wraps every node in the tree - leaf widgets and containers alike - and is what actually calls `parentUpdate`/`updateLayout` in response to user actions.
 
-**Props:** `Pane({ parentUpdate, onTabMoved, hideHeader, ...node })` - `parentUpdate` is the callback described in [Tree Operations](#tree-operations); `onTabMoved` is called by `TabSet` when a tab-drag ends by being dropped elsewhere; `hideHeader` is set by `TabSet` on its child panes (the tab strip already shows the header, so the pane's own header is suppressed) and by the root pane by convention (`border-top` styling only).
+**Props:** `Pane({ parentUpdate, onTabMoved, hideHeader, ...node })` - `parentUpdate` is the callback described in [Tree Operations](#tree-operations); `onTabMoved` is called by `TabSet` when a tab-drag ends by being dropped elsewhere; `hideHeader` is set by `TabSet` on its child panes (the tab strip already shows the header, so the pane's own header is suppressed, and the pane gets `border-top` styling instead).
 
 **Features:**
-- Header with the widget's title (`Widget.title`), click-to-edit as a `customTitle` on the node
+- Header with the widget's title (`Widget.title`), click-to-edit as a `customTitle` on the node. The header is full size, compact or absent; see [Pane headers and flex view](#pane-headers-and-flex-view)
 - A chevron button opens a `PaneMenuDropdown` popover (portal-rendered, closes on outside click) containing:
   - A **Configure** (gear) button, shown only if the widget defines a static `get_schema(data_context)` function - opens a `CustomForm` (JSON-Schema-driven) modal to edit the node's non-structural fields
+  - A **header size** button (compress / expand icon), which writes `header: "compact"` or `header: "shown"` on the node
   - A **delete** (x) button, calling `parentUpdate('remove', node.id)`
   - A list of buttons, one per registered widget type, to switch this pane's widget (`handleChangeContent`) - switching into/out of a container type (`VerticalSplit`/`HorizontalSplit`/`TabSet`/`Grid`) preserves existing children where possible
 - The widget itself is rendered inside a `WidgetErrorBoundary` (a class component implementing `componentDidCatch`), so a crashing widget shows an in-pane error card with the error/stack instead of taking down the whole layout; the boundary resets when the widget type or node changes
 - Drag-and-drop (see [Drag and Drop](#drag-and-drop))
 
 There is no popout button - popout windows are not part of the current implementation (see below).
+
+### Pane headers and flex view
+
+Every `Pane` draws a header row with the title, the drag handle and the menu. Its size comes from the `header` field:
+
+| `header` | header row |
+|---|---|
+| `"shown"` | full size, about 24 px, with 4 px of padding above the content |
+| `"compact"` | about 14 px: smaller font, no padding; same title, drag handle and menu |
+
+A node without `header` takes its parent's value, and the root defaults to `"shown"`, so `header: "compact"` on a Grid covers the Grid and every cell in it while one cell can still set `"shown"` for itself. Layouts saved without the field draw full headers as before. The value is handed down through a React context inside `Pane.jsx` rather than as a prop, because containers and widgets spread their props back into the saved node. The rule itself, `(node, inherited, flexView, isMobile) → "shown" | "compact" | "none"`, is the pure function `headerMode` in `frontend/src/flexout/headerMode.js`.
+
+**Flex view** is `flexView: true` on the root node, set by the **Flex view** tick box in the Workspace menu (`WorkspaceMenu.jsx`). It is saved with the workspace, so the workspace opens that way for everyone, read-only viewers included; a viewer who cannot save can still untick it for the session. In flex view:
+
+- no pane draws a header, whatever its `header` says;
+- `MainLayout` wraps the tree in a `display: contents` element with the `flex-view` class, which drops the borders around split and grid panes and draws a 1 px line along the middle of each 5 px divider (`styling.scss`); the whole divider is still the grab area for resizing;
+- TabSets keep their tab strip.
+
+Renaming, moving, configuring or removing a pane needs its header, so untick flex view first. Flex view is off on mobile, where stacked panes are told apart by their headers, and the tick box is not shown there.
 
 ## Drag and Drop
 

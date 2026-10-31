@@ -4909,6 +4909,12 @@
                 }
               },
               "additionalProperties": false
+            },
+            "statusBar": {
+              "type": "boolean",
+              "title": "Status bar",
+              "description": "Draw a status bar under this plot. The workspace status bar shows the same readout.",
+              "default": false
             }
           }
         }

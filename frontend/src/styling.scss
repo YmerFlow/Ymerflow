@@ -128,6 +128,13 @@ $headings-font-weight:   600;   // Semibold headings
   }
 }
 
+// Compact header: the same title, drag handle and menu in about 14 px.
+.pane-header-compact {
+  font-size: 0.625rem !important;
+  line-height: 1.2;
+  > :first-child { min-height: 1.2em !important; }
+}
+
 .tab-mini {
   padding: 0.25rem 0.75rem !important;
   font-size: 0.875rem;
@@ -353,6 +360,40 @@ $headings-font-weight:   600;   // Semibold headings
 
   &.split-divider-vertical { width: 5px; cursor: col-resize; }
   &.split-divider-horizontal { height: 5px; cursor: row-resize; }
+}
+
+// Plot readout bar: the workspace status bar, and a PlotView's own bar when it has one.
+.plot-status-bar {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 20px;
+  overflow: hidden;
+  font-size: 12px;
+  font-family: monospace;
+  color: $gray-700;
+  background: $gray-100;
+  border-top: 1px solid $gray-300;
+
+  > div {
+    padding: 2px 8px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .plot-status-coords { flex: 0 1 auto; }
+  .plot-status-pick { flex: 1 1 0; text-align: right; border-left: 1px solid $gray-300; }
+}
+
+// Flex view: panes lose their borders and each 5 px divider draws a 1 px line along its
+// middle. The whole divider is still the grab area for resizing.
+.flex-view {
+  .split-pane { border: none; border-radius: 0; }
+  .split-divider-vertical {
+    background: linear-gradient(to right, transparent 2px, $border-color 2px, $border-color 3px, transparent 3px);
+  }
+  .split-divider-horizontal {
+    background: linear-gradient(to bottom, transparent 2px, $border-color 2px, $border-color 3px, transparent 3px);
+  }
 }
 
 // Process Editor - Resource Configuration Card

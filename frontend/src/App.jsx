@@ -6,6 +6,7 @@ import { LayoutProvider } from './flexout/LayoutContext';
 import { MainLayout } from './flexout/Layout';
 import { ProcessProvider, ProcessContext } from './ProcessContext';
 import { PlotGroupProvider } from './PlotGroupContext';
+import PlotStatusBar from './PlotStatusBar';
 import { AuthProvider, AuthContext } from './AuthContext';
 import { MessageProvider } from './MessageContext';
 import MessageDisplay from './MessageDisplay';
@@ -174,6 +175,7 @@ function AppWithContext({ widgets }) {
               <div className={`flex-grow-1 ${isMobile ? 'overflow-auto' : 'overflow-hidden'}`}>
                 <MainLayout />
               </div>
+              <PlotStatusBar />
               <AppBootstrap />
               <WorkspaceLayoutSync />
               <AutoCreateProjectDialog />
