@@ -83,7 +83,7 @@ configure a **plugin-provided** protocol (e.g. Google Artifact Registry, GCS, GK
 
 ```bash
 # REGISTRY_PROTOCOL=docker-v2
-# REGISTRY_CONFIG_JSON={"user":"<registry-user>","password":"<registry-password>","host":"192.0.2.142","port":30500}
+# REGISTRY_CONFIG_JSON={"user":"<registry-user>","password":"<registry-password>","host":"192.168.0.2","port":30500}
 
 # STORAGE_PROTOCOL=s3
 # STORAGE_CONFIG_JSON={...}
