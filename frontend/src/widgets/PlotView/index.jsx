@@ -24,7 +24,7 @@ const IN_USE_LAYER_TYPES = ['ChannelPlot', 'GateAnomalyPlot'];
 export default function PlotView({ layoutConfig, parentUpdate, id, widget, inheritedCompact, inheritedGlobalCompact, ...rest }) {
   const isMobile = useIsMobile();
   const { fetchedData, datasetsLoading, dataLoading, currentSounding, setCurrentSounding, datasetCollection, processes,
-    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject } = useContext(ProcessContext);
+    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject, ensureSavePointEditLoaded } = useContext(ProcessContext);
 
   // Map of "procName.version.dsName" → raw data object for non-current process datasets
   const [lazilyLoadedData, setLazilyLoadedData] = useState(new Map());
@@ -91,6 +91,17 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
         .catch(err => console.warn(`Failed to lazily load ${dsPath}:`, err));
     }
   }, [config, processes, currentProject]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // An editing layer on a save point shows, and edits, the edit saved on it: load it into
+  // the editor under the layer's own dataset path, the key its overlay reads.
+  useEffect(() => {
+    for (const spec of config?.layers ?? []) {
+      const [type, params] = Object.entries(spec ?? {}).find(([, v]) => v != null) ?? [];
+      if (IN_USE_LAYER_TYPES.includes(type) && params?.inUseMode && params.dataset) {
+        ensureSavePointEditLoaded(params.dataset);
+      }
+    }
+  }, [config, ensureSavePointEditLoaded]);
 
   // Create / destroy the Plot instance and register gladly event handlers.
   useEffect(() => {
