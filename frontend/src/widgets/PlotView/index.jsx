@@ -3,10 +3,11 @@ import { Plot, DataGroup } from 'gladly-plot';
 import { ProcessContext } from '../../ProcessContext';
 import { PlotGroupContext } from '../../PlotGroupContext';
 import { registerQuantityKinds } from './quantityKinds';
-import { loadDataset } from '../../datamodel/dataset';
 import { encodeSeg } from '../../datamodel/datasetPath';
 import { getKeys, resolveDataPath } from './colorUtils.js';
 import { cellEditEntries, segmentEditEntries } from './inUseEdits.js';
+import { followsLine, loadPinnedData, pinnedEntries, selectedLine } from './pinnedDatasets.js';
+import { currentSoundingFrom } from './soundingMatch.js';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import './elements/index.js';
 
@@ -24,9 +25,10 @@ const IN_USE_LAYER_TYPES = ['ChannelPlot', 'GateAnomalyPlot'];
 export default function PlotView({ layoutConfig, parentUpdate, id, widget, inheritedCompact, inheritedGlobalCompact, ...rest }) {
   const isMobile = useIsMobile();
   const { fetchedData, datasetsLoading, dataLoading, currentSounding, setCurrentSounding, datasetCollection, processes,
-    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject } = useContext(ProcessContext);
+    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject, currentPart } = useContext(ProcessContext);
 
-  // Map of "procName.version.dsName" → raw data object for non-current process datasets
+  // Map of pinnedDataKey → { dsPath, line, dsObj, rawData } (or { dsPath, line, message } when
+  // there is no part to show) for non-current process datasets; see pinnedDatasets.js.
   const [lazilyLoadedData, setLazilyLoadedData] = useState(new Map());
   const { addPlot, removePlot, publishReadout } = useContext(PlotGroupContext);
 
@@ -53,44 +55,28 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     [layoutConfig],
   );
 
-  // Scan layer parameters for non-current dataset paths and lazily load their data.
+  // The current dataset the selected sounding indexes, and the line pinned panels follow.
+  const currentFlightlines = useMemo(
+    () => Object.values(fetchedData || {}).find(d => d?.flightlines)?.flightlines,
+    [fetchedData],
+  );
+  const followed = useMemo(
+    () => (dataLoading ? undefined : selectedLine(currentPart, currentFlightlines)),
+    [dataLoading, currentPart, currentFlightlines],
+  );
+  const pinnedMessages = useMemo(
+    () => [followsLine(config?.layers) && followed?.error,
+      ...pinnedEntries(lazilyLoadedData, followed?.line).map(e => e.message)].filter(Boolean),
+    [config, followed, lazilyLoadedData],
+  );
+
+  // Scan layer parameters for non-current dataset paths and lazily load their data: the part
+  // each path names, or the part with the followed line (see pinnedDatasets.js).
   useEffect(() => {
     if (!config?.layers || !processes?.length) return;
-
-    const pathsToLoad = new Set();
-    for (const layer of config.layers) {
-      if (!layer || typeof layer !== 'object') continue;
-      for (const params of Object.values(layer)) {
-        if (!params || typeof params !== 'object') continue;
-        for (const val of Object.values(params)) {
-          if (typeof val !== 'string') continue;
-          const parts = val.split('.');
-          if (parts.length >= 3 && parts[0] !== 'current') {
-            pathsToLoad.add(parts.slice(0, 3).join('.'));
-          }
-        }
-      }
-    }
-
-    for (const dsPath of pathsToLoad) {
-      if (lazilyLoadedData.has(dsPath)) continue;
-      // dsPath segments are encoded — match back to real objects in encoded space.
-      const [procNameSeg, verStr, dsNameSeg] = dsPath.split('.');
-      const proc = processes.find(p => encodeSeg(p.name) === procNameSeg);
-      const ver = (proc?.versions || []).find(v => String(v.version) === verStr);
-      const dsKey = Object.keys(ver?.outputs || {}).find(k => encodeSeg(k) === dsNameSeg);
-      const dsUrl = dsKey != null ? ver.outputs[dsKey] : undefined;
-      if (!dsUrl) continue;
-
-      const dsId = dsUrl.split('/').pop();
-      loadDataset(dsId, currentProject)
-        .then(dsObj => dsObj.fetchData('all').then(rawData => ({ dsObj, rawData })))
-        .then(({ dsObj, rawData }) => {
-          setLazilyLoadedData(prev => new Map(prev).set(dsPath, { dsObj, rawData }));
-        })
-        .catch(err => console.warn(`Failed to lazily load ${dsPath}:`, err));
-    }
-  }, [config, processes, currentProject]); // eslint-disable-line react-hooks/exhaustive-deps
+    loadPinnedData(config.layers, processes, currentProject, followed?.line, lazilyLoadedData,
+      (key, entry) => setLazilyLoadedData(prev => new Map(prev).set(key, entry)));
+  }, [config, processes, currentProject, followed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Create / destroy the Plot instance and register gladly event handlers.
   useEffect(() => {
@@ -167,6 +153,8 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
             const d = Math.abs(Number(xdist[i]) - coords.xdist_m);
             if (d < bestDist) { bestDist = d; bestSounding = i; }
           }
+          // A pinned dataset's row becomes the current dataset's row by line and gtime.
+          bestSounding = currentSoundingFrom(rawData, params.dataset, bestSounding);
           break; // first dataset with xdist is sufficient
         }
         if (bestSounding !== null) setCurrentSoundingRef.current(bestSounding);
@@ -240,8 +228,8 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
 
   // Update plot whenever config, data or sounding changes.
   // _currentSounding is merged into the data object so LayerTypes that need it
-  // (SoundingMarker, SoundingPlot, ResistivityCurtainLines) can read it from
-  // data._currentSounding in their createLayer function.
+  // (SoundingMarker, SoundingPlot, ResistivityCurtainLines) can read it, through
+  // soundingIndex() for their own dataset, in their createLayer function.
   useEffect(() => {
     const plot = plotRef.current;
     if (!plot || datasetsLoading || dataLoading) return;
@@ -284,13 +272,16 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     Object.assign(dataForPlot, {
       current: encodedCurrent,
       _currentSounding: currentSounding,
+      // The current dataset _currentSounding indexes; pinned layers match its row by line and gtime.
+      _currentFlightlines: currentFlightlines,
       _inMemoryDiffs: inMemoryDiffs,
     });
 
-    // Merge lazily loaded non-current datasets:
+    // Merge lazily loaded non-current datasets, for the followed line:
     // - raw data as own properties so custom layers can access via resolveDataPath
     // - Dataset wrapper in _children chain so DataGroup.getQuantityKind can traverse them
-    for (const [dsPath, { dsObj, rawData }] of lazilyLoadedData) {
+    for (const { dsPath, dsObj, rawData } of pinnedEntries(lazilyLoadedData, followed?.line)) {
+      if (!dsObj) continue;   // no part to show: the panel says why
       const [procName, ver, dsName] = dsPath.split('.');
       dataForPlot[procName] ??= {};
       dataForPlot[procName][ver] ??= {};
@@ -328,7 +319,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
       }
     });
     return () => { cancelled = true; };
-  }, [config, fetchedData, datasetCollection, currentSounding, datasetsLoading, dataLoading, lazilyLoadedData, inMemoryDiffs]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, fetchedData, datasetCollection, currentSounding, datasetsLoading, dataLoading, lazilyLoadedData, inMemoryDiffs, followed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={isMobile ? 'd-flex flex-column' : 'h-100 d-flex flex-column'}
@@ -342,6 +333,12 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
           <div className="d-flex align-items-center justify-content-center"
                style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.85)' }}>
             {datasetsLoading ? 'Loading datasets…' : 'Loading data…'}
+          </div>
+        )}
+        {pinnedMessages.length > 0 && (
+          <div className="alert alert-warning py-1 px-2 mb-0 small"
+               style={{ position: 'absolute', top: 4, left: 4, right: 4, pointerEvents: 'none' }}>
+            {pinnedMessages.map(m => <div key={m}>{m}</div>)}
           </div>
         )}
       </div>
