@@ -4133,6 +4133,103 @@
                     ]
                   },
                   {
+                    "title": "GateAnomalyPlot",
+                    "properties": {
+                      "GateAnomalyPlot": {
+                        "type": "object",
+                        "properties": {
+                          "dataset": {
+                            "type": "string",
+                            "x-format": "datasetPath"
+                          },
+                          "channel": {
+                            "type": "string",
+                            "enum": [
+                              "Ch01",
+                              "Ch02"
+                            ],
+                            "default": "Ch01"
+                          },
+                          "inUseMode": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Show four-state InUse overlay and edit with the InUse Editor"
+                          },
+                          "selection": {
+                            "type": "string",
+                            "default": "",
+                            "description": "Selection channel name. Layers sharing the same name and data object are linked."
+                          },
+                          "window_m": {
+                            "type": "number",
+                            "default": 500,
+                            "exclusiveMinimum": 0,
+                            "description": "Running median half-width along the line [m]: each sounding is compared with the in-use soundings within ± this distance"
+                          },
+                          "range_decades": {
+                            "type": "number",
+                            "default": 0.5,
+                            "exclusiveMinimum": 0,
+                            "description": "Color range [decades]: ±0.5 is ×0.3 to ×3 the median; values beyond are clipped"
+                          },
+                          "altitude_correction": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Remove the part of each gate's anomaly that fast transmitter-height changes explain: one least-squares slope per gate per line, fitted on in-use cells"
+                          },
+                          "altitude_column": {
+                            "type": "string",
+                            "default": "",
+                            "description": "Transmitter height above ground [m] for altitude_correction; empty means the first of tx_altitude, alt, TxAltitude, tx_alt in any case"
+                          },
+                          "bad_color": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 4,
+                            "maxItems": 4,
+                            "default": [
+                              0.82,
+                              0.82,
+                              0.82,
+                              1
+                            ],
+                            "description": "RGBA color for cells not in use or without a value"
+                          },
+                          "xAxis": {
+                            "type": "string",
+                            "enum": [
+                              "xaxis_bottom",
+                              "xaxis_top",
+                              "xaxis_bottom_back",
+                              "xaxis_top_back"
+                            ],
+                            "default": "xaxis_bottom"
+                          },
+                          "yAxis": {
+                            "type": "string",
+                            "enum": [
+                              "yaxis_left",
+                              "yaxis_right",
+                              "yaxis_left_back",
+                              "yaxis_right_back"
+                            ],
+                            "default": "yaxis_left"
+                          }
+                        },
+                        "required": [
+                          "dataset",
+                          "channel",
+                          "selection"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "GateAnomalyPlot"
+                    ]
+                  },
+                  {
                     "title": "SoundingMarker",
                     "properties": {
                       "SoundingMarker": {
@@ -4909,6 +5006,12 @@
                 }
               },
               "additionalProperties": false
+            },
+            "statusBar": {
+              "type": "boolean",
+              "title": "Status bar",
+              "description": "Show this plot's own status bar (off by default; the workspace status bar shows the readout for the plot under the pointer).",
+              "default": false
             }
           }
         }
@@ -4921,7 +5024,8 @@
       "layoutConfig": {
         "transforms": [],
         "layers": [],
-        "axes": {}
+        "axes": {},
+        "statusBar": false
       }
     }
   },
@@ -4942,8 +5046,30 @@
   },
   "ProcessLog": {
     "title": "Process Log",
-    "schema": null,
-    "default": null
+    "schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "ID",
+          "readOnly": true
+        },
+        "widget": {
+          "type": "string",
+          "title": "Widget Type",
+          "readOnly": true
+        },
+        "processRef": {
+          "type": "string",
+          "title": "Process / version",
+          "x-format": "processVersion",
+          "default": "current"
+        }
+      }
+    },
+    "default": {
+      "processRef": "current"
+    }
   },
   "ProcessProgress": {
     "title": "Process Progress",
@@ -4952,13 +5078,65 @@
   },
   "Export": {
     "title": "Export",
-    "schema": null,
-    "default": null
+    "schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "ID",
+          "readOnly": true
+        },
+        "widget": {
+          "type": "string",
+          "title": "Widget Type",
+          "readOnly": true
+        },
+        "processRef": {
+          "type": "string",
+          "title": "Process / version",
+          "x-format": "processVersion",
+          "default": "current"
+        }
+      }
+    },
+    "default": {
+      "processRef": "current"
+    }
   },
   "ProcessInfo": {
     "title": "Process info",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "ID",
+          "readOnly": true
+        },
+        "widget": {
+          "type": "string",
+          "title": "Widget Type",
+          "readOnly": true
+        },
+        "processRef": {
+          "type": "string",
+          "title": "Process / version",
+          "x-format": "processVersion",
+          "default": "current"
+        }
+      }
+    },
+    "default": {
+      "processRef": "current"
+    }
+  },
+  "ProcessComparison": {
+    "title": "Process comparison",
     "schema": null,
-    "default": null
+    "default": {
+      "refA": "current",
+      "refB": "current"
+    }
   },
   "AEMModelSimulator": {
     "title": "AEM Model Simulator",
@@ -4967,6 +5145,16 @@
   },
   "InUseEditor": {
     "title": "InUse Editor",
+    "schema": null,
+    "default": null
+  },
+  "PluginManager": {
+    "title": "Plugin Manager",
+    "schema": null,
+    "default": null
+  },
+  "ClusterQueueView": {
+    "title": "Cluster Queue",
     "schema": null,
     "default": null
   }

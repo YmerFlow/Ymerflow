@@ -273,18 +273,49 @@ An `Empty` node renders nothing but a blank pane; use the pane's chevron menu (s
 
 `Pane` (`frontend/src/flexout/components/Pane.jsx`) wraps every node in the tree - leaf widgets and containers alike - and is what actually calls `parentUpdate`/`updateLayout` in response to user actions.
 
-**Props:** `Pane({ parentUpdate, onTabMoved, hideHeader, ...node })` - `parentUpdate` is the callback described in [Tree Operations](#tree-operations); `onTabMoved` is called by `TabSet` when a tab-drag ends by being dropped elsewhere; `hideHeader` is set by `TabSet` on its child panes (the tab strip already shows the header, so the pane's own header is suppressed) and by the root pane by convention (`border-top` styling only).
+**Props:** `Pane({ parentUpdate, onTabMoved, hideHeader, inheritedCompact, inheritedGlobalCompact, ...node })` - `parentUpdate` is the callback described in [Tree Operations](#tree-operations); `onTabMoved` is called by `TabSet` when a tab-drag ends by being dropped elsewhere; `hideHeader` is set by `TabSet` on its child panes (the tab strip already shows the header, so the pane's own header is suppressed) and by the root pane by convention (`border-top` styling only). `inheritedCompact`/`inheritedGlobalCompact` carry the compact-header mode down the tree (see [Compact headers](#compact-headers)).
 
 **Features:**
 - Header with the widget's title (`Widget.title`), click-to-edit as a `customTitle` on the node
 - A chevron button opens a `PaneMenuDropdown` popover (portal-rendered, closes on outside click) containing:
   - A **Configure** (gear) button, shown only if the widget defines a static `get_schema(data_context)` function - opens a `CustomForm` (JSON-Schema-driven) modal to edit the node's non-structural fields
   - A **delete** (x) button, calling `parentUpdate('remove', node.id)`
+  - A **Compact** checkbox writing `node.compact` directly (and, on the root pane only, a **Compact all panes** checkbox writing `node.globalCompact`) - see [Compact headers](#compact-headers)
   - A list of buttons, one per registered widget type, to switch this pane's widget (`handleChangeContent`) - switching into/out of a container type (`VerticalSplit`/`HorizontalSplit`/`TabSet`/`Grid`) preserves existing children where possible
 - The widget itself is rendered inside a `WidgetErrorBoundary` (a class component implementing `componentDidCatch`), so a crashing widget shows an in-pane error card with the error/stack instead of taking down the whole layout; the boundary resets when the widget type or node changes
 - Drag-and-drop (see [Drag and Drop](#drag-and-drop))
 
 There is no popout button - popout windows are not part of the current implementation (see below).
+
+## Compact headers
+
+Every node can carry a generic boolean `compact` field (handled by flexout itself, like `customTitle` - not part of any widget's config schema). It selects one of two header modes:
+
+| `compact` | what the pane draws |
+|---|---|
+| `false` / absent | the full header row (~24px): title, drag handle, menu chevron |
+| `true` | no header row. A single small chevron button overlays the top-right corner of the widget's content; **click** it to open the pane menu (which gains a title / rename row at the top), **drag** it to move the pane. The widget gets the full pane height. |
+
+The pure rule lives in `frontend/src/flexout/headerMode.js` (`isCompact` / `resolveGlobalCompact`), so it is unit-tested without React (`headerMode.test.js`).
+
+### Inheritance
+
+A node without a `compact` field inherits its parent's effective value; the root defaults to shown (`false`). One setting on a `Grid` therefore covers the Grid and every cell, and a cell can set its own `compact` to opt back out. Threading is done by the container widgets, which forward two props unchanged to every child `<Pane>`:
+
+- **`inheritedCompact`** - each `Pane` computes its effective mode (`node.compact ?? inheritedCompact ?? false`, after the global-compact and mobile overrides) and passes that resolved value down as the child's `inheritedCompact`. So a child's own `compact` field wins over the inherited value.
+- **`inheritedGlobalCompact`** - the global flag ([below](#global-compact)), threaded the same way but **not** overridable per node. The root `Pane` (the only one whose `inheritedGlobalCompact` prop is `undefined`) seeds it from the root node's `globalCompact` field; every other `Pane` uses the prop it was given and ignores any `globalCompact` on its own node.
+
+`Split`, `Grid` and `TabSet` forward both props verbatim to their children.
+
+### Global compact
+
+A **Compact all panes** checkbox, shown only in the root pane's menu, stores `globalCompact: true` on the root layout node (saved with the workspace). While on it forces every pane to the compact look, overriding each node's own `compact` and the inheritance between them:
+
+- `headerMode.js` returns compact for every pane regardless of `node.compact`/`inheritedCompact`.
+- The otherwise-transparent 5px resize dividers in `Split`/`Grid` draw a 1px line down their middle (the `global-compact` class) so header-less panes stay distinct; the 5px grab area is unchanged.
+- `TabSet`s keep their tab strip (that is how a tab is chosen).
+
+Global compact is off on mobile, where panes are stacked and their headers are the only way to tell them apart. The root pane's corner arrow stays reachable while global compact is on, so the checkbox can always be unticked.
 
 ## Drag and Drop
 
@@ -294,7 +325,7 @@ There is no per-edge drop-zone splitting (no top/bottom/left/right/center hot zo
 
 Dropping specifically onto a `TabSet`'s tab strip (rather than onto the pane body) instead calls `addTab`, appending the dragged node as a new tab; dropping onto an individual `TabHeader` calls `insertTabAt`, inserting it at that position. When a tab's own drag ends by being dropped somewhere else, `TabSet` removes it from its original location via `updateLayout` with an updater function that searches the whole tree for the source `TabSet` (`removeTabFromTree`), since the drop target may be anywhere.
 
-**Drag sources:** tabs (from `TabSet`'s `TabHeader`) and pane headers (from `Pane`).
+**Drag sources:** tabs (from `TabSet`'s `TabHeader`) and pane headers (from `Pane`) - or, for a [compact](#compact-headers) pane, its corner chevron button.
 
 **See:** `frontend/src/flexout/components/Pane.jsx` and `frontend/src/flexout/components/TabSet.jsx` for the `useDrag`/`useDrop` implementations.
 

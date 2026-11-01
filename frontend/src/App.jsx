@@ -18,6 +18,7 @@ import AutoCreateProjectDialog from "./AutoCreateProjectDialog";
 import AutoOpenProcessEditor from "./AutoOpenProcessEditor";
 import AppBootstrap from "./AppBootstrap";
 import WorkspaceLayoutSync from "./WorkspaceLayoutSync";
+import PlotStatusBar from "./PlotStatusBar";
 import UserMenu from "./UserMenu";
 import WorkspaceMenu from "./WorkspaceMenu";
 import BrandLogo from "./BrandLogo";
@@ -174,6 +175,7 @@ function AppWithContext({ widgets }) {
               <div className={`flex-grow-1 ${isMobile ? 'overflow-auto' : 'overflow-hidden'}`}>
                 <MainLayout />
               </div>
+              <PlotStatusBar />
               <AppBootstrap />
               <WorkspaceLayoutSync />
               <AutoCreateProjectDialog />

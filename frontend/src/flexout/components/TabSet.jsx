@@ -143,7 +143,7 @@ function TabHeader({ tab, index, isActive, onActivate, onInsertBefore, onRemoveT
   );
 }
 
-export default function TabSet({ parentUpdate, ...node }) {
+export default function TabSet({ parentUpdate, inheritedCompact, inheritedGlobalCompact, ...node }) {
   const { widgets, updateLayout, data_context } = useContext(LayoutContext);
   const isMobile = useIsMobile();
   const activeTab = node.activeTab ?? node.children[0]?.id;
@@ -272,7 +272,7 @@ export default function TabSet({ parentUpdate, ...node }) {
             className={isMobile ? '' : 'position-absolute top-0 start-0 w-100 h-100'}
             style={{ display: tab.id === activeTab ? 'block' : 'none' }}
           >
-            <Pane parentUpdate={handleChildUpdate} onTabMoved={() => removeTabFromSource(tab.id)} {...tab} hideHeader />
+            <Pane parentUpdate={handleChildUpdate} onTabMoved={() => removeTabFromSource(tab.id)} {...tab} hideHeader inheritedCompact={inheritedCompact} inheritedGlobalCompact={inheritedGlobalCompact} />
           </div>
         ))}
       </div>

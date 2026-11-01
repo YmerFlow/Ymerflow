@@ -43,6 +43,14 @@ _CONTAINER_WIDGETS = {
 
 _NODE_ID_PROP = {"type": "string", "description": "Unique pane identifier (UUID recommended)"}
 
+# Generic flexout node fields any node may carry (handled by flexout itself, not by any
+# widget's config schema). `customTitle` overrides the pane's displayed title; `compact`
+# draws the compact (corner-arrow) header instead of the full header row, inherited by
+# descendants. `globalCompact` lives on the root node only and forces every pane compact.
+_CUSTOM_TITLE_PROP = {"type": "string", "description": "Overrides the pane's displayed title."}
+_COMPACT_PROP = {"type": "boolean", "description": "Draw the compact corner-arrow header; inherited by descendant panes."}
+_GLOBAL_COMPACT_PROP = {"type": "boolean", "description": "Root node only: force every pane to the compact header."}
+
 
 class CreateWorkspaceBody(BaseModel):
     title: str = "Untitled Workspace"
@@ -90,6 +98,9 @@ def _container_node_def(widget_name: str, description: str) -> dict:
                 "items": {"$ref": "#/$defs/Node"},
                 "minItems": 1,
             },
+            "customTitle": _CUSTOM_TITLE_PROP,
+            "compact": _COMPACT_PROP,
+            "globalCompact": _GLOBAL_COMPACT_PROP,
         },
         "required": ["id", "widget", "children"],
         "additionalProperties": False,
@@ -113,6 +124,8 @@ def _leaf_node_def_raw(widget_name: str, widget_info: dict) -> dict:
         "properties": {
             "id": _NODE_ID_PROP,
             "widget": {"const": widget_name},
+            "customTitle": _CUSTOM_TITLE_PROP,
+            "compact": _COMPACT_PROP,
         },
         "required": ["id", "widget"],
         "additionalProperties": False,

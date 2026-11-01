@@ -320,6 +320,50 @@ $headings-font-weight:   600;   // Semibold headings
       &.active { background-color: $gray-200; font-weight: 600; }
     }
   }
+
+  // Compact-mode title/rename row at the top of the dropdown.
+  .pane-menu-title {
+    padding: 0.25rem 0.5rem;
+    font-weight: 600;
+    border-bottom: 1px solid $border-color;
+
+    input { font-size: 0.8125rem; }
+  }
+
+  // Compact / "compact all panes" checkboxes.
+  .pane-menu-check {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.5rem;
+    margin: 0;
+    cursor: pointer;
+    border-bottom: 1px solid $border-color;
+
+    input { margin: 0; }
+  }
+}
+
+// Compact pane chrome: a single chevron button overlaying the top-right corner of
+// the widget's content. Click opens the pane menu; drag moves the pane.
+.pane-compact-corner {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 20;
+}
+
+.pane-compact-arrow {
+  padding: 0 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  color: $gray-600;
+  background: rgba($white, 0.75);
+  border: 1px solid $border-color;
+  border-radius: 0.25rem;
+  cursor: grab;
+
+  &:hover { color: $dark; background: $white; }
 }
 
 // Grid layout
@@ -353,6 +397,15 @@ $headings-font-weight:   600;   // Semibold headings
 
   &.split-divider-vertical { width: 5px; cursor: col-resize; }
   &.split-divider-horizontal { height: 5px; cursor: row-resize; }
+
+  // While global compact is on, panes have no header row — draw a 1px line down the
+  // middle of the (still 5px, still grabbable) divider so neighbours stay distinct.
+  &.global-compact.split-divider-vertical {
+    background: linear-gradient(to right, transparent 2px, #{$border-color} 2px, #{$border-color} 3px, transparent 3px);
+  }
+  &.global-compact.split-divider-horizontal {
+    background: linear-gradient(to bottom, transparent 2px, #{$border-color} 2px, #{$border-color} 3px, transparent 3px);
+  }
 }
 
 // Process Editor - Resource Configuration Card

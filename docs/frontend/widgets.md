@@ -256,6 +256,7 @@ GPU/WebGL scientific plotting built on the `gladly-plot` npm package, with a plu
 - **Config-driven layers**: The pane's `layoutConfig` (`{ transforms, layers, axes }`) is handed to `plot.update({ data, config })`; each entry in `layers` names a registered layer type plus its parameters
 - **Dataset Integration**: `ProcessContext`'s `datasetCollection` is converted to a `DataGroup` (`dc.toDataGroup()`) for gladly's built-in resolution; custom layer types instead read raw dataset objects directly off `plot._rawData` (see the `gladly 0.0.6 DataGroup/_children Pattern` notes in project memory for why)
 - **Picking & interaction**: `plot.on('mousemove'|'click', handler)` and `plot.pick(x, y)` drive the status bar and sounding-selection logic in `PlotView`
+- **Status bar**: each PlotView draws its own readout bar only when `layoutConfig.statusBar` is `true` (off by default). Regardless of that flag, it `publishReadout({ coords })` on mousemove and `publishReadout({ pick })` on click to the shared readout store on `PlotGroupContext`; the one **workspace status bar** (`frontend/src/PlotStatusBar.jsx`, rendered under `<MainLayout />` in `App.jsx`) subscribes and shows the readout for the plot under the pointer. The store is deliberately not React state — see `frontend/src/plotReadoutStore.js` (`plotReadoutStore.test.js`) — so the many-per-second updates write `textContent` directly instead of re-rendering
 
 **Layer Type Structure:**
 
@@ -324,6 +325,8 @@ These are two unrelated conventions that happen to share the word "schema" — d
     // combobox widgets populate options from ProcessContext at runtime.
     const rawGladlySchema = Plot.schema(null, data_context.layoutConfig);
     // ...wraps/patches rawGladlySchema for rjsf compatibility...
+    // statusBar is PlotView's own layoutConfig field (not gladly's), injected here:
+    gladlySchemaRest.properties.statusBar = { type: 'boolean', title: 'Status bar', default: false };
     return {
       type: 'object',
       properties: {
@@ -336,9 +339,11 @@ These are two unrelated conventions that happen to share the word "schema" — d
   };
 
   PlotView.get_default = () => ({
-    layoutConfig: { transforms: [], layers: [], axes: {} },
+    layoutConfig: { transforms: [], layers: [], axes: {}, statusBar: false },
   });
   ```
+
+  `statusBar` is PlotView's own field, so it is preserved across the `plot.getConfig()` write-back (gladly would otherwise drop the unknown key). It also appears in the backend widget-schema export (`backend/widget_schemas.json`, regenerated with `npm run export-schemas`).
 
 - **Per-layer-type `schema(data)`** (see `FlightlinePlot.js` above) is a separate, unrelated convention internal to `gladly-plot`'s `LayerType` — it describes that one layer type's own parameters (e.g. `dataset`, `x_column`, `color`) and has nothing to do with `ProcessContext` or `data_context`.
 
