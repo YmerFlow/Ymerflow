@@ -3,6 +3,7 @@ import Form from '@rjsf/core';
 import { getDefaultRegistry } from '@rjsf/core';
 import CustomStringField from './CustomStringField';
 import CustomNumberField from './CustomNumberField';
+import CustomObjectField from './CustomObjectField';
 import ExpressionField from './ExpressionField';
 import ButtonTemplates from './CustomButtonTemplates';
 import CustomFieldTemplate from './CustomFieldTemplate';
@@ -31,6 +32,7 @@ export default function CustomForm(props) {
   const customFields = {
     StringField: CustomStringField,
     NumberField: CustomNumberField,
+    ObjectField: CustomObjectField,
     AnyOfField: CustomAnyOfField,
   };
 
