@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './datamodel/queryClient';
 import { LayoutProvider } from './flexout/LayoutContext';
+import { buildWorkspaceSchema } from './flexout/workspaceSchema';
 import { MainLayout } from './flexout/Layout';
 import { ProcessProvider, ProcessContext } from './ProcessContext';
 import { PlotGroupProvider } from './PlotGroupContext';
@@ -113,6 +114,10 @@ function buildWidgets() {
     hooks.run.widgets().map(({ name, component }) => [name, component])
   );
   window.__ymerflow_widgets = map;
+  // Full recursive workspace-layout schema, built from the same widget set. The
+  // export script dumps this to backend/widget_schemas.json; the backend MCP tools
+  // slice it. See frontend/src/flexout/workspaceSchema.js.
+  window.__ymerflow_workspace_schema = buildWorkspaceSchema(map);
   return map;
 }
 

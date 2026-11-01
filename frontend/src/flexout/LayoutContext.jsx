@@ -8,14 +8,24 @@ export const LayoutContext = createContext();
 
 var VerticalSplit = ({...args}) => <Split splitType="vertical" {...args} />;
 VerticalSplit.title = "Split vertically";
+VerticalSplit.description = "Split the pane vertically into two resizable children.";
 
 var HozisontalSplit = ({...args}) => <Split splitType="horizontal" {...args} />;
 HozisontalSplit.title = "Split horizontally";
+HozisontalSplit.description = "Split the pane horizontally into two resizable children.";
 
 var Empty = () => <div style={{ color: '#999' }}></div>;
 Empty.title = "Empty";
+Empty.description = "An empty placeholder pane with no content.";
 
-var builtinWidgets = {
+TabSet.description = "Tabbed pane — children are switchable tabs.";
+Grid.description = "A grid of resizable cells — children fill the cells row by row.";
+
+// The flexout built-in node types, merged into the widget registry alongside the
+// app-provided leaf widgets. These are flexout's own containers (plus Empty); the
+// workspace-schema builder (workspaceSchema.js) imports this same map so it sees the
+// whole node-type set from one place.
+export const builtinWidgets = {
   VerticalSplit: VerticalSplit,
   HorizontalSplit: HozisontalSplit,
   TabSet: TabSet,

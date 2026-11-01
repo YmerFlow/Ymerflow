@@ -1,790 +1,253 @@
 {
-  "PlotView": {
-    "title": "Plot view",
-    "schema": {
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Workspace Layout",
+  "description": "Recursive layout tree for a YmerFlow workspace. The root is typically a VerticalSplit or TabSet container.",
+  "$defs": {
+    "VerticalSplitNode": {
       "type": "object",
-      "$defs": {
-        "params_filter1D": {
-          "type": "object",
-          "title": "filter1D",
-          "properties": {
-            "input": {
-              "$ref": "#/$defs/expression"
-            },
-            "kernel": {
-              "$ref": "#/$defs/expression"
-            }
-          },
-          "required": [
-            "input",
-            "kernel"
-          ]
-        },
-        "params_lowPass": {
-          "type": "object",
-          "title": "lowPass",
-          "properties": {
-            "input": {
-              "$ref": "#/$defs/expression"
-            },
-            "sigma": {
-              "type": "number"
-            },
-            "kernelSize": {
-              "type": "number"
-            }
-          },
-          "required": [
-            "input"
-          ]
-        },
-        "params_highPass": {
-          "type": "object",
-          "title": "highPass",
-          "properties": {
-            "input": {
-              "$ref": "#/$defs/expression"
-            },
-            "sigma": {
-              "type": "number"
-            },
-            "kernelSize": {
-              "type": "number"
-            }
-          },
-          "required": [
-            "input"
-          ]
-        },
-        "params_bandPass": {
-          "type": "object",
-          "title": "bandPass",
-          "properties": {
-            "input": {
-              "$ref": "#/$defs/expression"
-            },
-            "sigmaLow": {
-              "type": "number"
-            },
-            "sigmaHigh": {
-              "type": "number"
-            }
-          },
-          "required": [
-            "input",
-            "sigmaLow",
-            "sigmaHigh"
-          ]
-        },
-        "params_kde": {
-          "type": "object",
-          "title": "kde",
-          "properties": {
-            "input": {
-              "$ref": "#/$defs/expression"
-            },
-            "bins": {
-              "type": "number"
-            },
-            "bandwidth": {
-              "type": "number"
-            }
-          },
-          "required": [
-            "input"
-          ]
-        },
-        "params_fftConvolution": {
-          "type": "object",
-          "title": "fftConvolution",
-          "properties": {
-            "signal": {
-              "$ref": "#/$defs/expression"
-            },
-            "kernel": {
-              "$ref": "#/$defs/expression"
-            }
-          },
-          "required": [
-            "signal",
-            "kernel"
-          ]
-        },
-        "params_convolution": {
-          "type": "object",
-          "title": "convolution",
-          "properties": {
-            "signal": {
-              "$ref": "#/$defs/expression"
-            },
-            "kernel": {
-              "$ref": "#/$defs/expression"
-            }
-          },
-          "required": [
-            "signal",
-            "kernel"
-          ]
-        },
-        "params_histogram": {
-          "type": "object",
-          "title": "histogram",
-          "properties": {
-            "input": {
-              "$ref": "#/$defs/expression"
-            },
-            "bins": {
-              "type": "number"
-            }
-          },
-          "required": [
-            "input"
-          ]
-        },
-        "params_filteredHistogram": {
-          "type": "object",
-          "title": "filteredHistogram",
-          "properties": {
-            "input": {
-              "$ref": "#/$defs/expression"
-            },
-            "filterValues": {
-              "$ref": "#/$defs/expression"
-            },
-            "filterAxisId": {
-              "type": "string"
-            },
-            "bins": {
-              "type": "number"
-            }
-          },
-          "required": [
-            "input",
-            "filterValues",
-            "filterAxisId"
-          ]
-        },
-        "params_linspace": {
-          "type": "object",
-          "title": "linspace",
-          "properties": {
-            "length": {
-              "type": "integer",
-              "description": "Number of values"
-            }
-          },
-          "required": [
-            "length"
-          ]
-        },
-        "params_range": {
-          "type": "object",
-          "title": "range",
-          "properties": {
-            "length": {
-              "type": "integer",
-              "description": "Number of values"
-            }
-          },
-          "required": [
-            "length"
-          ]
-        },
-        "params_random": {
-          "type": "object",
-          "title": "random",
-          "properties": {
-            "length": {
-              "type": "integer",
-              "description": "Number of values"
-            },
-            "seed": {
-              "type": "integer",
-              "description": "Integer seed (default 0)",
-              "default": 0
-            }
-          },
-          "required": [
-            "length"
-          ]
-        },
-        "params_glslExpr": {
-          "type": "object",
-          "title": "glslExpr",
-          "properties": {
-            "expr": {
-              "type": "string",
-              "description": "GLSL expression; reference inputs as {name} placeholders"
-            },
-            "inputs": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/$defs/expression"
-              },
-              "description": "Named input columns referenced in expr as {name}"
-            }
-          },
-          "required": [
-            "expr"
-          ]
-        },
-        "expression": {
-          "x-format": "expression",
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "object",
-              "title": "filter1D",
-              "properties": {
-                "filter1D": {
-                  "$ref": "#/$defs/params_filter1D"
-                }
-              },
-              "required": [
-                "filter1D"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "lowPass",
-              "properties": {
-                "lowPass": {
-                  "$ref": "#/$defs/params_lowPass"
-                }
-              },
-              "required": [
-                "lowPass"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "highPass",
-              "properties": {
-                "highPass": {
-                  "$ref": "#/$defs/params_highPass"
-                }
-              },
-              "required": [
-                "highPass"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "bandPass",
-              "properties": {
-                "bandPass": {
-                  "$ref": "#/$defs/params_bandPass"
-                }
-              },
-              "required": [
-                "bandPass"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "kde",
-              "properties": {
-                "kde": {
-                  "$ref": "#/$defs/params_kde"
-                }
-              },
-              "required": [
-                "kde"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "fftConvolution",
-              "properties": {
-                "fftConvolution": {
-                  "$ref": "#/$defs/params_fftConvolution"
-                }
-              },
-              "required": [
-                "fftConvolution"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "convolution",
-              "properties": {
-                "convolution": {
-                  "$ref": "#/$defs/params_convolution"
-                }
-              },
-              "required": [
-                "convolution"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "histogram",
-              "properties": {
-                "histogram": {
-                  "$ref": "#/$defs/params_histogram"
-                }
-              },
-              "required": [
-                "histogram"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "filteredHistogram",
-              "properties": {
-                "filteredHistogram": {
-                  "$ref": "#/$defs/params_filteredHistogram"
-                }
-              },
-              "required": [
-                "filteredHistogram"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "linspace",
-              "properties": {
-                "linspace": {
-                  "$ref": "#/$defs/params_linspace"
-                }
-              },
-              "required": [
-                "linspace"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "range",
-              "properties": {
-                "range": {
-                  "$ref": "#/$defs/params_range"
-                }
-              },
-              "required": [
-                "range"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "random",
-              "properties": {
-                "random": {
-                  "$ref": "#/$defs/params_random"
-                }
-              },
-              "required": [
-                "random"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "glslExpr",
-              "properties": {
-                "glslExpr": {
-                  "$ref": "#/$defs/params_glslExpr"
-                }
-              },
-              "required": [
-                "glslExpr"
-              ],
-              "additionalProperties": false
-            }
-          ]
-        },
-        "expression_opt": {
-          "x-format": "expression",
-          "anyOf": [
-            {
-              "type": "string",
-              "const": "none",
-              "enum": [
-                "none"
-              ],
-              "title": "none",
-              "default": "none"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "object",
-              "title": "filter1D",
-              "properties": {
-                "filter1D": {
-                  "$ref": "#/$defs/params_filter1D"
-                }
-              },
-              "required": [
-                "filter1D"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "lowPass",
-              "properties": {
-                "lowPass": {
-                  "$ref": "#/$defs/params_lowPass"
-                }
-              },
-              "required": [
-                "lowPass"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "highPass",
-              "properties": {
-                "highPass": {
-                  "$ref": "#/$defs/params_highPass"
-                }
-              },
-              "required": [
-                "highPass"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "bandPass",
-              "properties": {
-                "bandPass": {
-                  "$ref": "#/$defs/params_bandPass"
-                }
-              },
-              "required": [
-                "bandPass"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "kde",
-              "properties": {
-                "kde": {
-                  "$ref": "#/$defs/params_kde"
-                }
-              },
-              "required": [
-                "kde"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "fftConvolution",
-              "properties": {
-                "fftConvolution": {
-                  "$ref": "#/$defs/params_fftConvolution"
-                }
-              },
-              "required": [
-                "fftConvolution"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "convolution",
-              "properties": {
-                "convolution": {
-                  "$ref": "#/$defs/params_convolution"
-                }
-              },
-              "required": [
-                "convolution"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "histogram",
-              "properties": {
-                "histogram": {
-                  "$ref": "#/$defs/params_histogram"
-                }
-              },
-              "required": [
-                "histogram"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "filteredHistogram",
-              "properties": {
-                "filteredHistogram": {
-                  "$ref": "#/$defs/params_filteredHistogram"
-                }
-              },
-              "required": [
-                "filteredHistogram"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "linspace",
-              "properties": {
-                "linspace": {
-                  "$ref": "#/$defs/params_linspace"
-                }
-              },
-              "required": [
-                "linspace"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "range",
-              "properties": {
-                "range": {
-                  "$ref": "#/$defs/params_range"
-                }
-              },
-              "required": [
-                "range"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "random",
-              "properties": {
-                "random": {
-                  "$ref": "#/$defs/params_random"
-                }
-              },
-              "required": [
-                "random"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "glslExpr",
-              "properties": {
-                "glslExpr": {
-                  "$ref": "#/$defs/params_glslExpr"
-                }
-              },
-              "required": [
-                "glslExpr"
-              ],
-              "additionalProperties": false
-            }
-          ]
-        },
-        "params_computeddata_FftData": {
-          "type": "object",
-          "title": "FftData",
-          "properties": {
-            "input": {
-              "type": "string",
-              "description": "Input signal column"
-            },
-            "inverse": {
-              "type": "boolean",
-              "default": false,
-              "description": "Inverse FFT"
-            }
-          },
-          "required": [
-            "input"
-          ]
-        },
-        "params_computeddata_HistogramData": {
-          "type": "object",
-          "title": "HistogramData",
-          "properties": {
-            "input": {
-              "type": "string",
-              "description": "Input data column"
-            },
-            "bins": {
-              "type": "integer",
-              "description": "Number of bins (0 for auto)",
-              "default": 0
-            },
-            "filter": {
-              "$ref": "#/$defs/expression_opt",
-              "description": "Filter column — registers a filter axis (null for none)"
-            }
-          },
-          "required": [
-            "input",
-            "filter"
-          ]
-        },
-        "params_computeddata_ElementwiseData": {
-          "type": "object",
-          "title": "ElementwiseData",
-          "properties": {
-            "dataLength": {
-              "type": "integer",
-              "description": "Override output length (optional, auto-detected from column refs)"
-            },
-            "columns": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "dst": {
-                    "type": "string",
-                    "description": "Output column name"
-                  },
-                  "src": {
-                    "$ref": "#/$defs/expression"
-                  },
-                  "quantityKind": {
-                    "type": "string",
-                    "description": "Quantity kind for axis matching (optional)"
-                  }
-                },
-                "required": [
-                  "dst",
-                  "src"
-                ]
-              }
-            }
-          },
-          "required": [
-            "columns"
-          ]
-        },
-        "params_computeddata_Scatter2dInterpolate": {
-          "type": "object",
-          "title": "Scatter2dInterpolate",
-          "properties": {
-            "x": {
-              "type": "string"
-            },
-            "y": {
-              "type": "string"
-            },
-            "value": {
-              "type": "string"
-            },
-            "resolutionX": {
-              "type": "integer",
-              "default": 256
-            },
-            "resolutionY": {
-              "type": "integer",
-              "default": 256
-            },
-            "radius": {
-              "type": "number",
-              "default": 5
-            },
-            "w1": {
-              "type": "number",
-              "default": 0.5
-            },
-            "w2": {
-              "type": "number",
-              "default": 0.3
-            },
-            "w3": {
-              "type": "number",
-              "default": 0.2
-            },
-            "full_coordinates": {
-              "type": "boolean",
-              "default": false
-            }
-          },
-          "required": [
-            "x",
-            "y",
-            "value",
-            "resolutionX",
-            "resolutionY"
-          ]
-        },
-        "transform_expression": {
-          "anyOf": [
-            {
-              "type": "object",
-              "title": "FftData",
-              "properties": {
-                "FftData": {
-                  "$ref": "#/$defs/params_computeddata_FftData"
-                }
-              },
-              "required": [
-                "FftData"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "HistogramData",
-              "properties": {
-                "HistogramData": {
-                  "$ref": "#/$defs/params_computeddata_HistogramData"
-                }
-              },
-              "required": [
-                "HistogramData"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "ElementwiseData",
-              "properties": {
-                "ElementwiseData": {
-                  "$ref": "#/$defs/params_computeddata_ElementwiseData"
-                }
-              },
-              "required": [
-                "ElementwiseData"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "title": "Scatter2dInterpolate",
-              "properties": {
-                "Scatter2dInterpolate": {
-                  "$ref": "#/$defs/params_computeddata_Scatter2dInterpolate"
-                }
-              },
-              "required": [
-                "Scatter2dInterpolate"
-              ],
-              "additionalProperties": false
-            }
-          ]
-        }
-      },
+      "title": "Split vertically",
       "properties": {
         "id": {
           "type": "string",
-          "title": "ID",
-          "readOnly": true
+          "description": "Unique pane identifier (UUID recommended)"
         },
         "widget": {
+          "const": "VerticalSplit"
+        },
+        "customTitle": {
           "type": "string",
-          "title": "Widget Type",
-          "readOnly": true
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Node"
+          },
+          "minItems": 1
+        },
+        "globalCompact": {
+          "type": "boolean",
+          "description": "Root node only: force every pane to the compact header."
+        },
+        "size": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 0.9,
+          "description": "Fraction of space given to the first child (0.1–0.9, default 0.5)."
+        }
+      },
+      "required": [
+        "id",
+        "widget",
+        "children"
+      ],
+      "additionalProperties": false,
+      "description": "Split the pane vertically into two resizable children."
+    },
+    "HorizontalSplitNode": {
+      "type": "object",
+      "title": "Split horizontally",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "HorizontalSplit"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Node"
+          },
+          "minItems": 1
+        },
+        "globalCompact": {
+          "type": "boolean",
+          "description": "Root node only: force every pane to the compact header."
+        },
+        "size": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 0.9,
+          "description": "Fraction of space given to the first child (0.1–0.9, default 0.5)."
+        }
+      },
+      "required": [
+        "id",
+        "widget",
+        "children"
+      ],
+      "additionalProperties": false,
+      "description": "Split the pane horizontally into two resizable children."
+    },
+    "TabSetNode": {
+      "type": "object",
+      "title": "Tabs",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "TabSet"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Node"
+          },
+          "minItems": 1
+        },
+        "globalCompact": {
+          "type": "boolean",
+          "description": "Root node only: force every pane to the compact header."
+        },
+        "activeTab": {
+          "type": "string",
+          "description": "Id of the currently selected child tab; defaults to the first child."
+        }
+      },
+      "required": [
+        "id",
+        "widget",
+        "children"
+      ],
+      "additionalProperties": false,
+      "description": "Tabbed pane — children are switchable tabs."
+    },
+    "GridNode": {
+      "type": "object",
+      "title": "Grid",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "Grid"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        },
+        "rows": {
+          "type": "integer",
+          "title": "Rows",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 3
+        },
+        "cols": {
+          "type": "integer",
+          "title": "Columns",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 3
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Node"
+          },
+          "minItems": 1
+        },
+        "globalCompact": {
+          "type": "boolean",
+          "description": "Root node only: force every pane to the compact header."
+        },
+        "colWidths": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Column width fractions (one per column); normalized at render time."
+        },
+        "rowHeights": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Row height fractions (one per row); normalized at render time."
+        }
+      },
+      "required": [
+        "id",
+        "widget",
+        "children"
+      ],
+      "additionalProperties": false,
+      "description": "A grid of resizable cells — children fill the cells row by row."
+    },
+    "EmptyNode": {
+      "type": "object",
+      "title": "Empty",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "Empty"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        }
+      },
+      "required": [
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false,
+      "description": "An empty placeholder pane with no content."
+    },
+    "PlotViewNode": {
+      "type": "object",
+      "title": "Plot view",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "PlotView"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
         },
         "layoutConfig": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5017,145 +4480,1171 @@
         }
       },
       "required": [
-        "layoutConfig"
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "params_filter1D": {
+          "type": "object",
+          "title": "filter1D",
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/expression"
+            },
+            "kernel": {
+              "$ref": "#/$defs/expression"
+            }
+          },
+          "required": [
+            "input",
+            "kernel"
+          ]
+        },
+        "params_lowPass": {
+          "type": "object",
+          "title": "lowPass",
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/expression"
+            },
+            "sigma": {
+              "type": "number"
+            },
+            "kernelSize": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input"
+          ]
+        },
+        "params_highPass": {
+          "type": "object",
+          "title": "highPass",
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/expression"
+            },
+            "sigma": {
+              "type": "number"
+            },
+            "kernelSize": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input"
+          ]
+        },
+        "params_bandPass": {
+          "type": "object",
+          "title": "bandPass",
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/expression"
+            },
+            "sigmaLow": {
+              "type": "number"
+            },
+            "sigmaHigh": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input",
+            "sigmaLow",
+            "sigmaHigh"
+          ]
+        },
+        "params_kde": {
+          "type": "object",
+          "title": "kde",
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/expression"
+            },
+            "bins": {
+              "type": "number"
+            },
+            "bandwidth": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input"
+          ]
+        },
+        "params_fftConvolution": {
+          "type": "object",
+          "title": "fftConvolution",
+          "properties": {
+            "signal": {
+              "$ref": "#/$defs/expression"
+            },
+            "kernel": {
+              "$ref": "#/$defs/expression"
+            }
+          },
+          "required": [
+            "signal",
+            "kernel"
+          ]
+        },
+        "params_convolution": {
+          "type": "object",
+          "title": "convolution",
+          "properties": {
+            "signal": {
+              "$ref": "#/$defs/expression"
+            },
+            "kernel": {
+              "$ref": "#/$defs/expression"
+            }
+          },
+          "required": [
+            "signal",
+            "kernel"
+          ]
+        },
+        "params_histogram": {
+          "type": "object",
+          "title": "histogram",
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/expression"
+            },
+            "bins": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input"
+          ]
+        },
+        "params_filteredHistogram": {
+          "type": "object",
+          "title": "filteredHistogram",
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/expression"
+            },
+            "filterValues": {
+              "$ref": "#/$defs/expression"
+            },
+            "filterAxisId": {
+              "type": "string"
+            },
+            "bins": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input",
+            "filterValues",
+            "filterAxisId"
+          ]
+        },
+        "params_linspace": {
+          "type": "object",
+          "title": "linspace",
+          "properties": {
+            "length": {
+              "type": "integer",
+              "description": "Number of values"
+            }
+          },
+          "required": [
+            "length"
+          ]
+        },
+        "params_range": {
+          "type": "object",
+          "title": "range",
+          "properties": {
+            "length": {
+              "type": "integer",
+              "description": "Number of values"
+            }
+          },
+          "required": [
+            "length"
+          ]
+        },
+        "params_random": {
+          "type": "object",
+          "title": "random",
+          "properties": {
+            "length": {
+              "type": "integer",
+              "description": "Number of values"
+            },
+            "seed": {
+              "type": "integer",
+              "description": "Integer seed (default 0)",
+              "default": 0
+            }
+          },
+          "required": [
+            "length"
+          ]
+        },
+        "params_glslExpr": {
+          "type": "object",
+          "title": "glslExpr",
+          "properties": {
+            "expr": {
+              "type": "string",
+              "description": "GLSL expression; reference inputs as {name} placeholders"
+            },
+            "inputs": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/expression"
+              },
+              "description": "Named input columns referenced in expr as {name}"
+            }
+          },
+          "required": [
+            "expr"
+          ]
+        },
+        "expression": {
+          "x-format": "expression",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "title": "filter1D",
+              "properties": {
+                "filter1D": {
+                  "$ref": "#/$defs/params_filter1D"
+                }
+              },
+              "required": [
+                "filter1D"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "lowPass",
+              "properties": {
+                "lowPass": {
+                  "$ref": "#/$defs/params_lowPass"
+                }
+              },
+              "required": [
+                "lowPass"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "highPass",
+              "properties": {
+                "highPass": {
+                  "$ref": "#/$defs/params_highPass"
+                }
+              },
+              "required": [
+                "highPass"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "bandPass",
+              "properties": {
+                "bandPass": {
+                  "$ref": "#/$defs/params_bandPass"
+                }
+              },
+              "required": [
+                "bandPass"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "kde",
+              "properties": {
+                "kde": {
+                  "$ref": "#/$defs/params_kde"
+                }
+              },
+              "required": [
+                "kde"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "fftConvolution",
+              "properties": {
+                "fftConvolution": {
+                  "$ref": "#/$defs/params_fftConvolution"
+                }
+              },
+              "required": [
+                "fftConvolution"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "convolution",
+              "properties": {
+                "convolution": {
+                  "$ref": "#/$defs/params_convolution"
+                }
+              },
+              "required": [
+                "convolution"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "histogram",
+              "properties": {
+                "histogram": {
+                  "$ref": "#/$defs/params_histogram"
+                }
+              },
+              "required": [
+                "histogram"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "filteredHistogram",
+              "properties": {
+                "filteredHistogram": {
+                  "$ref": "#/$defs/params_filteredHistogram"
+                }
+              },
+              "required": [
+                "filteredHistogram"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "linspace",
+              "properties": {
+                "linspace": {
+                  "$ref": "#/$defs/params_linspace"
+                }
+              },
+              "required": [
+                "linspace"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "range",
+              "properties": {
+                "range": {
+                  "$ref": "#/$defs/params_range"
+                }
+              },
+              "required": [
+                "range"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "random",
+              "properties": {
+                "random": {
+                  "$ref": "#/$defs/params_random"
+                }
+              },
+              "required": [
+                "random"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "glslExpr",
+              "properties": {
+                "glslExpr": {
+                  "$ref": "#/$defs/params_glslExpr"
+                }
+              },
+              "required": [
+                "glslExpr"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "expression_opt": {
+          "x-format": "expression",
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "none",
+              "enum": [
+                "none"
+              ],
+              "title": "none",
+              "default": "none"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "title": "filter1D",
+              "properties": {
+                "filter1D": {
+                  "$ref": "#/$defs/params_filter1D"
+                }
+              },
+              "required": [
+                "filter1D"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "lowPass",
+              "properties": {
+                "lowPass": {
+                  "$ref": "#/$defs/params_lowPass"
+                }
+              },
+              "required": [
+                "lowPass"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "highPass",
+              "properties": {
+                "highPass": {
+                  "$ref": "#/$defs/params_highPass"
+                }
+              },
+              "required": [
+                "highPass"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "bandPass",
+              "properties": {
+                "bandPass": {
+                  "$ref": "#/$defs/params_bandPass"
+                }
+              },
+              "required": [
+                "bandPass"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "kde",
+              "properties": {
+                "kde": {
+                  "$ref": "#/$defs/params_kde"
+                }
+              },
+              "required": [
+                "kde"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "fftConvolution",
+              "properties": {
+                "fftConvolution": {
+                  "$ref": "#/$defs/params_fftConvolution"
+                }
+              },
+              "required": [
+                "fftConvolution"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "convolution",
+              "properties": {
+                "convolution": {
+                  "$ref": "#/$defs/params_convolution"
+                }
+              },
+              "required": [
+                "convolution"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "histogram",
+              "properties": {
+                "histogram": {
+                  "$ref": "#/$defs/params_histogram"
+                }
+              },
+              "required": [
+                "histogram"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "filteredHistogram",
+              "properties": {
+                "filteredHistogram": {
+                  "$ref": "#/$defs/params_filteredHistogram"
+                }
+              },
+              "required": [
+                "filteredHistogram"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "linspace",
+              "properties": {
+                "linspace": {
+                  "$ref": "#/$defs/params_linspace"
+                }
+              },
+              "required": [
+                "linspace"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "range",
+              "properties": {
+                "range": {
+                  "$ref": "#/$defs/params_range"
+                }
+              },
+              "required": [
+                "range"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "random",
+              "properties": {
+                "random": {
+                  "$ref": "#/$defs/params_random"
+                }
+              },
+              "required": [
+                "random"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "glslExpr",
+              "properties": {
+                "glslExpr": {
+                  "$ref": "#/$defs/params_glslExpr"
+                }
+              },
+              "required": [
+                "glslExpr"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "params_computeddata_FftData": {
+          "type": "object",
+          "title": "FftData",
+          "properties": {
+            "input": {
+              "type": "string",
+              "description": "Input signal column"
+            },
+            "inverse": {
+              "type": "boolean",
+              "default": false,
+              "description": "Inverse FFT"
+            }
+          },
+          "required": [
+            "input"
+          ]
+        },
+        "params_computeddata_HistogramData": {
+          "type": "object",
+          "title": "HistogramData",
+          "properties": {
+            "input": {
+              "type": "string",
+              "description": "Input data column"
+            },
+            "bins": {
+              "type": "integer",
+              "description": "Number of bins (0 for auto)",
+              "default": 0
+            },
+            "filter": {
+              "$ref": "#/$defs/expression_opt",
+              "description": "Filter column — registers a filter axis (null for none)"
+            }
+          },
+          "required": [
+            "input",
+            "filter"
+          ]
+        },
+        "params_computeddata_ElementwiseData": {
+          "type": "object",
+          "title": "ElementwiseData",
+          "properties": {
+            "dataLength": {
+              "type": "integer",
+              "description": "Override output length (optional, auto-detected from column refs)"
+            },
+            "columns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "dst": {
+                    "type": "string",
+                    "description": "Output column name"
+                  },
+                  "src": {
+                    "$ref": "#/$defs/expression"
+                  },
+                  "quantityKind": {
+                    "type": "string",
+                    "description": "Quantity kind for axis matching (optional)"
+                  }
+                },
+                "required": [
+                  "dst",
+                  "src"
+                ]
+              }
+            }
+          },
+          "required": [
+            "columns"
+          ]
+        },
+        "params_computeddata_Scatter2dInterpolate": {
+          "type": "object",
+          "title": "Scatter2dInterpolate",
+          "properties": {
+            "x": {
+              "type": "string"
+            },
+            "y": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "resolutionX": {
+              "type": "integer",
+              "default": 256
+            },
+            "resolutionY": {
+              "type": "integer",
+              "default": 256
+            },
+            "radius": {
+              "type": "number",
+              "default": 5
+            },
+            "w1": {
+              "type": "number",
+              "default": 0.5
+            },
+            "w2": {
+              "type": "number",
+              "default": 0.3
+            },
+            "w3": {
+              "type": "number",
+              "default": 0.2
+            },
+            "full_coordinates": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "value",
+            "resolutionX",
+            "resolutionY"
+          ]
+        },
+        "transform_expression": {
+          "anyOf": [
+            {
+              "type": "object",
+              "title": "FftData",
+              "properties": {
+                "FftData": {
+                  "$ref": "#/$defs/params_computeddata_FftData"
+                }
+              },
+              "required": [
+                "FftData"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "HistogramData",
+              "properties": {
+                "HistogramData": {
+                  "$ref": "#/$defs/params_computeddata_HistogramData"
+                }
+              },
+              "required": [
+                "HistogramData"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "ElementwiseData",
+              "properties": {
+                "ElementwiseData": {
+                  "$ref": "#/$defs/params_computeddata_ElementwiseData"
+                }
+              },
+              "required": [
+                "ElementwiseData"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "title": "Scatter2dInterpolate",
+              "properties": {
+                "Scatter2dInterpolate": {
+                  "$ref": "#/$defs/params_computeddata_Scatter2dInterpolate"
+                }
+              },
+              "required": [
+                "Scatter2dInterpolate"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      }
+    },
+    "FlowViewNode": {
+      "type": "object",
+      "title": "Processes overview",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "FlowView"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        }
+      },
+      "required": [
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false
+    },
+    "ProcessEditorNode": {
+      "type": "object",
+      "title": "Process editor",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "ProcessEditor"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        }
+      },
+      "required": [
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false
+    },
+    "EnvironmentViewNode": {
+      "type": "object",
+      "title": "Environments",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "EnvironmentView"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        }
+      },
+      "required": [
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false
+    },
+    "ProcessLogNode": {
+      "type": "object",
+      "title": "Process Log",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "ProcessLog"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        },
+        "processRef": {
+          "type": "string",
+          "title": "Process / version",
+          "x-format": "processVersion",
+          "default": "current"
+        }
+      },
+      "required": [
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false
+    },
+    "ProcessProgressNode": {
+      "type": "object",
+      "title": "Process Progress",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "ProcessProgress"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        }
+      },
+      "required": [
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false
+    },
+    "ExportNode": {
+      "type": "object",
+      "title": "Export",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "Export"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        },
+        "processRef": {
+          "type": "string",
+          "title": "Process / version",
+          "x-format": "processVersion",
+          "default": "current"
+        }
+      },
+      "required": [
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false
+    },
+    "ProcessInfoNode": {
+      "type": "object",
+      "title": "Process info",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "ProcessInfo"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        },
+        "processRef": {
+          "type": "string",
+          "title": "Process / version",
+          "x-format": "processVersion",
+          "default": "current"
+        }
+      },
+      "required": [
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false
+    },
+    "ProcessComparisonNode": {
+      "type": "object",
+      "title": "Process comparison",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "ProcessComparison"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        }
+      },
+      "required": [
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false
+    },
+    "AEMModelSimulatorNode": {
+      "type": "object",
+      "title": "AEM Model Simulator",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "AEMModelSimulator"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        }
+      },
+      "required": [
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false
+    },
+    "InUseEditorNode": {
+      "type": "object",
+      "title": "InUse Editor",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "InUseEditor"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        }
+      },
+      "required": [
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false
+    },
+    "PluginManagerNode": {
+      "type": "object",
+      "title": "Plugin Manager",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "PluginManager"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        }
+      },
+      "required": [
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false
+    },
+    "ClusterQueueViewNode": {
+      "type": "object",
+      "title": "Cluster Queue",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique pane identifier (UUID recommended)"
+        },
+        "widget": {
+          "const": "ClusterQueueView"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Overrides the pane's displayed title."
+        },
+        "compact": {
+          "type": "boolean",
+          "description": "Draw the compact corner-arrow header; inherited by descendant panes."
+        }
+      },
+      "required": [
+        "id",
+        "widget"
+      ],
+      "additionalProperties": false
+    },
+    "Node": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/VerticalSplitNode"
+        },
+        {
+          "$ref": "#/$defs/HorizontalSplitNode"
+        },
+        {
+          "$ref": "#/$defs/TabSetNode"
+        },
+        {
+          "$ref": "#/$defs/GridNode"
+        },
+        {
+          "$ref": "#/$defs/EmptyNode"
+        },
+        {
+          "$ref": "#/$defs/PlotViewNode"
+        },
+        {
+          "$ref": "#/$defs/FlowViewNode"
+        },
+        {
+          "$ref": "#/$defs/ProcessEditorNode"
+        },
+        {
+          "$ref": "#/$defs/EnvironmentViewNode"
+        },
+        {
+          "$ref": "#/$defs/ProcessLogNode"
+        },
+        {
+          "$ref": "#/$defs/ProcessProgressNode"
+        },
+        {
+          "$ref": "#/$defs/ExportNode"
+        },
+        {
+          "$ref": "#/$defs/ProcessInfoNode"
+        },
+        {
+          "$ref": "#/$defs/ProcessComparisonNode"
+        },
+        {
+          "$ref": "#/$defs/AEMModelSimulatorNode"
+        },
+        {
+          "$ref": "#/$defs/InUseEditorNode"
+        },
+        {
+          "$ref": "#/$defs/PluginManagerNode"
+        },
+        {
+          "$ref": "#/$defs/ClusterQueueViewNode"
+        }
       ]
-    },
-    "default": {
-      "layoutConfig": {
-        "transforms": [],
-        "layers": [],
-        "axes": {},
-        "statusBar": false
-      }
     }
   },
-  "FlowView": {
-    "title": "Processes overview",
-    "schema": null,
-    "default": null
-  },
-  "ProcessEditor": {
-    "title": "Process editor",
-    "schema": null,
-    "default": null
-  },
-  "EnvironmentView": {
-    "title": "Environments",
-    "schema": null,
-    "default": null
-  },
-  "ProcessLog": {
-    "title": "Process Log",
-    "schema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "title": "ID",
-          "readOnly": true
-        },
-        "widget": {
-          "type": "string",
-          "title": "Widget Type",
-          "readOnly": true
-        },
-        "processRef": {
-          "type": "string",
-          "title": "Process / version",
-          "x-format": "processVersion",
-          "default": "current"
-        }
-      }
-    },
-    "default": {
-      "processRef": "current"
-    }
-  },
-  "ProcessProgress": {
-    "title": "Process Progress",
-    "schema": null,
-    "default": null
-  },
-  "Export": {
-    "title": "Export",
-    "schema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "title": "ID",
-          "readOnly": true
-        },
-        "widget": {
-          "type": "string",
-          "title": "Widget Type",
-          "readOnly": true
-        },
-        "processRef": {
-          "type": "string",
-          "title": "Process / version",
-          "x-format": "processVersion",
-          "default": "current"
-        }
-      }
-    },
-    "default": {
-      "processRef": "current"
-    }
-  },
-  "ProcessInfo": {
-    "title": "Process info",
-    "schema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "title": "ID",
-          "readOnly": true
-        },
-        "widget": {
-          "type": "string",
-          "title": "Widget Type",
-          "readOnly": true
-        },
-        "processRef": {
-          "type": "string",
-          "title": "Process / version",
-          "x-format": "processVersion",
-          "default": "current"
-        }
-      }
-    },
-    "default": {
-      "processRef": "current"
-    }
-  },
-  "ProcessComparison": {
-    "title": "Process comparison",
-    "schema": null,
-    "default": {
-      "refA": "current",
-      "refB": "current"
-    }
-  },
-  "AEMModelSimulator": {
-    "title": "AEM Model Simulator",
-    "schema": null,
-    "default": null
-  },
-  "InUseEditor": {
-    "title": "InUse Editor",
-    "schema": null,
-    "default": null
-  },
-  "PluginManager": {
-    "title": "Plugin Manager",
-    "schema": null,
-    "default": null
-  },
-  "ClusterQueueView": {
-    "title": "Cluster Queue",
-    "schema": null,
-    "default": null
-  }
+  "$ref": "#/$defs/Node"
 }

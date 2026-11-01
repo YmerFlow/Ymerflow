@@ -1,6 +1,6 @@
 # Frontend-owned workspace layout schema
 
-**State:** draft, decisions pending (2026-11-01)
+**State:** implemented (2026-11-01)
 **Labels:** refactor, frontend, backend, mcp, tech-debt
 
 ## Motivation
@@ -95,9 +95,9 @@ Resolved with the user:
 - **Containers appear as ordinary widgets**; the only special knowledge is the hardcoded container set in `workspaceSchema.js` that injects the recursive `children` property (and `globalCompact`). Hardcoding is acceptable because the builder is flexout's own code.
 - **MCP response contracts unchanged** — every endpoint keeps its path and JSON shape, so existing agents and the tool descriptions in `backend/main.py` keep working. Visible differences are additive: `customTitle` / `compact` / `globalCompact` are now advertised, and the flexout builtins `Grid` / `Empty` (previously omitted) now appear.
 
-Still to confirm:
+Confirmed during implementation:
 
-1. **Container structural fields.** Beyond `children`, containers carry structural fields the hand-built envelope never advertised: `size` (Split), `activeTab` (TabSet), `colWidths` / `rowHeights` (Grid). Recommended: declare these in the respective container node defs in `workspaceSchema.js` too, since flexout owns them and `additionalProperties: false` otherwise marks a real `size`/`activeTab` as invalid. Alternative: leave them out (matches today) and keep the plan's surface minimal.
+1. **Container structural fields.** Beyond `children`, containers carry structural fields the hand-built envelope never advertised: `size` (Split), `activeTab` (TabSet), `colWidths` / `rowHeights` (Grid). **Decided: declare them** in the respective container node defs in `workspaceSchema.js` (`CONTAINER_STRUCTURAL_PROPS`), since flexout owns them and `additionalProperties: false` would otherwise mark a real `size`/`activeTab` as invalid.
 
 ## Implementation
 

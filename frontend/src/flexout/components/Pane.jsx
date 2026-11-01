@@ -1,6 +1,7 @@
 import React, { useContext, useState, useRef, Component, useMemo } from 'react';
 import { LayoutContext } from '../LayoutContext';
 import PaneMenuDropdown from './PaneMenuDropdown';
+import PaneMenuContent from './PaneMenuContent';
 import Split from './Split';
 import TabSet from './TabSet';
 import { useDrag, useDrop } from 'react-dnd';
@@ -198,10 +199,10 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, inheritedCo
     }
   };
 
-  // Write a generic node field (compact, globalCompact) directly — these are
-  // flexout-owned fields, never part of any widget's config schema.
-  const updateNodeField = (field, value) => {
-    const newNode = { ...node, [field]: value };
+  // Merge flexout-owned node fields (compact, globalCompact) directly — these
+  // are never part of any widget's config schema.
+  const updateNodeFields = (patch) => {
+    const newNode = { ...node, ...patch };
     if (parentUpdate) parentUpdate('replace', node.id, newNode);
     else updateLayout(newNode);
   };
@@ -238,54 +239,33 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, inheritedCo
   // there is no header strip to rename from.
   const menuBody = (
     <PaneMenuDropdown anchorRef={menuRef} onClose={() => setShowMenu(false)}>
-      {compact && (
-        <div className="pane-menu-title" onClick={(e) => e.stopPropagation()}>
-          {isEditingTitle ? (
-            <input
-              ref={titleInputRef}
-              type="text"
-              defaultValue={node.customTitle !== undefined ? node.customTitle : Widget.title}
-              onBlur={handleTitleSave}
-              onKeyDown={handleTitleKeyDown}
-              autoFocus
-              className="form-control form-control-sm"
-            />
-          ) : (
-            <span style={{ cursor: 'pointer' }} onClick={handleTitleClick}>{titleText}</span>
-          )}
-        </div>
-      )}
-      <div className="pane-menu-actions">
-        {hasConfig && (
-          <button className="btn btn-sm btn-secondary" onClick={handleConfigure}>
-            <i className="fas fa-cog"></i>
-          </button>
-        )}
-        <button className="btn btn-sm btn-danger" onClick={() => { handleRemove(); setShowMenu(false); }}>
-          <i className="fas fa-times"></i>
-        </button>
-      </div>
-      <label className="pane-menu-check">
-        <input type="checkbox" checked={!!node.compact} onChange={(e) => updateNodeField('compact', e.target.checked)} />
-        Compact
-      </label>
-      {isRoot && (
-        <label className="pane-menu-check">
-          <input type="checkbox" checked={!!node.globalCompact} onChange={(e) => updateNodeField('globalCompact', e.target.checked)} />
-          Compact all panes
-        </label>
-      )}
-      <div className="pane-menu-widget-list">
-        {Object.entries(widgets).map(([name, widget]) => (
-          <button
-            key={name}
-            className={node.widget === name ? 'active' : ''}
-            onClick={() => { handleChangeContent({ target: { value: name } }); setShowMenu(false); }}
-          >
-            {widget.title}
-          </button>
-        ))}
-      </div>
+      <PaneMenuContent
+        node={node}
+        widgets={widgets}
+        isRoot={isRoot}
+        hasConfig={hasConfig}
+        onConfigure={handleConfigure}
+        onRemove={() => { handleRemove(); setShowMenu(false); }}
+        onChangeWidget={(name) => { handleChangeContent({ target: { value: name } }); setShowMenu(false); }}
+        onUpdateFields={updateNodeFields}
+        titleRow={compact ? (
+          <div className="pane-menu-title" onClick={(e) => e.stopPropagation()}>
+            {isEditingTitle ? (
+              <input
+                ref={titleInputRef}
+                type="text"
+                defaultValue={node.customTitle !== undefined ? node.customTitle : Widget.title}
+                onBlur={handleTitleSave}
+                onKeyDown={handleTitleKeyDown}
+                autoFocus
+                className="form-control form-control-sm"
+              />
+            ) : (
+              <span style={{ cursor: 'pointer' }} onClick={handleTitleClick}>{titleText}</span>
+            )}
+          </div>
+        ) : null}
+      />
     </PaneMenuDropdown>
   );
 

@@ -31,25 +31,16 @@ _STATS_MIME = "application/vnd.ymerflow.stats+json"
 
 router = APIRouter(prefix="/workspace", tags=["Workspaces"])
 
+# The frontend owns the workspace-layout schema and builds it whole: one full recursive
+# JSON Schema document for the entire layout tree, dumped to this file by
+# `npm run export-schemas` (see frontend/src/flexout/workspaceSchema.js). The backend never
+# constructs schema — the endpoints below only navigate and slice this document. Filename is
+# historical (it once held a per-widget map); it now holds the full workspace schema.
 WIDGET_SCHEMAS_PATH = Path(__file__).parent.parent / "widget_schemas.json"
 
-# Built-in container widgets from the flexout layout system (they carry `children`,
-# not a `layoutConfig`). Leaf widgets are discovered from widget_schemas.json.
-_CONTAINER_WIDGETS = {
-    "VerticalSplit": "Split the pane vertically into two resizable children.",
-    "HorizontalSplit": "Split the pane horizontally into two resizable children.",
-    "TabSet": "Tabbed pane — children are switchable tabs.",
-}
-
-_NODE_ID_PROP = {"type": "string", "description": "Unique pane identifier (UUID recommended)"}
-
-# Generic flexout node fields any node may carry (handled by flexout itself, not by any
-# widget's config schema). `customTitle` overrides the pane's displayed title; `compact`
-# draws the compact (corner-arrow) header instead of the full header row, inherited by
-# descendants. `globalCompact` lives on the root node only and forces every pane compact.
-_CUSTOM_TITLE_PROP = {"type": "string", "description": "Overrides the pane's displayed title."}
-_COMPACT_PROP = {"type": "boolean", "description": "Draw the compact corner-arrow header; inherited by descendant panes."}
-_GLOBAL_COMPACT_PROP = {"type": "boolean", "description": "Root node only: force every pane to the compact header."}
+# Generic flexout node fields (the envelope + structure), never a widget "param". Used to
+# tell, per node def, whether it carries configurable fields (`has_params`).
+_ENVELOPE_KEYS = {"id", "widget", "customTitle", "compact", "globalCompact", "children"}
 
 
 class CreateWorkspaceBody(BaseModel):
@@ -64,7 +55,7 @@ class CreateWorkspaceVersionBody(BaseModel):
 
 
 def _load_widget_schemas() -> dict:
-    """Load the build-time widget schema export, or raise 503 with a fix hint."""
+    """Load the build-time full workspace-schema document, or raise 503 with a fix hint."""
     try:
         with open(WIDGET_SCHEMAS_PATH) as f:
             widget_schemas = json.load(f)
@@ -84,73 +75,35 @@ def _load_widget_schemas() -> dict:
     return widget_schemas
 
 
-def _container_node_def(widget_name: str, description: str) -> dict:
-    """Node schema for a built-in container widget (`{id, widget, children}`)."""
-    return {
-        "type": "object",
-        "title": widget_name,
-        "description": description,
-        "properties": {
-            "id": _NODE_ID_PROP,
-            "widget": {"const": widget_name},
-            "children": {
-                "type": "array",
-                "items": {"$ref": "#/$defs/Node"},
-                "minItems": 1,
-            },
-            "customTitle": _CUSTOM_TITLE_PROP,
-            "compact": _COMPACT_PROP,
-            "globalCompact": _GLOBAL_COMPACT_PROP,
-        },
-        "required": ["id", "widget", "children"],
-        "additionalProperties": False,
-    }
+# ── Navigation over the frontend's full schema document ──────────────────────────────────
+#
+# The loaded document is `{"$schema", "title", "$defs": {"<Widget>Node": {...}, ..., "Node":
+# {"oneOf": [...]}}, "$ref": "#/$defs/Node"}`. These helpers slice it — they build no schema.
 
 
-def _leaf_node_def_raw(widget_name: str, widget_info: dict) -> dict:
-    """Node schema for a leaf widget as embedded in the full recursive dump.
+def _node_defs(full_schema: dict) -> dict:
+    """The `$defs` map of the full workspace schema (every `<Widget>Node` plus `Node`)."""
+    return full_schema.get("$defs", {})
 
-    This reproduces the historical `get_workspace_schema` shape verbatim (the
-    widget's exported `schema` is nested under `layoutConfig` as-is), so the
-    `verbose=true` response is unchanged from before this refactor.
+
+def _widget_names(full_schema: dict) -> list:
+    """Widget type names in document order — each `<Widget>Node` key minus its `Node` suffix."""
+    return [key[:-4] for key in _node_defs(full_schema) if key != "Node" and key.endswith("Node")]
+
+
+def _node_def_for(full_schema: dict, widget: str):
+    """The `<widget>Node` def, or None if `widget` is unknown."""
+    return _node_defs(full_schema).get(f"{widget}Node")
+
+
+def _node_layout_config(node_def: dict):
+    """`(layoutConfig schema or None, node-def $defs)` for a node def.
+
+    The node def's own `$defs` (e.g. gladly's, for PlotView) ride along on the node so a
+    sliced response stays self-contained.
     """
-    layout_config_schema = widget_info.get("schema") or {}
-    if widget_info.get("default") is not None:
-        layout_config_schema = {**layout_config_schema, "default": widget_info["default"]}
-
-    node_def = {
-        "type": "object",
-        "title": widget_info.get("title", widget_name),
-        "properties": {
-            "id": _NODE_ID_PROP,
-            "widget": {"const": widget_name},
-            "customTitle": _CUSTOM_TITLE_PROP,
-            "compact": _COMPACT_PROP,
-        },
-        "required": ["id", "widget"],
-        "additionalProperties": False,
-    }
-    if layout_config_schema:
-        node_def["properties"]["layoutConfig"] = layout_config_schema
-    return node_def
-
-
-def _widget_layout_config(widget_info: dict):
-    """Return `(layout_config_schema, defs)` for a leaf widget, or `(None, {})`.
-
-    A widget's exported `get_schema()` may return either a full node schema
-    (`{id, widget, layoutConfig}` — as PlotView does) or a bare layoutConfig
-    schema. Normalize both to just the layoutConfig sub-schema plus the `$defs`
-    that its `#/$defs/...` refs resolve against.
-    """
-    schema = widget_info.get("schema")
-    if not schema:
-        return None, {}
-    defs = schema.get("$defs", {})
-    props = schema.get("properties", {})
-    if "layoutConfig" in props:
-        return props["layoutConfig"], defs
-    return schema, defs
+    layout_config = (node_def or {}).get("properties", {}).get("layoutConfig")
+    return layout_config, (node_def or {}).get("$defs", {})
 
 
 def _plot_layer_members(layout_config) -> list:
@@ -312,33 +265,6 @@ async def list_public_workspaces(
     return [w.to_dict(project_name=w.project.name if w.project else None) for w in workspaces]
 
 
-def _build_full_workspace_schema(widget_schemas: dict) -> dict:
-    """The full recursive node-tree JSON Schema (the historical `verbose` dump)."""
-    defs = {}
-    all_node_refs = []
-
-    for widget_name, description in _CONTAINER_WIDGETS.items():
-        defs[f"{widget_name}Node"] = _container_node_def(widget_name, description)
-        all_node_refs.append({"$ref": f"#/$defs/{widget_name}Node"})
-
-    for widget_name, widget_info in widget_schemas.items():
-        defs[f"{widget_name}Node"] = _leaf_node_def_raw(widget_name, widget_info)
-        all_node_refs.append({"$ref": f"#/$defs/{widget_name}Node"})
-
-    defs["Node"] = {"oneOf": all_node_refs}
-
-    return {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "Workspace Layout",
-        "description": (
-            "Recursive layout tree for a YmerFlow workspace. "
-            "The root is typically a VerticalSplit or TabSet container."
-        ),
-        "$defs": defs,
-        "$ref": "#/$defs/Node",
-    }
-
-
 @router.get("-schema", operation_id="get_workspace_schema")
 async def get_workspace_schema(verbose: bool = Query(False, include_in_schema=False)):
     """
@@ -368,28 +294,28 @@ async def get_workspace_schema(verbose: bool = Query(False, include_in_schema=Fa
     Returns 503 if widget schemas have not been generated yet — run:
     `cd frontend && npm run export-schemas`
     """
-    widget_schemas = _load_widget_schemas()
+    full_schema = _load_widget_schemas()
 
     if verbose:
-        return _build_full_workspace_schema(widget_schemas)
+        return full_schema
 
+    defs = _node_defs(full_schema)
     widgets = []
-    for widget_name, description in _CONTAINER_WIDGETS.items():
-        widgets.append({
+    for widget_name in _widget_names(full_schema):
+        node_def = defs[f"{widget_name}Node"]
+        props = node_def.get("properties", {})
+        row = {
             "widget": widget_name,
-            "title": widget_name,
-            "description": description,
-            "container": True,
-            "has_params": False,
-        })
-    for widget_name, widget_info in widget_schemas.items():
-        layout_config, _ = _widget_layout_config(widget_info)
-        widgets.append({
-            "widget": widget_name,
-            "title": widget_info.get("title", widget_name),
-            "container": False,
-            "has_params": layout_config is not None,
-        })
+            "title": node_def.get("title", widget_name),
+            "container": "children" in props,
+            # Any property beyond the generic envelope/structure is a configurable param
+            # (a layoutConfig, or top-level fields like Grid's rows/cols, splits' size).
+            "has_params": bool(set(props) - _ENVELOPE_KEYS),
+        }
+        description = node_def.get("description")
+        if description:
+            row["description"] = description
+        widgets.append(row)
 
     return {
         "widgets": widgets,
@@ -420,38 +346,21 @@ async def get_widget_schema(widget: str):
     (PlotView's `layoutConfig.transforms` use `expression`). `current` is a placeholder for
     the viewer's selected process.
     """
-    widget_schemas = _load_widget_schemas()
+    full_schema = _load_widget_schemas()
 
-    if widget in _CONTAINER_WIDGETS:
-        return _container_node_def(widget, _CONTAINER_WIDGETS[widget])
-
-    if widget not in widget_schemas:
+    node_def = _node_def_for(full_schema, widget)
+    if node_def is None:
         raise HTTPException(
             status_code=404,
             detail=f"Unknown widget '{widget}'. Call get_workspace_schema for the widget index.",
         )
 
-    widget_info = widget_schemas[widget]
-    layout_config, defs = _widget_layout_config(widget_info)
-
-    node = {
-        "type": "object",
-        "title": widget_info.get("title", widget),
-        "properties": {
-            "id": _NODE_ID_PROP,
-            "widget": {"const": widget},
-        },
-        "required": ["id", "widget"],
-        "additionalProperties": False,
-    }
-    if layout_config is not None:
-        if widget == "PlotView":
-            layout_config = _collapse_plot_layers(layout_config)
-        node["properties"]["layoutConfig"] = layout_config
-        if defs:
-            # $defs live at the document root so #/$defs/... refs resolve.
-            node["$defs"] = defs
-    return node
+    # PlotView's layers union overflows the tool-output limit — collapse it to a type-name
+    # list (the node def is freshly loaded per request, so this mutation is local).
+    layout_config = node_def.get("properties", {}).get("layoutConfig")
+    if widget == "PlotView" and layout_config is not None:
+        node_def["properties"]["layoutConfig"] = _collapse_plot_layers(layout_config)
+    return node_def
 
 
 @router.get("-schema/widget/{widget}/layer", operation_id="list_plot_layer_types")
@@ -462,18 +371,16 @@ async def list_plot_layer_types(widget: str):
     Returns one short row per layer type. Non-plot widgets have no layers and
     return an empty list. Follow with get_plot_layer_schema for a layer's params.
     """
-    widget_schemas = _load_widget_schemas()
+    full_schema = _load_widget_schemas()
 
-    if widget not in _CONTAINER_WIDGETS and widget not in widget_schemas:
+    node_def = _node_def_for(full_schema, widget)
+    if node_def is None:
         raise HTTPException(
             status_code=404,
             detail=f"Unknown widget '{widget}'. Call get_workspace_schema for the widget index.",
         )
 
-    if widget not in widget_schemas:
-        return []
-
-    layout_config, _ = _widget_layout_config(widget_schemas[widget])
+    layout_config, _ = _node_layout_config(node_def)
     rows = []
     for member in _plot_layer_members(layout_config):
         layer_type = member.get("title")
@@ -501,15 +408,16 @@ async def get_plot_layer_schema(widget: str, layer_type: str):
     `processVersion` → `complete_process_version_path`, `expression` → `complete_column_path`.
     `current` is a placeholder for the viewer's selected process.
     """
-    widget_schemas = _load_widget_schemas()
+    full_schema = _load_widget_schemas()
 
-    if widget not in widget_schemas:
+    node_def = _node_def_for(full_schema, widget)
+    if node_def is None:
         raise HTTPException(
             status_code=404,
             detail=f"Unknown widget '{widget}'. Call get_workspace_schema for the widget index.",
         )
 
-    layout_config, defs = _widget_layout_config(widget_schemas[widget])
+    layout_config, defs = _node_layout_config(node_def)
     members = _plot_layer_members(layout_config)
     member = next((m for m in members if m.get("title") == layer_type), None)
     if member is None:
