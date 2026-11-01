@@ -159,7 +159,7 @@ drift and no cross-repo git push is required.
 
 ## Testing
 
-Run on prod (`ssh -A -p 2220 griffon@redhog.org`, `cd /srv/ymerflow/Ymerflow`) against the minikube
+Run on prod (`ssh <prod-host>`, `cd <deploy-dir>`) against the minikube
 cluster, or in dev:
 
 1. **No-change rebuild is a no-op tag:** run `docker/build.sh` twice with no changes. Second run must
