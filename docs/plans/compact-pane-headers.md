@@ -1,6 +1,6 @@
 # Compact pane headers, flex view and a workspace status bar
 
-**State:** decided 2026-10-30, ready to implement
+**State:** decided 2026-10-30; compact look and inheritance revised after review 2026-10-31; ready to implement
 **Labels:** enhancement, frontend, layout
 
 ## Motivation
@@ -22,6 +22,8 @@ Two details were left open. This plan recommends one answer for each, below, to 
 - Flex view is saved with the workspace, not kept per viewer (see [Flex view](#flex-view)).
 - The per-plot status bar is a PlotView setting, `layoutConfig.statusBar`, off by default (see [Status bar](#status-bar)).
 
+Review, 2026-10-31: a compact header is not a thinner row but a small arrow over the pane's top-right corner, and containers thread the inherited value into each child's config. Both are written up under [Compact headers](#compact-headers).
+
 ## Compact headers
 
 A generic `header` field on any layout node:
@@ -30,24 +32,44 @@ A generic `header` field on any layout node:
 { id, widget: "Grid", header: "compact", children: [ ... ] }
 ```
 
-| `header` | header row |
+| `header` | what the pane shows |
 |---|---|
-| `"shown"` | as today, ~24 px |
-| `"compact"` | ~14 px: smaller font, no padding, same title, drag handle and menu |
+| `"shown"` | the header row as today, ~24 px |
+| `"compact"` | no header row; a small arrow over the top-right corner of the pane |
 
-A node without the field inherits its parent's value, and the root defaults to `"shown"`. One setting on a Grid therefore covers the Grid and every cell in it, and a cell can still set `"shown"` for itself. The pane menu gets a shown / compact control that writes the field, so it can be set without editing JSON. The content padding below a compact header (`pt-1`, 4 px) is dropped.
+The pane menu gets a shown / compact control that writes the field, so it can be set without editing JSON. The field knows nothing about the widget inside the pane, so `flexout/` stays free of project-specific code.
 
-The field knows nothing about the widget inside the pane, so `flexout/` stays free of project-specific code.
+### How a compact header looks
+
+The header row is gone and the widget gets the full height of the pane, including the 4 px of padding (`pt-1`) under today's header. A small dropdown arrow, about 14 px square, sits over the widget's top-right corner on a translucent white background, grey until hovered. In a PlotView that corner is the empty margin above and to the right of the plot area, unless the plot draws a top or right-hand axis.
+
+Clicking the arrow opens the pane menu as today (configure, remove, change widget), with the pane's title at the top. Clicking the title edits it, the way clicking the title in the header does now.
+
+On mobile, where panes are stacked and the title is what tells them apart, every pane shows its header row whatever its `header` field says.
+
+### Moving a pane
+
+The arrow is also the drag handle. Today the whole header row is the drag source (the `useDrag` ref in `Pane.jsx`); in compact mode that ref goes on the arrow instead. Pressing on the arrow and moving drags the pane, and pressing and releasing without moving opens the menu. React-dnd's HTML5 backend only starts a drag once the pointer moves, so the two do not get in each other's way. The arrow shows a `grab` cursor and the tooltip "Click for menu, drag to move". Dropping is unchanged: the whole pane stays a drop target.
+
+### Nested arrows
+
+A compact container and its compact top-right child would put their arrows on the same spot, for example a Grid and its top-right cell. Each arrow is therefore moved 16 px to the left per level of nesting, counted from the root: the root's arrow sits in the corner, a direct child's 16 px to its left, and so on. Only a pane and its ancestors can share a corner, and they are always at different depths, so arrows never overlap.
+
+### Inheritance
+
+Containers already render their children (`Split.jsx`, `Grid.jsx`, `TabSet.jsx`), so they thread the value down. When a container renders a child `Pane`, it adds its own effective mode and the child's depth to the child's config as `inherited: { header, depth }`. The child's mode is its own `header` if set, otherwise `inherited.header`, otherwise `"shown"`. A Grid set to compact therefore makes every cell compact, and a cell can still set `"shown"` for itself.
+
+The inherited value goes under its own key, not into `header`, so that it never ends up in the saved layout. If it did, a cell that was renamed or reconfigured would keep `compact` after the Grid went back to `shown`. Everything a child writes back already passes through its container's `handleChildUpdate`: renames, configure, widget changes, drops, and a widget's own `parentUpdate`, such as PlotView saving its config with the rest of its props. Each container removes `inherited` there before storing the node, and the root update in `Layout.jsx` does the same for a pane dropped at the root. The removal goes down through `children` too, because changing a pane into a Split, Grid or TabSet wraps the old node, `inherited` and all, as the new container's first child.
 
 ## Flex view
 
 A tick box in the workspace menu, "Flex view". When it is on:
 
-- no pane draws a header, whatever its `header` field says;
+- no pane draws a header row or a corner arrow, whatever its `header` field says;
 - the 5 px resize dividers between panes in Splits and Grids, transparent today, draw a 1 px line along their middle; the 5 px grab area for resizing stays;
 - TabSets keep their tab strip, since that is how a tab is chosen.
 
-Renaming, moving, configuring or removing a pane needs its header, so the user unticks flex view, makes the change and ticks it again. Resizing still works in flex view.
+Renaming, moving, configuring or removing a pane needs its header or arrow, so the user unticks flex view, makes the change and ticks it again. Resizing still works in flex view.
 
 ### Saved with the workspace or per viewer
 
@@ -84,18 +106,18 @@ Existing saved workspaces lose the per-plot bars and gain the workspace bar, so 
 
 ## Implementation
 
-- `frontend/src/flexout/components/Pane.jsx`: effective header mode from the node, the inherited mode and flex view; render shown, compact or none. Add the shown / compact control to the pane menu.
-- `frontend/src/flexout/components/Split.jsx`, `Grid.jsx`, `TabSet.jsx`: pass the effective mode to child `Pane`s as an `inheritedHeader` prop. TabSet keeps `hideHeader` for its tabs.
-- `frontend/src/flexout/headerMode.js`: the pure rule (node value, inherited value, flex view, mobile) → `"shown" | "compact" | "none"`, so it can be tested without React.
-- Flex view: read from the root node through `LayoutContext`; the tick box in `frontend/src/WorkspaceMenu.jsx` writes `flexView` on the root with `updateLayout`. Divider line styles in `frontend/src/styling.scss`.
+- `frontend/src/flexout/components/Pane.jsx`: effective header mode from the node's `header`, `inherited`, flex view and mobile; render the header row, the corner arrow, or nothing. In compact mode the drag ref moves to the arrow, offset by `inherited.depth`. The pane menu gets the title row (click to rename) and the shown / compact control.
+- `frontend/src/flexout/components/Split.jsx`, `Grid.jsx`, `TabSet.jsx`: add `inherited: { header, depth }` to each child's config when rendering it, and remove `inherited` from nodes in `handleChildUpdate`. TabSet keeps `hideHeader` for its tabs. `frontend/src/flexout/Layout.jsx`: remove `inherited` in the root update.
+- `frontend/src/flexout/headerMode.js`: the pure pieces, so they can be tested without React: the mode rule (node value, inherited value, flex view, mobile) → `"shown" | "compact" | "none"`, the arrow offset for a depth, and `withoutInherited(node)`, which removes `inherited` from a node and its descendants.
+- Flex view: read from the root node through `LayoutContext`; the tick box in `frontend/src/WorkspaceMenu.jsx` writes `flexView` on the root with `updateLayout`. Corner arrow and divider line styles in `frontend/src/styling.scss`.
 - `frontend/src/PlotGroupContext.jsx`: the readout store. `frontend/src/PlotStatusBar.jsx`: the workspace bar. `frontend/src/App.jsx`: render it under `<MainLayout />`.
 - `frontend/src/widgets/PlotView/index.jsx`: publish to the store; draw its own bar only when `layoutConfig.statusBar` is true; add `statusBar` to the schema.
 - `backend/routers/workspaces.py`: the node schemas use `additionalProperties: false` and list only `id`, `widget`, `children` / `layoutConfig`. Add `header`, `flexView` and the existing `customTitle`, which is missing today, to `_container_node_def` and `_leaf_node_def_raw`, so workspaces written through the API validate.
 - `backend/widget_schemas.json`: regenerate with `npm run export-schemas` for `statusBar`.
 - Docs: `docs/frontend/layout.md` (header field, inheritance, flex view), `docs/frontend/widgets.md` (PlotView `statusBar` and the workspace bar), `docs/user-guide.md` (the tick box).
-- Tests (vitest): the header-mode rule, including inheritance, flex view and mobile; the readout store's publish and subscribe.
+- Tests (vitest): the header-mode rule, including inheritance, a node's own value overriding the inherited one, flex view and mobile; the arrow offset per depth; `withoutInherited` removing `inherited` at every level and nothing else; the readout store's publish and subscribe.
 
-About a day and a half: half a day for compact headers and inheritance, half a day for flex view, half a day for the status bars.
+About two days: a day for compact headers (corner arrow, drag, title in the menu, inheritance), half a day for flex view, half a day for the status bars.
 
 ## Not changing
 
