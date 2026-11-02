@@ -543,9 +543,12 @@ the source must be public (404 otherwise).
 `GET /workspace-schema`
 
 Return a **terse index** of the widget types available for a workspace layout — one short row per
-widget instead of one giant recursive schema (the full dump is 248 KB and overflows the tool-output
-limit). Each row is `{widget, title, description?, container, has_params}`; the response also carries
-a `node_envelope` describing the common node shape. Drill in from here:
+widget instead of one giant recursive schema (the full document overflows the tool-output limit).
+The schema is owned and built whole by the frontend (`frontend/src/flexout/workspaceSchema.js`,
+dumped to `backend/widget_schemas.json`); these tools only navigate and slice it. Each row is
+`{widget, title, description?, container, has_params}` (`has_params` = the node carries configurable
+fields — a `layoutConfig` or top-level fields like Grid's `rows`/`cols`); the response also carries a
+`node_envelope` describing the common node shape. Drill in from here:
 
 1. `get_workspace_schema()` → this index
 2. `get_widget_schema(widget=...)` → one widget's node/param schema
@@ -567,11 +570,13 @@ historical full recursive `$defs`/`Node`-union dump unchanged; the MCP tool sche
 ### `get_widget_schema`
 `GET /workspace-schema/widget/{widget}`
 
-Return the node schema for one widget type. Container widgets (`VerticalSplit`, `HorizontalSplit`,
-`TabSet`) give the `{id, widget, children}` shape; leaf widgets give `{id, widget, layoutConfig}`
-with `layoutConfig` being that widget's parameter schema. `PlotView` is special — its `layers` union
-is collapsed to a list of layer-type names (drill in via `list_plot_layer_types` /
-`get_plot_layer_schema`) so the payload stays within the tool-output limit.
+Return the node schema for one widget type (the `<widget>Node` def sliced from the full document).
+Container widgets (`VerticalSplit`, `HorizontalSplit`, `TabSet`, `Grid`) carry `children` (an array of
+nested nodes), `globalCompact`, and their structural fields (`size` / `activeTab` / `colWidths` /
+`rowHeights`); leaf widgets give `{id, widget, layoutConfig}` with `layoutConfig` being that widget's
+parameter schema. Every node also carries the generic envelope (`customTitle`, `compact`). `PlotView`
+is special — its `layers` union is collapsed to a list of layer-type names (drill in via
+`list_plot_layer_types` / `get_plot_layer_schema`) so the payload stays within the tool-output limit.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

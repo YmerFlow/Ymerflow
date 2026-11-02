@@ -23,7 +23,7 @@ function normalizeFractions(fracs, n) {
   return [...fracs, ...Array(extra).fill(share)];
 }
 
-export default function Grid({ parentUpdate, ...node }) {
+export default function Grid({ parentUpdate, inheritedCompact, inheritedGlobalCompact, ...node }) {
   const isMobile = useIsMobile();
   const rows = node.rows || 3;
   const cols = node.cols || 3;
@@ -108,6 +108,12 @@ export default function Grid({ parentUpdate, ...node }) {
     i < rows - 1 ? `${h}fr 5px` : `${h}fr`
   ).join(' ');
 
+  const childProps = { inheritedCompact, inheritedGlobalCompact };
+
+  // While global compact is on, panes have no header row, so draw a 1px line down
+  // the middle of the (otherwise transparent) dividers to keep cells distinct.
+  const gc = inheritedGlobalCompact ? ' global-compact' : '';
+
   const elements = [];
 
   // Content cells
@@ -120,7 +126,7 @@ export default function Grid({ parentUpdate, ...node }) {
           className="split-pane"
           style={{ gridRow: 2 * r + 1, gridColumn: 2 * c + 1, overflow: 'hidden', minWidth: 0, minHeight: 0 }}
         >
-          <Pane parentUpdate={handleChildUpdate} {...child} />
+          <Pane parentUpdate={handleChildUpdate} {...child} {...childProps} />
         </div>
       );
     }
@@ -131,7 +137,7 @@ export default function Grid({ parentUpdate, ...node }) {
     elements.push(
       <div
         key={`col-div-${c}`}
-        className="split-divider split-divider-vertical"
+        className={`split-divider split-divider-vertical${gc}`}
         style={{ gridColumn: 2 * c + 2, gridRow: '1 / -1', zIndex: 2 }}
         onMouseDown={(e) => handleDividerMouseDown('col', c, e)}
       />
@@ -143,7 +149,7 @@ export default function Grid({ parentUpdate, ...node }) {
     elements.push(
       <div
         key={`row-div-${r}`}
-        className="split-divider split-divider-horizontal"
+        className={`split-divider split-divider-horizontal${gc}`}
         style={{ gridRow: 2 * r + 2, gridColumn: '1 / -1', zIndex: 1 }}
         onMouseDown={(e) => handleDividerMouseDown('row', r, e)}
       />
@@ -155,7 +161,7 @@ export default function Grid({ parentUpdate, ...node }) {
     return (
       <div className="grid-stack-mobile">
         {realChildren.map(child => (
-          <Pane key={child.id} parentUpdate={handleChildUpdate} {...child} />
+          <Pane key={child.id} parentUpdate={handleChildUpdate} {...child} {...childProps} />
         ))}
       </div>
     );

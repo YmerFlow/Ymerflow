@@ -257,6 +257,7 @@ GPU/WebGL scientific plotting built on the `gladly-plot` npm package, with a plu
 - **Config-driven layers**: The pane's `layoutConfig` (`{ transforms, layers, axes }`) is handed to `plot.update({ data, config })`; each entry in `layers` names a registered layer type plus its parameters
 - **Dataset Integration**: `ProcessContext`'s `datasetCollection` is converted to a `DataGroup` (`dc.toDataGroup()`) for gladly's built-in resolution; custom layer types instead read raw dataset objects directly off `plot._rawData` (see the `gladly 0.0.6 DataGroup/_children Pattern` notes in project memory for why)
 - **Picking & interaction**: `plot.on('mousemove'|'click', handler)` and `plot.pick(x, y)` drive the status bar and sounding-selection logic in `PlotView`
+- **Status bar**: each PlotView draws its own readout bar only when `layoutConfig.statusBar` is `true` (off by default). Regardless of that flag, it `publishReadout({ coords })` on mousemove and `publishReadout({ pick })` on click to the shared readout store on `PlotGroupContext`; the one **workspace status bar** (`frontend/src/PlotStatusBar.jsx`, rendered under `<MainLayout />` in `App.jsx`) subscribes and shows the readout for the plot under the pointer. The store is deliberately not React state — see `frontend/src/plotReadoutStore.js` (`plotReadoutStore.test.js`) — so the many-per-second updates write `textContent` directly instead of re-rendering
 
 **Layer Type Structure:**
 
@@ -315,7 +316,7 @@ registerLayerType('FlightlinePlot', new LayerType({
 
 These are two unrelated conventions that happen to share the word "schema" — don't conflate them:
 
-- **Widget-level `get_schema(data_context)` / `get_default(data_context)`** is a generic convention any widget component can opt into (as static functions on the component, like `title`). `Pane.jsx` and `TabSet.jsx` check `Widget.get_schema` — if present, a "Configure" (gear icon) action appears in the pane menu that opens a modal rendering a JSON Schema form (`CustomForm`) built from `Widget.get_schema(data_context)`, pre-filled from `Widget.get_default(data_context)` merged with the node's current data. Submitting the form calls `parentUpdate('replace', node.id, formData)`. Among the built-in widgets, only `PlotView` currently defines `get_schema`/`get_default`.
+- **Widget-level `get_schema(data_context)` / `get_default(data_context)`** is a generic convention any widget component can opt into (as static functions on the component, like `title`). `Pane.jsx` and `TabSet.jsx` check `Widget.get_schema` — if present, a "Configure" (gear icon) action appears in the pane menu that opens a modal rendering a JSON Schema form (`CustomForm`) built from `Widget.get_schema(data_context)`, pre-filled from `Widget.get_default(data_context)` merged with the node's current data. Submitting the form calls `parentUpdate('replace', node.id, formData)`. Among the app widgets, only `PlotView` currently defines `get_schema`/`get_default`; the flexout container builtin `Grid` also defines them (for its `rows`/`cols`).
 
   `data_context` is threaded from `ProcessContext` down through `App.jsx` → `LayoutProvider` (`<LayoutProvider ... data_context={processContext}>`) → `LayoutContext`, and `Pane`/`TabSet` read it via `useContext(LayoutContext)`. So it really does carry the full `ProcessContext` value — but `PlotView.get_schema` itself does **not** walk `data_context.processes`/`versions`/`outputs` to build a dataset-name enum. It calls into `gladly-plot` directly:
 
@@ -325,6 +326,8 @@ These are two unrelated conventions that happen to share the word "schema" — d
     // combobox widgets populate options from ProcessContext at runtime.
     const rawGladlySchema = Plot.schema(null, data_context.layoutConfig);
     // ...wraps/patches rawGladlySchema for rjsf compatibility...
+    // statusBar is PlotView's own layoutConfig field (not gladly's), injected here:
+    gladlySchemaRest.properties.statusBar = { type: 'boolean', title: 'Status bar', default: false };
     return {
       type: 'object',
       properties: {
@@ -337,9 +340,17 @@ These are two unrelated conventions that happen to share the word "schema" — d
   };
 
   PlotView.get_default = () => ({
-    layoutConfig: { transforms: [], layers: [], axes: {} },
+    layoutConfig: { transforms: [], layers: [], axes: {}, statusBar: false },
   });
   ```
+
+  `statusBar` is PlotView's own field, so it is preserved across the `plot.getConfig()` write-back (gladly would otherwise drop the unknown key). Its `get_schema()` output also feeds the workspace-schema export (see below).
+
+**Workspace-layout schema export (frontend-owned):**
+
+The frontend owns the whole workspace-layout JSON Schema and builds it in one place: `frontend/src/flexout/workspaceSchema.js`. `buildWorkspaceSchema(appWidgets)` declares the generic node envelope (`id`, `widget`, `customTitle`, `compact`, `additionalProperties: false`), merges the flexout builtins (`VerticalSplit`, `HorizontalSplit`, `TabSet`, `Grid`, `Empty` — imported from `LayoutContext.jsx`) with the app's leaf widgets, and emits one `<Widget>Node` def per widget under a recursive `Node = oneOf[...]`. For the container widgets it injects `children` (recursing to `#/$defs/Node`), `globalCompact`, and each container's structural fields (`size` / `activeTab` / `colWidths` / `rowHeights`). Each widget's `get_schema()` is merged in: a schema with a `layoutConfig` property nests under `layoutConfig` (PlotView), a bare schema's properties become top-level node fields (Grid's `rows`/`cols`). A widget's own `$defs` ride along on its node def.
+
+`App.jsx` exposes `window.__ymerflow_workspace_schema = buildWorkspaceSchema(widgets)` alongside `window.__ymerflow_widgets`. `npm run export-schemas` (`frontend/scripts/export-widget-schemas.mjs`) drives the running dev server with puppeteer, reads that object, and dumps it verbatim to `backend/widget_schemas.json` (filename kept for path stability, though it now holds the full recursive schema document rather than a per-widget map). The backend MCP tools only slice this document — they never construct schema. Regenerate it whenever a widget's `get_schema()` or the node envelope changes. See `docs/plans/done/frontend-owned-workspace-schema.md`.
 
 - **Per-layer-type `schema(data)`** (see `FlightlinePlot.js` above) is a separate, unrelated convention internal to `gladly-plot`'s `LayerType` — it describes that one layer type's own parameters (e.g. `dataset`, `x_column`, `color`) and has nothing to do with `ProcessContext` or `data_context`.
 

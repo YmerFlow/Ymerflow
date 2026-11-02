@@ -1,6 +1,7 @@
 import React, { useContext, useEffect, useState, useRef, useMemo } from 'react';
 import Pane from './Pane';
 import PaneMenuDropdown from './PaneMenuDropdown';
+import PaneMenuContent from './PaneMenuContent';
 import { useDrag, useDrop } from 'react-dnd';
 import { v4 as uuidv4 } from "uuid";
 import { LayoutContext } from '../LayoutContext';
@@ -34,7 +35,7 @@ function removeTabFromTree(node, tabSetId, tabId) {
   return { ...node, children: newChildren };
 }
 
-function TabHeader({ tab, index, isActive, onActivate, onInsertBefore, onRemoveTab, onConfigure, hasConfig, onChangeWidget, onTitleChange, widgets }) {
+function TabHeader({ tab, index, isActive, onActivate, onInsertBefore, onRemoveTab, onConfigure, hasConfig, onChangeWidget, onTitleChange, onUpdateFields, widgets }) {
   const Widget = widgets[tab.widget] || (() => null);
   const title = tab.customTitle !== undefined ? tab.customTitle : Widget.title;
 
@@ -113,28 +114,15 @@ function TabHeader({ tab, index, isActive, onActivate, onInsertBefore, onRemoveT
           <i className={`fas fa-chevron-${showMenu ? 'up' : 'down'}`} />
           {isActive && showMenu && (
               <PaneMenuDropdown anchorRef={menuRef} onClose={() => setShowMenu(false)}>
-                <div className="pane-menu-actions">
-                  {hasConfig && (
-                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => { onConfigure(); setShowMenu(false); }}>
-                      <i className="fas fa-cog" />
-                    </button>
-                  )}
-                  <button type="button" className="btn btn-sm btn-danger" onClick={() => { onRemoveTab(tab.id); setShowMenu(false); }}>
-                    <i className="fas fa-times" />
-                  </button>
-                </div>
-                <div className="pane-menu-widget-list">
-                  {Object.entries(widgets).map(([name, widget]) => (
-                    <button
-                      type="button"
-                      key={name}
-                      className={tab.widget === name ? 'active' : ''}
-                      onClick={() => { onChangeWidget(name); setShowMenu(false); }}
-                    >
-                      {widget.title}
-                    </button>
-                  ))}
-                </div>
+                <PaneMenuContent
+                  node={tab}
+                  widgets={widgets}
+                  hasConfig={hasConfig}
+                  onConfigure={() => { onConfigure(); setShowMenu(false); }}
+                  onRemove={() => { onRemoveTab(tab.id); setShowMenu(false); }}
+                  onChangeWidget={(name) => { onChangeWidget(name); setShowMenu(false); }}
+                  onUpdateFields={onUpdateFields}
+                />
               </PaneMenuDropdown>
             )}
         </span>
@@ -143,7 +131,7 @@ function TabHeader({ tab, index, isActive, onActivate, onInsertBefore, onRemoveT
   );
 }
 
-export default function TabSet({ parentUpdate, ...node }) {
+export default function TabSet({ parentUpdate, inheritedCompact, inheritedGlobalCompact, ...node }) {
   const { widgets, updateLayout, data_context } = useContext(LayoutContext);
   const isMobile = useIsMobile();
   const activeTab = node.activeTab ?? node.children[0]?.id;
@@ -257,6 +245,7 @@ export default function TabSet({ parentUpdate, ...node }) {
               hasConfig={!!(W?.get_schema)}
               onChangeWidget={(name) => handleTabChangeWidget(tab, name)}
               onTitleChange={(newTitle) => handleChildUpdate('replace', tab.id, { ...tab, customTitle: newTitle })}
+              onUpdateFields={(patch) => handleChildUpdate('replace', tab.id, { ...tab, ...patch })}
               widgets={widgets}
             />
           );
@@ -272,7 +261,7 @@ export default function TabSet({ parentUpdate, ...node }) {
             className={isMobile ? '' : 'position-absolute top-0 start-0 w-100 h-100'}
             style={{ display: tab.id === activeTab ? 'block' : 'none' }}
           >
-            <Pane parentUpdate={handleChildUpdate} onTabMoved={() => removeTabFromSource(tab.id)} {...tab} hideHeader />
+            <Pane parentUpdate={handleChildUpdate} onTabMoved={() => removeTabFromSource(tab.id)} {...tab} hideHeader inheritedCompact={inheritedCompact} inheritedGlobalCompact={inheritedGlobalCompact} />
           </div>
         ))}
       </div>

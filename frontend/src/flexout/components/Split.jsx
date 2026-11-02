@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Pane from './Pane';
 import { useIsMobile } from '../../hooks/useIsMobile';
 
-export default function Split({ parentUpdate, ...node}) {
+export default function Split({ parentUpdate, inheritedCompact, inheritedGlobalCompact, ...node}) {
   const isMobile = useIsMobile();
   const [dragging, setDragging] = useState(false);
   const [dragPos, setDragPos] = useState(null);
@@ -57,20 +57,26 @@ export default function Split({ parentUpdate, ...node}) {
     };
   }, [dragging, dragPos, splitType, size, node, parentUpdate]);
 
+  const childProps = { inheritedCompact, inheritedGlobalCompact };
+
   if (isMobile) {
     return (
       <div className="split-stack-mobile">
-        <Pane parentUpdate={handleChildUpdate} {...node.children[0]} />
-        <Pane parentUpdate={handleChildUpdate} {...node.children[1]} />
+        <Pane parentUpdate={handleChildUpdate} {...node.children[0]} {...childProps} />
+        <Pane parentUpdate={handleChildUpdate} {...node.children[1]} {...childProps} />
       </div>
     );
   }
 
+  // While global compact is on, panes have no header row, so draw a 1px line down
+  // the middle of the (otherwise transparent) divider to keep neighbours distinct.
+  const dividerClass = `split-divider split-divider-${splitType}${inheritedGlobalCompact ? ' global-compact' : ''}`;
+
   return (
     <div ref={containerRef} className={`split-container split-${splitType}`}>
-      <div className="split-pane" style={{ flexBasis: `${size * 100}%`, flexShrink: 0 }}><Pane parentUpdate={handleChildUpdate} {...node.children[0]}/></div>
-      <div className={`split-divider split-divider-${splitType}`} onMouseDown={onMouseDown} />
-      <div className="split-pane" style={{ flex: 1 }}><Pane parentUpdate={handleChildUpdate} {...node.children[1]} /></div>
+      <div className="split-pane" style={{ flexBasis: `${size * 100}%`, flexShrink: 0 }}><Pane parentUpdate={handleChildUpdate} {...node.children[0]} {...childProps} /></div>
+      <div className={dividerClass} onMouseDown={onMouseDown} />
+      <div className="split-pane" style={{ flex: 1 }}><Pane parentUpdate={handleChildUpdate} {...node.children[1]} {...childProps} /></div>
     </div>
   );
 }

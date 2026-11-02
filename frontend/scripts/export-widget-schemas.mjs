@@ -12,22 +12,18 @@ page.on('pageerror', () => {})
 
 await page.goto('http://localhost:3000', { waitUntil: 'networkidle0' })
 
-const schemas = await page.evaluate(() => {
-  const widgets = window.__ymerflow_widgets
-  if (!widgets) throw new Error('__ymerflow_widgets not found — is the dev server running?')
-  const result = {}
-  for (const [name, Widget] of Object.entries(widgets)) {
-    result[name] = {
-      title: Widget.title ?? name,
-      schema: Widget.get_schema ? Widget.get_schema({}) : null,
-      default: Widget.get_default ? Widget.get_default({}) : null,
-    }
-  }
-  return result
+// The frontend owns the workspace-layout schema and builds it whole — one full recursive
+// JSON Schema document for the entire layout tree (see flexout/workspaceSchema.js). We just
+// dump it; the backend MCP tools slice it. Filename stays widget_schemas.json for historical
+// path stability even though it now holds the full workspace schema.
+const schema = await page.evaluate(() => {
+  const doc = window.__ymerflow_workspace_schema
+  if (!doc) throw new Error('__ymerflow_workspace_schema not found — is the dev server running?')
+  return doc
 })
 
 await browser.close()
 
 const outPath = resolve(__dirname, '../../backend/widget_schemas.json')
-writeFileSync(outPath, JSON.stringify(schemas, null, 2))
+writeFileSync(outPath, JSON.stringify(schema, null, 2))
 console.log(`Written to ${outPath}`)
