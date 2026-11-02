@@ -228,9 +228,10 @@ Companion control panel for bulk-editing per-sounding, per-gate "in use" flags o
 
 **Features:**
 - Enable/Disable/Clear action modes, selectable via buttons or keyboard shortcuts (E/D/C)
-- Undo last edit (Ctrl+Z) and save all pending in-memory diffs back to the datasets
-- Shows aggregate stats (gate-sounding pairs edited, across how many datasets)
-- Reads/writes edit state via `ProcessContext`'s `inMemoryDiffs`, `inUseAction`, `undoLastEdit`, `saveAllDiffs`
+- Undo last edit (Ctrl+Z) and save the changed in-memory edits back to the processes that made the datasets (see [Saving edits](#saving-edits))
+- Shows aggregate stats (gate-sounding pairs edited, across how many datasets), counting edits loaded from save points
+- Save is enabled only when an edit changed since it loaded, or was made from scratch
+- Reads/writes edit state via `ProcessContext`'s `inMemoryDiffs`, `inMemoryDiffDirty`, `inUseAction`, `undoLastEdit`, `saveAllDiffs`
 
 **Implementation:** See `frontend/src/widgets/InUseEditor.jsx`.
 
@@ -406,6 +407,17 @@ Put each editing layer in its own pane. The layers in one pane share its selecti
 ```
 
 PlotViews in one workspace link axes of the same quantity kind, so zooming along `xdist` in one pane moves the other. The section's y axis comes out reversed so that early gates are at the top; to set its range by hand, give `min` the late gate and `max` the early one.
+
+#### Saving edits
+
+Edits are saved on the process version that made the edited dataset, as a new version of that process that replays them. Where they go depends on the dataset:
+
+- A pipeline's save point. A `process_tem` (emerald) or `yf_process_tem` (ymerflow) pipeline can carry `save_intermediate_and_apply_diff` steps. Each one writes the data as the steps above it left it, under its `name`, and replays one edit, its `diff` URL, against that state. When an editing layer plots a save point's output, PlotView calls `ensureSavePointEditLoaded` with the layer's dataset path, and the step's `diff` is loaded into the in-memory edit for that path. The output is the state before the edit and the edit is drawn on top of it, so the plot shows the edited data and the person changes the edit in place. Save replaces the step's `diff` with the whole edited state, or sets it to `null` if the person emptied it. The step is matched by its args, a `name` equal to the dataset name and a `diff` field, never by its key, which differs between the two libraries.
+- A process-level `diff` list (`apply_manual_edits`). Each Save appends one URL, holding only that round's edits.
+
+Any other output cannot be edited: Save refuses it before uploading, since the re-run would drop the edits. That includes a pipeline's bare final output, which is the state after its edits; a pipeline keeps its final output editable by ending with a save point.
+
+Save writes only edits that changed since they loaded (or were made from scratch): a save point that was opened but not edited is not uploaded again, and its step keeps its `diff` URL. All changed datasets of one process version go into one new version, so editing two save points of a pipeline and saving re-runs it once with both steps' `diff`s replaced. A save point whose saved edit is still loading, or failed to load, cannot be saved, since the save would replace the saved edit with only the new one. The helpers are `saveIntermediateStep`, `diffFromColumns` and `editedParameters` in `frontend/src/datamodel/inUseDiffs.js`; the loop is `saveAllDiffs` in `frontend/src/ProcessContext.jsx`.
 
 ## Widget State Management
 
