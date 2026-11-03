@@ -19,15 +19,18 @@ const PLOT_MARGIN = { top: 50, right: 80, bottom: 60, left: 80 };
 // Layer types that edit in-use flags with the InUse Editor's lasso.
 const IN_USE_LAYER_TYPES = ['ChannelPlot', 'GateAnomalyPlot'];
 
-export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...rest }) {
+// inheritedCompact / inheritedGlobalCompact are flexout header-mode props Pane passes
+// to every widget; PlotView ignores them but must destructure them out so they never
+// leak into `...rest` and get persisted into the saved layout node by the write-back below.
+export default function PlotView({ layoutConfig, parentUpdate, id, widget, inheritedCompact, inheritedGlobalCompact, ...rest }) {
   const isMobile = useIsMobile();
   const { fetchedData, datasetsLoading, dataLoading, currentSounding, setCurrentSounding, datasetCollection, processes,
-    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject, currentPart } = useContext(ProcessContext);
+    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject, currentPart, ensureSavePointEditLoaded } = useContext(ProcessContext);
 
   // Map of pinnedDataKey → { dsPath, line, dsObj, rawData } (or { dsPath, line, message } when
   // there is no part to show) for non-current process datasets; see pinnedDatasets.js.
   const [lazilyLoadedData, setLazilyLoadedData] = useState(new Map());
-  const { addPlot, removePlot } = useContext(PlotGroupContext);
+  const { addPlot, removePlot, publishReadout } = useContext(PlotGroupContext);
 
   const containerRef          = useRef(null);
   const plotRef               = useRef(null);
@@ -75,6 +78,17 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
       (key, entry) => setLazilyLoadedData(prev => new Map(prev).set(key, entry)));
   }, [config, processes, currentProject, followed]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // An editing layer on a save point shows, and edits, the edit saved on it: load it into
+  // the editor under the layer's own dataset path, the key its overlay reads.
+  useEffect(() => {
+    for (const spec of config?.layers ?? []) {
+      const [type, params] = Object.entries(spec ?? {}).find(([, v]) => v != null) ?? [];
+      if (IN_USE_LAYER_TYPES.includes(type) && params?.inUseMode && params.dataset) {
+        ensureSavePointEditLoaded(params.dataset);
+      }
+    }
+  }, [config, ensureSavePointEditLoaded]);
+
   // Create / destroy the Plot instance and register gladly event handlers.
   useEffect(() => {
     const container = containerRef.current;
@@ -83,15 +97,16 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
     plotRef.current = plot;
     addPlot(id, plot);
 
-    // Show data-space coordinates on the left of the status bar on mousemove.
+    // Show data-space coordinates on mousemove — in this plot's own bar (when shown)
+    // and in the shared workspace status bar.
     const moveHandle = plot.on('mousemove', (e, coords) => {
-      const bar = statusCoordsRef.current;
-      if (!bar) return;
       // Show only quantity-kind keys (skip axis-name duplicates like xaxis_bottom).
       const parts = Object.entries(coords)
         .filter(([k]) => !k.startsWith('xaxis_') && !k.startsWith('yaxis_'))
         .map(([k, v]) => `${k}: ${Number(v).toPrecision(5)}`);
-      bar.textContent = parts.join('   ');
+      const text = parts.join('   ');
+      if (statusCoordsRef.current) statusCoordsRef.current.textContent = text;
+      publishReadout({ coords: text });
     });
 
     // On click: GPU-pick the nearest point, update status bar, and set current sounding.
@@ -108,24 +123,23 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
         return;
       }
 
-      // Update right side of status bar with the picked point's raw attributes.
-      const pickBar = statusPickRef.current;
-      if (pickBar) {
-        if (result) {
-          const { configLayerIndex, tile, index, layer } = result;
-          const isInstanced = layer.instanceCount !== null;
-          const row = Object.fromEntries(
-            Object.entries(layer.attributes)
-              .filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1)
-              .map(([k, v]) => [k, Number(Array.isArray(v) ? v[tile]?.[index] : v[index]).toPrecision(5)])
-          );
-          pickBar.textContent =
-            `layer ${configLayerIndex}  tile ${tile}  pt ${index}  ` +
-            Object.entries(row).map(([k, v]) => `${k}=${v}`).join('  ');
-        } else {
-          pickBar.textContent = '';
-        }
+      // Update the picked-point readout — in this plot's own bar (when shown) and in
+      // the shared workspace status bar — with the picked point's raw attributes.
+      let pickText = '';
+      if (result) {
+        const { configLayerIndex, tile, index, layer } = result;
+        const isInstanced = layer.instanceCount !== null;
+        const row = Object.fromEntries(
+          Object.entries(layer.attributes)
+            .filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1)
+            .map(([k, v]) => [k, Number(Array.isArray(v) ? v[tile]?.[index] : v[index]).toPrecision(5)])
+        );
+        pickText =
+          `layer ${configLayerIndex}  tile ${tile}  pt ${index}  ` +
+          Object.entries(row).map(([k, v]) => `${k}=${v}`).join('  ');
       }
+      if (statusPickRef.current) statusPickRef.current.textContent = pickText;
+      publishReadout({ pick: pickText });
 
       // --- Sounding selection ---
       // On xdist-axis plots (ChannelPlot, ResistivityCurtain, etc.) always select by
@@ -305,7 +319,10 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
       if (cancelled) return;
       // Propagate the defaults-populated config back to the layout system so
       // axes, colorscales, etc. are visible in the config editor.
-      const fullConfig = plot.getConfig();
+      // statusBar is our own layoutConfig field, not part of gladly's config; preserve
+      // it across the getConfig() round-trip so toggling it isn't dropped on next update.
+      const fullConfig = { ...plot.getConfig() };
+      if (sanitizedConfig.statusBar !== undefined) fullConfig.statusBar = sanitizedConfig.statusBar;
       const fullConfigJson = JSON.stringify(fullConfig);
       if (fullConfigJson !== lastSavedRef.current && parentUpdateRef.current && id) {
         lastSavedRef.current = fullConfigJson;
@@ -336,20 +353,22 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, ...re
           </div>
         )}
       </div>
-      <div style={{
-        display: 'flex',
-        fontSize: '12px',
-        fontFamily: 'monospace',
-        background: '#f8f9fa',
-        borderTop: '1px solid #dee2e6',
-        flexShrink: 0,
-        minHeight: '20px',
-        color: '#495057',
-        overflow: 'hidden',
-      }}>
-        <div ref={statusCoordsRef} style={{ flex: '0 1 auto', padding: '2px 8px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }} />
-        <div ref={statusPickRef}   style={{ flex: '1 1 0', padding: '2px 8px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', textAlign: 'right', borderLeft: '1px solid #dee2e6' }} />
-      </div>
+      {config.statusBar && (
+        <div style={{
+          display: 'flex',
+          fontSize: '12px',
+          fontFamily: 'monospace',
+          background: '#f8f9fa',
+          borderTop: '1px solid #dee2e6',
+          flexShrink: 0,
+          minHeight: '20px',
+          color: '#495057',
+          overflow: 'hidden',
+        }}>
+          <div ref={statusCoordsRef} style={{ flex: '0 1 auto', padding: '2px 8px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }} />
+          <div ref={statusPickRef}   style={{ flex: '1 1 0', padding: '2px 8px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', textAlign: 'right', borderLeft: '1px solid #dee2e6' }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -425,6 +444,18 @@ PlotView.get_schema = (data_context = {}) => {
   // Hoist its $defs to the root of our wrapper schema so they resolve correctly.
   const { $defs: gladlyDefs, ...gladlySchemaRest } = gladlySchema ?? {};
 
+  // statusBar is our own layoutConfig field (not gladly's): show this plot's own
+  // status bar. Off by default — the workspace-wide status bar covers the readout.
+  gladlySchemaRest.properties = {
+    ...gladlySchemaRest.properties,
+    statusBar: {
+      type: 'boolean',
+      title: 'Status bar',
+      description: "Show this plot's own status bar (off by default; the workspace status bar shows the readout for the plot under the pointer).",
+      default: false,
+    },
+  };
+
   return {
     type: 'object',
     ...(gladlyDefs ? { $defs: gladlyDefs } : {}),
@@ -438,5 +469,5 @@ PlotView.get_schema = (data_context = {}) => {
 };
 
 PlotView.get_default = () => ({
-  layoutConfig: { transforms: [], layers: [], axes: {} },
+  layoutConfig: { transforms: [], layers: [], axes: {}, statusBar: false },
 });

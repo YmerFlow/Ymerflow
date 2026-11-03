@@ -112,6 +112,28 @@ Use dropdown in pane header to switch widget (e.g., PlotView → EnvironmentView
 
 Click **×** button in pane header.
 
+#### Compact Headers
+
+Each pane's chevron menu has a **Compact** checkbox. Tick it and that pane drops its header
+row: a single small chevron appears in the pane's top-right corner instead, overlaying the
+content so the widget gets the full height. Click the corner chevron to open the same menu
+(now with the title and rename at the top); drag it to move the pane. The setting is inherited
+by the panes inside a split, grid or tab, so ticking it on a container compacts everything in
+it; a pane inside can untick its own box to keep its header.
+
+The **root** pane's menu also has a **Compact all panes** checkbox. Turn it on to compact the
+whole workspace at once — useful for a display or editing layout that should open showing
+nothing but data and the corner chevrons. It is saved with the workspace, so it opens compact
+for everyone (including read-only publication viewers). Untick it to go back to each pane's own
+setting. (Compact is always off on phones, where panes are stacked and the headers tell them
+apart.)
+
+#### Status Bar
+
+A status bar along the bottom of the workspace shows the cursor coordinates of whichever plot
+the pointer is over, and the last point you clicked in any plot. A plot can also show its own
+status bar underneath it — turn on **Status bar** in that PlotView's Configure form.
+
 #### Workspaces - Saving and Sharing Layouts
 
 A pane layout can be saved as a named **workspace** so you and your collaborators can return to

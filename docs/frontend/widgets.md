@@ -228,9 +228,10 @@ Companion control panel for bulk-editing per-sounding, per-gate "in use" flags o
 
 **Features:**
 - Enable/Disable/Clear action modes, selectable via buttons or keyboard shortcuts (E/D/C)
-- Undo last edit (Ctrl+Z) and save all pending in-memory diffs back to the datasets
-- Shows aggregate stats (gate-sounding pairs edited, across how many datasets)
-- Reads/writes edit state via `ProcessContext`'s `inMemoryDiffs`, `inUseAction`, `undoLastEdit`, `saveAllDiffs`
+- Undo last edit (Ctrl+Z) and save the changed in-memory edits back to the processes that made the datasets (see [Saving edits](#saving-edits))
+- Shows aggregate stats (gate-sounding pairs edited, across how many datasets), counting edits loaded from save points
+- Save is enabled only when an edit changed since it loaded, or was made from scratch
+- Reads/writes edit state via `ProcessContext`'s `inMemoryDiffs`, `inMemoryDiffDirty`, `inUseAction`, `undoLastEdit`, `saveAllDiffs`
 
 **Implementation:** See `frontend/src/widgets/InUseEditor.jsx`.
 
@@ -258,6 +259,7 @@ GPU/WebGL scientific plotting built on the `gladly-plot` npm package, with a plu
 - **Pinned datasets**: a layer parameter `<processName>.<version>.<datasetName>[@<part>][.<column>]` pins an output of another process version beside the `current.*` ones, which are the active process's data for the part selected in the top bar. A pinned dataset's parts are not the active process's, so parts are never matched by name. By default a pinned path follows the selected line: it shows the pinned dataset's part whose `Line` value (read from the parts' statistics sidecars) equals the selected part's `Line` value, and with `all` selected it shows every part. If no part has that line, the pane draws nothing for that dataset and says so in a banner. A path can instead name a fixed part, e.g. `averaged.2.processed_data@1070`, which stays put whatever is selected. Part names in paths are encoded like process and dataset names (a `.` becomes `,`). See `frontend/src/widgets/PlotView/pinnedDatasets.js`
 - **Selected sounding in pinned datasets**: the selected sounding is a row of the current dataset. Layers that mark or plot it (SoundingMarker, SoundingPlot, SoundingResistivityPlot, the ResistivityCurtain marker) find the matching row of a pinned dataset by line and `gtime`: the same line, nearest `gtime`. Row numbers do not carry over, because averaging and culling change the rows, and `gtime` alone is not enough, because it is seconds of day and repeats on lines flown on different days. A click in a pinned pane is matched back the same way. With no matching row (another line, or no line or `gtime` column) the marker is not drawn. See `frontend/src/widgets/PlotView/soundingMatch.js`
 - **Picking & interaction**: `plot.on('mousemove'|'click', handler)` and `plot.pick(x, y)` drive the status bar and sounding-selection logic in `PlotView`
+- **Status bar**: each PlotView draws its own readout bar only when `layoutConfig.statusBar` is `true` (off by default). Regardless of that flag, it `publishReadout({ coords })` on mousemove and `publishReadout({ pick })` on click to the shared readout store on `PlotGroupContext`; the one **workspace status bar** (`frontend/src/PlotStatusBar.jsx`, rendered under `<MainLayout />` in `App.jsx`) subscribes and shows the readout for the plot under the pointer. The store is deliberately not React state — see `frontend/src/plotReadoutStore.js` (`plotReadoutStore.test.js`) — so the many-per-second updates write `textContent` directly instead of re-rendering
 
 **Layer Type Structure:**
 
@@ -316,7 +318,7 @@ registerLayerType('FlightlinePlot', new LayerType({
 
 These are two unrelated conventions that happen to share the word "schema" — don't conflate them:
 
-- **Widget-level `get_schema(data_context)` / `get_default(data_context)`** is a generic convention any widget component can opt into (as static functions on the component, like `title`). `Pane.jsx` and `TabSet.jsx` check `Widget.get_schema` — if present, a "Configure" (gear icon) action appears in the pane menu that opens a modal rendering a JSON Schema form (`CustomForm`) built from `Widget.get_schema(data_context)`, pre-filled from `Widget.get_default(data_context)` merged with the node's current data. Submitting the form calls `parentUpdate('replace', node.id, formData)`. Among the built-in widgets, only `PlotView` currently defines `get_schema`/`get_default`.
+- **Widget-level `get_schema(data_context)` / `get_default(data_context)`** is a generic convention any widget component can opt into (as static functions on the component, like `title`). `Pane.jsx` and `TabSet.jsx` check `Widget.get_schema` — if present, a "Configure" (gear icon) action appears in the pane menu that opens a modal rendering a JSON Schema form (`CustomForm`) built from `Widget.get_schema(data_context)`, pre-filled from `Widget.get_default(data_context)` merged with the node's current data. Submitting the form calls `parentUpdate('replace', node.id, formData)`. Among the app widgets, only `PlotView` currently defines `get_schema`/`get_default`; the flexout container builtin `Grid` also defines them (for its `rows`/`cols`).
 
   `data_context` is threaded from `ProcessContext` down through `App.jsx` → `LayoutProvider` (`<LayoutProvider ... data_context={processContext}>`) → `LayoutContext`, and `Pane`/`TabSet` read it via `useContext(LayoutContext)`. So it really does carry the full `ProcessContext` value — but `PlotView.get_schema` itself does **not** walk `data_context.processes`/`versions`/`outputs` to build a dataset-name enum. It calls into `gladly-plot` directly:
 
@@ -326,6 +328,8 @@ These are two unrelated conventions that happen to share the word "schema" — d
     // combobox widgets populate options from ProcessContext at runtime.
     const rawGladlySchema = Plot.schema(null, data_context.layoutConfig);
     // ...wraps/patches rawGladlySchema for rjsf compatibility...
+    // statusBar is PlotView's own layoutConfig field (not gladly's), injected here:
+    gladlySchemaRest.properties.statusBar = { type: 'boolean', title: 'Status bar', default: false };
     return {
       type: 'object',
       properties: {
@@ -338,9 +342,17 @@ These are two unrelated conventions that happen to share the word "schema" — d
   };
 
   PlotView.get_default = () => ({
-    layoutConfig: { transforms: [], layers: [], axes: {} },
+    layoutConfig: { transforms: [], layers: [], axes: {}, statusBar: false },
   });
   ```
+
+  `statusBar` is PlotView's own field, so it is preserved across the `plot.getConfig()` write-back (gladly would otherwise drop the unknown key). Its `get_schema()` output also feeds the workspace-schema export (see below).
+
+**Workspace-layout schema export (frontend-owned):**
+
+The frontend owns the whole workspace-layout JSON Schema and builds it in one place: `frontend/src/flexout/workspaceSchema.js`. `buildWorkspaceSchema(appWidgets)` declares the generic node envelope (`id`, `widget`, `customTitle`, `compact`, `additionalProperties: false`), merges the flexout builtins (`VerticalSplit`, `HorizontalSplit`, `TabSet`, `Grid`, `Empty` — imported from `LayoutContext.jsx`) with the app's leaf widgets, and emits one `<Widget>Node` def per widget under a recursive `Node = oneOf[...]`. For the container widgets it injects `children` (recursing to `#/$defs/Node`), `globalCompact`, and each container's structural fields (`size` / `activeTab` / `colWidths` / `rowHeights`). Each widget's `get_schema()` is merged in: a schema with a `layoutConfig` property nests under `layoutConfig` (PlotView), a bare schema's properties become top-level node fields (Grid's `rows`/`cols`). A widget's own `$defs` ride along on its node def.
+
+`App.jsx` exposes `window.__ymerflow_workspace_schema = buildWorkspaceSchema(widgets)` alongside `window.__ymerflow_widgets`. `npm run export-schemas` (`frontend/scripts/export-widget-schemas.mjs`) drives the running dev server with puppeteer, reads that object, and dumps it verbatim to `backend/widget_schemas.json` (filename kept for path stability, though it now holds the full recursive schema document rather than a per-widget map). The backend MCP tools only slice this document — they never construct schema. Regenerate it whenever a widget's `get_schema()` or the node envelope changes. See `docs/plans/done/frontend-owned-workspace-schema.md`.
 
 - **Per-layer-type `schema(data)`** (see `FlightlinePlot.js` above) is a separate, unrelated convention internal to `gladly-plot`'s `LayerType` — it describes that one layer type's own parameters (e.g. `dataset`, `x_column`, `color`) and has nothing to do with `ProcessContext` or `data_context`.
 
@@ -397,6 +409,17 @@ Put each editing layer in its own pane. The layers in one pane share its selecti
 ```
 
 PlotViews in one workspace link axes of the same quantity kind, so zooming along `xdist` in one pane moves the other. The section's y axis comes out reversed so that early gates are at the top; to set its range by hand, give `min` the late gate and `max` the early one.
+
+#### Saving edits
+
+Edits are saved on the process version that made the edited dataset, as a new version of that process that replays them. Where they go depends on the dataset:
+
+- A pipeline's save point. A `process_tem` (emerald) or `yf_process_tem` (ymerflow) pipeline can carry `save_intermediate_and_apply_diff` steps. Each one writes the data as the steps above it left it, under its `name`, and replays one edit, its `diff` URL, against that state. When an editing layer plots a save point's output, PlotView calls `ensureSavePointEditLoaded` with the layer's dataset path, and the step's `diff` is loaded into the in-memory edit for that path. The output is the state before the edit and the edit is drawn on top of it, so the plot shows the edited data and the person changes the edit in place. Save replaces the step's `diff` with the whole edited state, or sets it to `null` if the person emptied it. The step is matched by its args, a `name` equal to the dataset name and a `diff` field, never by its key, which differs between the two libraries.
+- A process-level `diff` list (`apply_manual_edits`). Each Save appends one URL, holding only that round's edits.
+
+Any other output cannot be edited: Save refuses it before uploading, since the re-run would drop the edits. That includes a pipeline's bare final output, which is the state after its edits; a pipeline keeps its final output editable by ending with a save point.
+
+Save writes only edits that changed since they loaded (or were made from scratch): a save point that was opened but not edited is not uploaded again, and its step keeps its `diff` URL. All changed datasets of one process version go into one new version, so editing two save points of a pipeline and saving re-runs it once with both steps' `diff`s replaced. A save point whose saved edit is still loading, or failed to load, cannot be saved, since the save would replace the saved edit with only the new one. The helpers are `saveIntermediateStep`, `diffFromColumns` and `editedParameters` in `frontend/src/datamodel/inUseDiffs.js`; the loop is `saveAllDiffs` in `frontend/src/ProcessContext.jsx`.
 
 ## Widget State Management
 
