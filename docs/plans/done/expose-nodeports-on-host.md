@@ -164,7 +164,7 @@ services already require auth over TLS by the time they're exposed.
 
 - Fresh `runall` (accepts the one-time silent recreate). `docker port minikube` then shows
   `0.0.0.0:30080`, `0.0.0.0:30500`, `0.0.0.0:9000`, `0.0.0.0:9001` bound; no `socat` process runs.
-- From **another LAN machine** (`192.168.1.x`) — services are HTTPS + authenticated (prerequisite):
+- From **another LAN machine** (`192.168.0.x`) — services are HTTPS + authenticated (prerequisite):
   - `curl http://192.168.0.2:30080/` reaches the app (and `/api` reaches the backend). The frontend
     stays plain HTTP from nginx (TLS, if any, terminated upstream — unchanged by this plan).
   - `curl -k -u "$REGISTRY_USER:$REGISTRY_PASSWORD" https://192.168.0.2:30500/v2/` returns `{}`;
