@@ -44,7 +44,7 @@ const RAW_DATA = {
   _currentSounding: 7,
   _currentFlightlines: RAW,
   current: { data: { flightlines: RAW } },
-  averaged: { 2: { 'data@1070': { flightlines: AVG_1070 } } },
+  averaged: { 2: { data: { 1070: { flightlines: AVG_1070 } } } },
 };
 
 describe('soundingIndex / currentSoundingFrom', () => {
@@ -54,11 +54,11 @@ describe('soundingIndex / currentSoundingFrom', () => {
   });
 
   it('matches pinned datasets by line and gtime, both ways', () => {
-    expect(soundingIndex(RAW_DATA, 'averaged.2.data@1070')).toBe(0);            // 1070 at 100.2 → 100.1
-    expect(currentSoundingFrom(RAW_DATA, 'averaged.2.data@1070', 1)).toBe(9);   // 1070 at 100.4
+    expect(soundingIndex(RAW_DATA, 'averaged.2.data.1070')).toBe(0);            // 1070 at 100.2 → 100.1
+    expect(currentSoundingFrom(RAW_DATA, 'averaged.2.data.1070', 1)).toBe(9);   // 1070 at 100.4
   });
 
   it('is null for a pinned dataset with no matching sounding', () => {
-    expect(soundingIndex({ ...RAW_DATA, _currentSounding: 2 }, 'averaged.2.data@1070')).toBeNull();
+    expect(soundingIndex({ ...RAW_DATA, _currentSounding: 2 }, 'averaged.2.data.1070')).toBeNull();
   });
 });

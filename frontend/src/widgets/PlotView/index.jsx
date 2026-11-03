@@ -6,7 +6,7 @@ import { registerQuantityKinds } from './quantityKinds';
 import { encodeSeg } from '../../datamodel/datasetPath';
 import { getKeys, resolveDataPath } from './colorUtils.js';
 import { cellEditEntries, segmentEditEntries } from './inUseEdits.js';
-import { followsLine, loadPinnedData, pinnedEntries, selectedLine } from './pinnedDatasets.js';
+import { addPinnedData, loadPinnedData, pinnedEntries } from './pinnedDatasets.js';
 import { currentSoundingFrom } from './soundingMatch.js';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import './elements/index.js';
@@ -27,8 +27,8 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
   const { fetchedData, datasetsLoading, dataLoading, currentSounding, setCurrentSounding, datasetCollection, processes,
     inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject, currentPart, ensureSavePointEditLoaded } = useContext(ProcessContext);
 
-  // Map of pinnedDataKey → { dsPath, line, dsObj, rawData } (or { dsPath, line, message } when
-  // there is no part to show) for non-current process datasets; see pinnedDatasets.js.
+  // Map of key → { path, part, dsObj, rawData } (or { path, part, message } when there is no
+  // part to show) for non-current process datasets; see pinnedDatasets.js.
   const [lazilyLoadedData, setLazilyLoadedData] = useState(new Map());
   const { addPlot, removePlot, publishReadout } = useContext(PlotGroupContext);
 
@@ -55,28 +55,23 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     [layoutConfig],
   );
 
-  // The current dataset the selected sounding indexes, and the line pinned panels follow.
+  // The current dataset the selected sounding indexes; pinned layers match its row by line and gtime.
   const currentFlightlines = useMemo(
     () => Object.values(fetchedData || {}).find(d => d?.flightlines)?.flightlines,
     [fetchedData],
   );
-  const followed = useMemo(
-    () => (dataLoading ? undefined : selectedLine(currentPart, currentFlightlines)),
-    [dataLoading, currentPart, currentFlightlines],
-  );
   const pinnedMessages = useMemo(
-    () => [followsLine(config?.layers) && followed?.error,
-      ...pinnedEntries(lazilyLoadedData, followed?.line).map(e => e.message)].filter(Boolean),
-    [config, followed, lazilyLoadedData],
+    () => pinnedEntries(lazilyLoadedData, currentPart).map(e => e.message).filter(Boolean),
+    [lazilyLoadedData, currentPart],
   );
 
   // Scan layer parameters for non-current dataset paths and lazily load their data: the part
-  // each path names, or the part with the followed line (see pinnedDatasets.js).
+  // each path names, or the part with the selected part's name (see pinnedDatasets.js).
   useEffect(() => {
     if (!config?.layers || !processes?.length) return;
-    loadPinnedData(config.layers, processes, currentProject, followed?.line, lazilyLoadedData,
+    loadPinnedData(config.layers, processes, currentProject, currentPart, lazilyLoadedData,
       (key, entry) => setLazilyLoadedData(prev => new Map(prev).set(key, entry)));
-  }, [config, processes, currentProject, followed]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, processes, currentProject, currentPart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // An editing layer on a save point shows, and edits, the edit saved on it: load it into
   // the editor under the layer's own dataset path, the key its overlay reads.
@@ -288,20 +283,8 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
       _inMemoryDiffs: inMemoryDiffs,
     });
 
-    // Merge lazily loaded non-current datasets, for the followed line:
-    // - raw data as own properties so custom layers can access via resolveDataPath
-    // - Dataset wrapper in _children chain so DataGroup.getQuantityKind can traverse them
-    for (const { dsPath, dsObj, rawData } of pinnedEntries(lazilyLoadedData, followed?.line)) {
-      if (!dsObj) continue;   // no part to show: the panel says why
-      const [procName, ver, dsName] = dsPath.split('.');
-      dataForPlot[procName] ??= {};
-      dataForPlot[procName][ver] ??= {};
-      dataForPlot[procName][ver][dsName] = rawData;
-      if (!dataForPlot._children[procName]) dataForPlot._children[procName] = new DataGroup({});
-      const procGroup = dataForPlot._children[procName];
-      if (!procGroup._children[ver]) procGroup._children[ver] = new DataGroup({});
-      procGroup._children[ver]._children[dsName] = dsObj;
-    }
+    // Merge lazily loaded non-current datasets for the selected part (see addPinnedData).
+    addPinnedData(dataForPlot, pinnedEntries(lazilyLoadedData, currentPart));
 
     // When only data/sounding changed (prop config is unchanged), pass gladly's current
     // config back to plot.update() so the user's pan/zoom state is preserved.
@@ -330,7 +313,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
       }
     });
     return () => { cancelled = true; };
-  }, [config, fetchedData, datasetCollection, currentSounding, datasetsLoading, dataLoading, lazilyLoadedData, inMemoryDiffs, followed]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, fetchedData, datasetCollection, currentSounding, datasetsLoading, dataLoading, lazilyLoadedData, inMemoryDiffs, currentPart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={isMobile ? 'd-flex flex-column' : 'h-100 d-flex flex-column'}

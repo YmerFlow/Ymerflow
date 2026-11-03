@@ -9,8 +9,8 @@ const LINE_COLUMNS = ['title', 'Line', 'line', 'line_id', 'line_no']
   .flatMap(n => [n, n.toLowerCase(), n.toUpperCase(), n[0].toUpperCase() + n.slice(1).toLowerCase()]);
 const TIME_COLUMN = 'gtime';
 
-// The name of the line-id column in flightlines (or a stats sidecar's flightlines), if any.
-export const lineColumn = fl => LINE_COLUMNS.find(c => fl?.[c] !== undefined);
+// The name of the line-id column in flightlines, if any.
+const lineColumn = fl => LINE_COLUMNS.find(c => fl?.[c] !== undefined);
 
 // Row of flightlines `to` that matches row `i` of flightlines `from`: the same line, nearest gtime.
 // null when there is none, or when either side has no line or gtime column.
