@@ -19,10 +19,20 @@ A dataset is already fragmented on disk: its `parts` (for AEM, one per
 flightline). A **fragmentable process** runs per part — one **version fragment**
 per part — which buys two things:
 
-- **parallelism** — all fragments run at once (the win for inversion, which must
-  be cut up to be tractable at all);
+- **parallelism** — all fragments can run at once (the win for inversion, which
+  must be cut up to be tractable at all);
 - **reuse** — on a re-run, only the fragments whose input actually changed
   recompute; the rest are linked, not copied (the win for fast iteration).
+
+Crucially, fan-out granularity (one fragment per part, for reuse) is **decoupled**
+from execution concurrency. The user supplies a **`parallelism`** value in the
+process's resource request — the number of pods to spread the run across — and the
+coordinator **batches** the fragments that must run into that many pods, each pod
+running its fragments **sequentially**. So a 200-flightline survey can run as 200
+pods on a wide cluster or a handful of fat looping pods on a narrow one, without
+changing the part structure or the reuse behaviour. Pod size (CPU/memory) is set
+separately and is unaffected by batching, since sequential execution means a pod's
+peak footprint is a single fragment.
 
 Fragment output is **rootless** (parts, no whole-survey file), so a one-line edit
 never pays a whole-survey cost. Whole-survey views are assembled on demand by
@@ -46,15 +56,17 @@ SCI inversion (spatial):
 ```
 
 A non-fragmented process is the degenerate case: one version fragment over the
-whole dataset (the root part), producing a normal rooted dataset — today's
-behaviour, unchanged.
+whole dataset (the root part), in a single batch (one pod, `parallelism = 1`),
+producing a normal rooted dataset — today's behaviour, unchanged.
 
 ## The documents, in reading order
 
 1. [`version-fragments.md`](./version-fragments.md) — the execution model: the
-   `VersionFragment` unit, fan-out over parts, one Kubernetes Job per fragment
-   (Kueue-parallelised), rootless output assembled by a recursive `info.json`
-   merge, derived version state, failure-as-new-version. The foundation the rest
+   `VersionFragment` unit (identity/reuse) vs the **batch** (execution), the
+   user-set `parallelism` knob that packs fragments into a bounded number of
+   sequential-looping pods (Kueue-parallelised), fan-out over parts, rootless
+   output assembled by a recursive `info.json` merge, artifact-derived fragment
+   state, per-batch billing, failure-as-new-version. The foundation the rest
    builds on.
 2. [`reuse.md`](./reuse.md) — which fragments run vs link: URL-identity change
    detection, the `rerun(F)` rule, the union fragment universe, link-don't-copy.

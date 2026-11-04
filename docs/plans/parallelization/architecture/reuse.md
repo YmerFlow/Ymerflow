@@ -17,11 +17,16 @@ own files. See `docs/architecture/storage.md` and
 `deps/aem-processes/aem_processes/dataset_utils.py`.
 
 A **fragmentable process** runs per part rather than per whole dataset. Its
-version fans out into one **version fragment** (the run unit; see the
-version-fragment execution model) per part; version fragments run independently
-(in parallel, and reusing unchanged results across re-runs). A part, and — for
-AEM — a flightline, are the same thing; a version fragment is the run that
-produces one part.
+version fans out into one **version fragment** (the unit of identity and reuse;
+see the version-fragment execution model) per part; fragments reuse unchanged
+results across re-runs. A part, and — for AEM — a flightline, are the same thing;
+a version fragment is what produces one part.
+
+Reuse operates purely at the fragment level and is **orthogonal to execution
+batching**: whether the runnable fragments are spread over many pods or packed
+into a few sequential-looping pods (the `parallelism` knob; see the execution
+model) changes nothing here. Reuse decides *which* fragments run; batching only
+decides *how many pods* they run on. This document is only about the former.
 
 The goal of reuse: when the user changes one thing (e.g. edits two flightlines),
 only the affected fragments recompute; the rest are **linked, not copied** — the
