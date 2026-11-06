@@ -28,7 +28,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
 
   // Map of "procName.version.dsName" → raw data object for non-current process datasets
   const [lazilyLoadedData, setLazilyLoadedData] = useState(new Map());
-  const { addPlot, removePlot, publishReadout } = useContext(PlotGroupContext);
+  const { addPlot, removePlot, saveAllPlots, configSaved, publishReadout } = useContext(PlotGroupContext);
 
   const containerRef          = useRef(null);
   const plotRef               = useRef(null);
@@ -41,8 +41,29 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
   const applyInMemoryEditRef  = useRef(applyInMemoryEdit);
   const lastSavedRef          = useRef(null);      // JSON of last config we sent via parentUpdate
   const lastPropConfigRef     = useRef(null);      // JSON of last prop config passed to plot.update()
-  const parentUpdateRef       = useRef(parentUpdate);
-  useEffect(() => { parentUpdateRef.current = parentUpdate; }, [parentUpdate]);
+
+  // Write the plot's current config (zoomed and typed axis ranges included) into the
+  // layout node, if it changed since the last write; returns whether it wrote. statusBar
+  // is our own layoutConfig field, not part of gladly's config, so it is carried over
+  // from the layout's config. Reassigned every render, so it always sees current props:
+  // PlotGroupContext calls it from outside this component's effects.
+  const saveConfigRef = useRef(null);
+  saveConfigRef.current = () => {
+    const plot = plotRef.current;
+    if (!plot || !parentUpdate || !id) return false;
+    const fullConfig = { ...plot.getConfig() };
+    const statusBar = configRef.current?.statusBar;
+    if (statusBar !== undefined) fullConfig.statusBar = statusBar;
+    const fullConfigJson = JSON.stringify(fullConfig);
+    if (fullConfigJson === lastSavedRef.current) return false;
+    lastSavedRef.current = fullConfigJson;
+    parentUpdate('replace', id, { id, widget, layoutConfig: fullConfig, ...rest });
+    return true;
+  };
+
+  // A write has arrived once the layout hands back a new layoutConfig; let a queued
+  // saveAllPlots() go on to the next plot.
+  useEffect(() => { configSaved(id); }, [layoutConfig]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { fetchedDataRef.current = fetchedData; }, [fetchedData]);
   useEffect(() => { setCurrentSoundingRef.current = setCurrentSounding; }, [setCurrentSounding]);
   useEffect(() => { inUseActionRef.current = inUseAction; }, [inUseAction]);
@@ -109,7 +130,11 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     if (!container) return;
     const plot = new Plot(container, { margin: PLOT_MARGIN });
     plotRef.current = plot;
-    addPlot(id, plot);
+    addPlot(id, plot, () => saveConfigRef.current());
+
+    // A typed axis or color-bar limit is written into the layout at once, in this plot
+    // and in every plot whose axes are linked to it.
+    const axisLimitHandle = plot.on('axislimit', () => saveAllPlots());
 
     // Show data-space coordinates on mousemove — in this plot's own bar (when shown)
     // and in the shared workspace status bar.
@@ -241,6 +266,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
 
     return () => {
       selHandle.remove();
+      axisLimitHandle.remove();
       moveHandle.remove();
       clickHandle.remove();
       removePlot(id);
@@ -328,15 +354,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
       if (cancelled) return;
       // Propagate the defaults-populated config back to the layout system so
       // axes, colorscales, etc. are visible in the config editor.
-      // statusBar is our own layoutConfig field, not part of gladly's config; preserve
-      // it across the getConfig() round-trip so toggling it isn't dropped on next update.
-      const fullConfig = { ...plot.getConfig() };
-      if (sanitizedConfig.statusBar !== undefined) fullConfig.statusBar = sanitizedConfig.statusBar;
-      const fullConfigJson = JSON.stringify(fullConfig);
-      if (fullConfigJson !== lastSavedRef.current && parentUpdateRef.current && id) {
-        lastSavedRef.current = fullConfigJson;
-        parentUpdateRef.current('replace', id, { id, widget, layoutConfig: fullConfig, ...rest });
-      }
+      saveConfigRef.current();
     });
     return () => { cancelled = true; };
   }, [config, fetchedData, datasetCollection, currentSounding, datasetsLoading, dataLoading, lazilyLoadedData, inMemoryDiffs]); // eslint-disable-line react-hooks/exhaustive-deps

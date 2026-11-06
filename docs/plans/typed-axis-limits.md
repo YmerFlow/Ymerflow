@@ -116,6 +116,12 @@ The InUse editor's rectangle, triangle and polygon selection (`docs/plans/inuse-
 
 Recommendation: both gladly PRs against master and one release carrying both, then one Ymerflow bump, done in whichever Ymerflow PR merges first together with the pass over every PlotView layer type the shapes plan already scopes; the other Ymerflow PR rebases on it. Whether that release comes from master or from a patch branch off 0.0.19 is the gladly maintainer's call and is asked in the shapes plan (its question 5). This change follows that answer; since `src/axes/` is unchanged since 0.0.19 it fits either.
 
+### Decided during implementation (2026-11-06)
+
+- gladly is changed in a fork, `YmerFlow/gladly`, and offered upstream from there (redhog/gladly#36). Until a `gladly-plot` release carries it, Ymerflow depends on the fork's commit, `github:YmerFlow/gladly#<full commit hash>`: a git URL, as rule 4 of `CLAUDE.md` allows, pinned to a commit so the build cannot move under it. The commit sits on gladly master, so this also brings in gladly's unreleased changes since 0.0.19 (the single shared rendering context among them), and the pass over every PlotView layer type that the selection-shapes plan scopes falls to this change.
+- The writes from `saveAllPlots()` go one plot at a time (`frontend/src/plotSaveQueue.js`). A flexout container builds a child's replacement from the children it last rendered, so two writes before a re-render would put the first plot's old config back.
+- The boxes' tooltip says "Click to type a value for this end" rather than naming min or max: on a reversed axis the config's `min` is the larger number.
+
 ## Not in this plan
 
 - Resetting an axis to its data range (ymerflow-business#116 item 12). Typed limits live in `layoutConfig.axes.<slot or quantity kind>.min` / `max`, the place that reset will clear, so the two agree.

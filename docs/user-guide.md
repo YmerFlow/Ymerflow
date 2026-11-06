@@ -75,6 +75,7 @@ Interactive scientific plotting:
   - Choose plot type (Line, Points, etc.)
   - Configure colors, labels, units
 - **Interactive**: Zoom, pan, hover for details
+- **Typed limits**: Point at an axis's labels and its two end values appear in small boxes at the ends; click one, type a number (`1e-4` works) and press Enter. Tab goes on to the other end and Escape cancels. Color bars work the same way, where the value sets the color range. A typed limit moves linked panes too and is kept when you save the workspace. A value that would flip the axis, or zero or below on a log axis, is refused with the reason in the box's tooltip.
 - **Multi-dataset**: Overlay multiple datasets
 - **Unit Matching**: Automatic axis assignment by units
 
