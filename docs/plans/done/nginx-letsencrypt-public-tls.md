@@ -8,13 +8,13 @@ controller), with certs obtained/renewed by a **certbot sidecar** and stored on 
 volume** so app redeploys never re-issue. The whole layer is **optional, gated by `config.env`**;
 default off = today's behaviour byte-for-byte.
 
-When enabled, all four names resolve to the same public IP (`80.202.232.75`) and share the single
+When enabled, all four names resolve to the same public IP (`<public-ip>`) and share the single
 `443` port-forward; the frontend nginx routes them by SNI / Host header:
 
-- `https://redhog.org` → the app (SPA + `/api`, already handled by this nginx).
-- `https://s3.redhog.org` → MinIO S3 API.
-- `https://console.redhog.org` → MinIO console.
-- `https://registry.redhog.org` → docker registry (trusted cert → `docker login registry.redhog.org`
+- `https://example.org` → the app (SPA + `/api`, already handled by this nginx).
+- `https://s3.example.org` → MinIO S3 API.
+- `https://console.example.org` → MinIO console.
+- `https://registry.example.org` → docker registry (trusted cert → `docker login registry.example.org`
   needs no `insecure-registries`).
 
 One Let's Encrypt certificate with a SAN list covers all four names (HTTP-01, served over the
@@ -40,17 +40,9 @@ Earlier drafts used **ingress-nginx + cert-manager**. Rejected after discussion:
 
 **Network / edge**
 
-- Host `mimer` = `192.168.1.179` (iface `eno2`); gw / router = `192.168.1.1`.
-- Router: TP-Link Archer C7 v5, OpenWrt 19.07.3, WAN `80.202.232.75`. Reach it from the host with
-  `ssh -p 2222 -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa root@192.168.1.1`
-  (busybox `sh`; edit with `uci`).
-- **Router port-forwards** (LuCI → Firewall → Port Forwards): `mimer-http` `80→.179:80`,
-  `mimer-https` `443→.179:443`, `mimer-ssh` `2221→.179:22`. (The temporary
-  `9000/9001/30500` forwards were removed — not needed under subdomains-on-443.)
-- **DNS (GoDaddy, via OpenWrt DDNS):** `redhog.org`, `s3.redhog.org`, `console.redhog.org`,
-  `registry.redhog.org` all → `80.202.232.75`. The three subdomains were added as DDNS service
-  sections (`myddns_s3/console/registry`, `domain='<h>@redhog.org'`) on 2026-08-18 and confirmed
-  at the authoritative NS. DNS prerequisite is **satisfied**.
+- The app host sits behind the site router, which forwards HTTP (80), HTTPS (443) and SSH to it.
+- Public DNS (dynamic DNS from the router) points the app name and its `s3.`, `console.` and
+  `registry.` subdomains at the router's public IP. DNS prerequisite is **satisfied**.
 
 **Cluster / app (all inside minikube, docker driver)**
 
@@ -76,14 +68,14 @@ Earlier drafts used **ingress-nginx + cert-manager**. Rejected after discussion:
 - **MinIO**: ns `minio`, `Service minio` S3 `:9000` + console `:9001`, own self-signed TLS.
   **Registry**: hand-rolled by the `ymerflow-minikube` plugin (`registry_protocol.py`),
   `NodePort 30500`, self-signed TLS + basic auth.
-- Relevant `config.env` today: `SERVER_URL=https://redhog.org`, `APP_DOMAIN=redhog.org`,
-  `REGISTRY_PUBLIC_HOST=redhog.org`, `STORAGE_ENDPOINT=https://redhog.org:9000`,
+- Relevant `config.env` today: `SERVER_URL=https://example.org`, `APP_DOMAIN=example.org`,
+  `REGISTRY_PUBLIC_HOST=example.org`, `STORAGE_ENDPOINT=https://example.org:9000`,
   `STORAGE_TLS_SKIP_VERIFY=true`.
 
 ## Target architecture
 
 ```
-              Internet   (redhog.org, s3./console./registry.redhog.org → 80.202.232.75)
+              Internet   (example.org, s3./console./registry.example.org → <public-ip>)
                  │
     OpenWrt :80 + :443  (existing DNAT → .179:80 / .179:443)
                  │
@@ -93,10 +85,10 @@ Earlier drafts used **ingress-nginx + cert-manager**. Rejected after discussion:
    │  nginx (existing, now the TLS edge)                                            │
    │    :80  → ACME /.well-known/acme-challenge (webroot)  +  301 → https           │
    │    :443 → TLS terminate (cert from PVC), route by Host:                        │
-   │            redhog.org          → SPA + proxy /api,/ws,/mcp,/pgadmin,/headlamp   │
-   │            s3.redhog.org       → minio.minio:9000    (backend-protocol HTTPS)   │
-   │            console.redhog.org  → minio.minio:9001                              │
-   │            registry.redhog.org → <registry-svc>:5000 (proxy_body_size 0)       │
+   │            example.org          → SPA + proxy /api,/ws,/mcp,/pgadmin,/headlamp   │
+   │            s3.example.org       → minio.minio:9000    (backend-protocol HTTPS)   │
+   │            console.example.org  → minio.minio:9001                              │
+   │            registry.example.org → <registry-svc>:5000 (proxy_body_size 0)       │
    │                                                                                │
    │  certbot sidecar (certbot/certbot)                                             │
    │    shares: cert PVC (/etc/letsencrypt)  +  acme webroot emptyDir (/var/www/acme)│
@@ -117,20 +109,20 @@ Earlier drafts used **ingress-nginx + cert-manager**. Rejected after discussion:
    PVC. This keeps the image backward-compatible (plain `:80` when TLS is off) and solves the
    first-issuance chicken-and-egg (see bootstrap section).
 3. **Subdomains on :443**, one multi-SAN cert, **HTTP-01** over the existing `:80` forward.
-   S3 stays **path-style** (already the case — see decision 5), so a single-SAN `s3.redhog.org`
+   S3 stays **path-style** (already the case — see decision 5), so a single-SAN `s3.example.org`
    cert suffices; no wildcard / DNS-01 needed.
 4. **nginx re-encrypts to the self-signed MinIO/registry backends** (`proxy_pass https://…` +
    `proxy_ssl_verify off`) — MinIO/registry manifests untouched. (Cleaner alternative — plaintext
    backends — deferred.)
 5. **S3 is already path-style — no code change anticipated.** Endpoint today is
-   `https://redhog.org:9000` (host:port) and bucket ops work; virtual-hosted-style would target
-   `<bucket>.redhog.org:9000` (no DNS) and fail — so path-style is already in effect, and it's a
-   property of client+bucket, not the port. Swapping to `https://s3.redhog.org` keeps
-   `s3.redhog.org/<bucket>`, covered by the single-SAN cert. **Verify once** after cutover; only if
+   `https://example.org:9000` (host:port) and bucket ops work; virtual-hosted-style would target
+   `<bucket>.example.org:9000` (no DNS) and fail — so path-style is already in effect, and it's a
+   property of client+bucket, not the port. Swapping to `https://s3.example.org` keeps
+   `s3.example.org/<bucket>`, covered by the single-SAN cert. **Verify once** after cutover; only if
    some client is found using virtual-hosted-style would `minikube_plugin/storage_protocol.py` need
    `Config(s3={"addressing_style":"path"})`.
 6. **In-cluster → registry pulls hairpin through the router — acceptable.** `REGISTRY_PUBLIC_HOST`
-   becomes `registry.redhog.org`; minikube's node resolves it to the WAN IP and NATs back through
+   becomes `registry.example.org`; minikube's node resolves it to the WAN IP and NATs back through
    OpenWrt. Confirmed OK here → no CoreDNS/hosts override needed.
 7. **Gating is two-tier (independent knobs, by design):**
    - *Tier 1 — the TLS machinery* (certbot sidecar, cert PVC, `:443` listener + Service port,
@@ -142,7 +134,7 @@ Earlier drafts used **ingress-nginx + cert-manager**. Rejected after discussion:
      `config.env` knobs**, deliberately **not** auto-derived from `PUBLIC_TLS`. The operator flips
      them together with `PUBLIC_TLS` per the config.env section below; nothing enforces
      consistency (chosen for flexibility, matching config.env's "explicit value always wins"
-     philosophy). ⚠ A half-set state (machinery on, storage still at `redhog.org:9000`) is
+     philosophy). ⚠ A half-set state (machinery on, storage still at `example.org:9000`) is
      possible and is the operator's responsibility to avoid.
    - Depends on `PUBLIC_TLS` (and the `PUBLIC_TLS_*` keys) reaching `app_config` via the generic
      passthrough — confirm during implementation (open question).
@@ -160,10 +152,10 @@ LETSENCRYPT_EMAIL=you@example.com      # ACME account / expiry notices (required
 LETSENCRYPT_STAGING=true               # true = ACME staging (untrusted, no rate limits) while
                                        # wiring up; flip to false for the real cert.
 # Hostnames (leave a subdomain empty to NOT expose that service). App host defaults to APP_DOMAIN.
-PUBLIC_TLS_APP_HOST=redhog.org
-PUBLIC_TLS_S3_HOST=s3.redhog.org
-PUBLIC_TLS_CONSOLE_HOST=console.redhog.org
-PUBLIC_TLS_REGISTRY_HOST=registry.redhog.org
+PUBLIC_TLS_APP_HOST=example.org
+PUBLIC_TLS_S3_HOST=s3.example.org
+PUBLIC_TLS_CONSOLE_HOST=console.example.org
+PUBLIC_TLS_REGISTRY_HOST=registry.example.org
 # Host NodePort the frontend's TLS listener is published on (mirrors FRONTEND_NODE_PORT for :80).
 FRONTEND_TLS_NODE_PORT=30443
 ```
@@ -173,9 +165,9 @@ When `PUBLIC_TLS=letsencrypt`, the operator must **also** flip these **independe
 
 - `MINIKUBE_EXPOSE_PORTS="80:30080 443:30443 30500 9000:30900 9001:30901"`  (publish host 80/443
   onto the frontend http/https NodePorts; ⚠ triggers a one-time `minikube delete`+recreate)
-- `STORAGE_ENDPOINT=https://s3.redhog.org`   (was `https://redhog.org:9000`)
+- `STORAGE_ENDPOINT=https://s3.example.org`   (was `https://example.org:9000`)
 - `STORAGE_TLS_SKIP_VERIFY=false`            (real cert now trusted)
-- `REGISTRY_PUBLIC_HOST=registry.redhog.org` (port 443 implied; drop `:30500`)
+- `REGISTRY_PUBLIC_HOST=registry.example.org` (port 443 implied; drop `:30500`)
 
 ## Phase 1 — frontend nginx: TLS server blocks + ACME location
 
@@ -247,7 +239,7 @@ Only when `app_config["PUBLIC_TLS"] == "letsencrypt"`:
 1. **S3 addressing — verify only** (decision 5); no change expected.
 2. **Registry cert baking** — the backend live-fetches the registry TLS cert from
    `REGISTRY_PUBLIC_HOST:30500` to bake into the remote-cluster setup script. With a trusted cert
-   on `registry.redhog.org:443`, update the fetch to `:443` or skip baking when
+   on `registry.example.org:443`, update the fetch to `:443` or skip baking when
    `PUBLIC_TLS=letsencrypt`. **Verify** the exact path (`settings.registry_public_host`,
    `GET /static/assets/setup-minikube-remote.sh`).
 
@@ -270,16 +262,16 @@ it. Avoids conditional include at the cost of a placeholder cert. Decide during 
 ## Verification / test plan
 
 1. `LETSENCRYPT_STAGING=true` first. Watch certbot sidecar logs → cert issued to the PVC;
-   `curl -vk https://redhog.org` shows the (staging) cert and the app loads.
-2. Flip `LETSENCRYPT_STAGING=false`, re-issue, confirm a **trusted** cert: `curl -v https://redhog.org`
+   `curl -vk https://example.org` shows the (staging) cert and the app loads.
+2. Flip `LETSENCRYPT_STAGING=false`, re-issue, confirm a **trusted** cert: `curl -v https://example.org`
    (no `-k`) succeeds; browser padlock clean.
 3. App: log in, exercise `/api`, `/ws/`, `/pgadmin/`, `/headlamp/` through `:443`.
-4. MinIO: `aws --endpoint-url https://s3.redhog.org s3 ls` (no `--no-verify-ssl`); console at
-   `https://console.redhog.org`.
-5. **Path-style check:** confirm bucket ops hit `s3.redhog.org/<bucket>`, not
-   `<bucket>.s3.redhog.org`.
-6. Registry: `docker login registry.redhog.org` (no insecure config), push + pull a test image.
-7. Registry pulls in-cluster: trigger a process job / redeploy pulling from `registry.redhog.org`;
+4. MinIO: `aws --endpoint-url https://s3.example.org s3 ls` (no `--no-verify-ssl`); console at
+   `https://console.example.org`.
+5. **Path-style check:** confirm bucket ops hit `s3.example.org/<bucket>`, not
+   `<bucket>.s3.example.org`.
+6. Registry: `docker login registry.example.org` (no insecure config), push + pull a test image.
+7. Registry pulls in-cluster: trigger a process job / redeploy pulling from `registry.example.org`;
    confirm minikube's node pulls succeed (through the router hairpin).
 8. **Persistence (the key requirement):** `kubectl rollout restart deploy/frontend` (and a full
    `yf-deploy-app`); confirm certbot logs show *no* re-issue and `:443` serves immediately from the
