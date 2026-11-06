@@ -14,6 +14,8 @@ jsoneditor/
 ├── CustomForm.jsx              # Wrapper around @rjsf Form: custom fields/templates, form-data cleaning, error filtering
 ├── CustomStringField.jsx       # Custom string field: routes to DatasetPathField / DatasetSelector / FileUploadField by x-format
 ├── CustomNumberField.jsx       # Custom number field: routes to EPSGSelector for format: 'x-epsg'
+├── CustomObjectField.jsx       # Default object field with x-length-scale links applied to its children's changes
+├── lengthScale.js              # x-length-scale rules: alpha = alpha_s * L^2, which partner a change rewrites
 ├── CustomFieldTemplate.jsx     # Field wrapper: label, required marker, description tooltip, errors, help
 ├── CustomButtonTemplates.jsx   # Add/Copy/Move/Remove/Submit button templates (FontAwesome icons, Bootstrap classes)
 ├── DatasetSelector.jsx         # Searchable dropdown widget for selecting another process's dataset output
@@ -74,7 +76,7 @@ function ProcessEditor() {
 
 `CustomForm` is a thin wrapper around `@rjsf/core`'s `Form` (see `frontend/src/jsoneditor/CustomForm.jsx`). It passes through all normal `Form` props (including `validator`, which callers must still supply — see note above) and adds:
 
-- **Custom fields**: `StringField` → `CustomStringField` (dataset/upload/path widgets), `NumberField` → `CustomNumberField` (EPSG widget), `AnyOfField` → an inline `CustomAnyOfField` that special-cases `x-format: 'expression'` schemas by rendering `ExpressionField` instead of the default `anyOf` UI
+- **Custom fields**: `StringField` → `CustomStringField` (dataset/upload/path widgets), `NumberField` → `CustomNumberField` (EPSG widget), `ObjectField` → `CustomObjectField` (linked `x-length-scale` fields, see [Linked Length-Scale Fields](#linked-length-scale-fields)), `AnyOfField` → an inline `CustomAnyOfField` that special-cases `x-format: 'expression'` schemas by rendering `ExpressionField` instead of the default `anyOf` UI
 - **Custom templates**: `ButtonTemplates` (FontAwesome/Bootstrap-styled Add/Copy/Move/Remove/Submit buttons) and `FieldTemplate` → `CustomFieldTemplate` (label, required marker, description tooltip, errors, help text)
 - **Form-data cleaning**: `onSubmit` is wrapped to deep-strip `undefined`/`null` properties left behind when `anyOf` branches switch, before calling the caller's `onSubmit`
 - **Error filtering**: a default `transformErrors` (overridable via props) hides misleading per-branch validation errors on a field once an `anyOf` error already exists for that same path, so users see one clear error instead of every failed branch
@@ -202,6 +204,33 @@ Renders `FileUploadField`, a file `<input>` that uploads the selected file via t
 - **Computation mode** (used when `formData` is an object, or after clicking the "ƒ" toggle button): renders the default `SchemaField` against an `anyOf` built from the object-typed branches of the schema (`schema._expressionAnyOf` if present, else `schema.anyOf`), letting the user build a structured computation. A toggle button (only shown when object-typed branches exist) switches back and forth; switching back to column mode clears the value.
 
 `DatasetColumnCombobox` (`frontend/src/jsoneditor/DatasetColumnCombobox.jsx`) is the shared autocomplete widget behind both `ExpressionField`'s column mode and `DatasetPathField`; the `mode` prop (`"column"` vs `"dataset"`) controls whether it offers full `dataset.column` paths or dataset-only paths.
+
+## Linked Length-Scale Fields
+
+`x-length-scale` on a number field marks it as a length L paired with a weight alpha through a third field alpha_s, by alpha = alpha_s · L². The annotation names the other two fields, which must be siblings of the length in the same object:
+
+```javascript
+{
+  type: 'object',
+  properties: {
+    alpha_s:        { type: 'number' },
+    alpha_r_inline: { type: 'number' },
+    L_inline:       { type: 'number', 'x-length-scale': { alpha: 'alpha_r_inline', alpha_s: 'alpha_s' } },
+  }
+}
+```
+
+The form keeps each pair in step while the user types:
+
+- Editing a length rewrites its alpha, alpha = alpha_s · L², with the form's current alpha_s.
+- Editing an alpha rewrites its length, L = sqrt(alpha / alpha_s).
+- Editing alpha_s rewrites every alpha linked to it from its length. The lengths are held.
+- When a value can't be worked out, the partner is left as it is: the edited field is empty, alpha_s is empty or 0 or below, or an alpha is negative. 0 maps to 0.
+- The computed value is written as is, with no rounding, and is what the form submits.
+
+Several pairs can share one alpha_s. A field that is not linked, and every object whose properties carry no `x-length-scale`, behave exactly as before. The form knows nothing about what the fields mean, so any process type can use the annotation; inversion regularization (smoothness lengths and their alphas) is the first.
+
+`CustomForm` registers `CustomObjectField` (`frontend/src/jsoneditor/CustomObjectField.jsx`) as the `ObjectField`. For an object with annotated properties it wraps the default object field's `onChange`: after a child's change is passed on, each partner it rewrites is sent as one more change at that partner's path. Nested objects, array items and `anyOf` branches each get their own object field, so a pair works at any depth, for example inside a pipeline step. The rules are in `frontend/src/jsoneditor/lengthScale.js` (`lengthScaleUpdates`). The handler reads the object's data when the change happens, because rjsf re-renders a field only when its own value changes and keeps calling the handler it was first given.
 
 ### Adding Custom Formats
 
@@ -647,5 +676,6 @@ For more details on JSON Schema form features, see:
 - `x-format: "upload"`: File upload field
 - `x-format: "expression"` (on an `anyOf` schema): Expression field (column reference or computation)
 - `format: "x-epsg"` (on a number field): EPSG code selector
+- `x-length-scale: {alpha, alpha_s}` (on a number field): length linked to its alpha by alpha = alpha_s · L² (see [Linked Length-Scale Fields](#linked-length-scale-fields))
 - Custom field detection in `CustomStringField.jsx` / `CustomNumberField.jsx`
 - Smart dataset grouping in `DatasetSelector.jsx`
