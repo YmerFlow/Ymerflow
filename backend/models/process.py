@@ -336,7 +336,7 @@ class ProcessVersion(Base):
     parameters = Column(JSON, nullable=False)  # Process parameters
     state = Column(Enum(ProcessState), default=ProcessState.QUEUED, nullable=False, index=True)
     dependencies = Column(JSON, default=list, nullable=False)  # Array of dependency objects
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     # Attribution for the admin stats dashboard (docs/plans/admin-stats-dashboard.md); nullable,
     # SET NULL — see Project.created_by.
@@ -452,6 +452,9 @@ class ProcessVersion(Base):
             "deadline_seconds": self.deadline_seconds,
             "cluster": self.cluster.to_dict() if self.cluster else None,
             "tags": [t.to_dict() for t in self.tags],
+            # created_at drives the client's incremental-refetch watermark
+            # (docs/plans/incremental-process-list-refetch.md).
+            "created_at": self.created_at.isoformat() if self.created_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "run_length": run_length,

@@ -2,7 +2,10 @@
 
 ## Status
 
-**Not yet implemented.** Design agreed interactively with the operator. Follow-up to the
+**Implemented (2026-11-08).** Server `created_after` filter + `ix_process_versions_created_at`
+migration (`1332fe39b1da`) + `created_at` added to the verbose version dict; client watermark /
+incremental-merge in `useProcesses` + full-reload-on-reconnect in `ProcessContext`. Design agreed
+interactively with the operator. Follow-up to the
 connection-pool work in `docs/plans/done/db-pool-commit-before-k8s-io.md` (which removed the
 per-request *connection-hold*); this plan removes the *demand* that still pressures the pool —
 the full project-history refetch on every state change. Related, not overlapping:

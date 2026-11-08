@@ -353,14 +353,19 @@ export async function getEnvironmentProcessTypes(environmentId) {
   return response.data;
 }
 
-export async function getProcesses(projectId) {
+export async function getProcesses(projectId, createdAfter = null) {
   // verbose=true: the frontend (FlowView etc.) needs the full per-version payload
   // (parameters, outputs, …). The endpoint defaults to a terse summary for MCP callers;
   // this hidden flag opts back into the historical full shape. See
   // docs/plans/done/mcp-terse-process-tools.md.
-  const response = await apiClient.get(`/projects/${projectId}/processes`, {
-    params: { verbose: true },
-  });
+  //
+  // createdAfter (ISO-8601): the incremental-refetch watermark. When set, the server
+  // returns only post-watermark versions (and only processes that have one); the caller
+  // merges the slice onto the previously cached full list. Omit it for the initial full
+  // load. See docs/plans/incremental-process-list-refetch.md.
+  const params = { verbose: true };
+  if (createdAfter) params.created_after = createdAfter;
+  const response = await apiClient.get(`/projects/${projectId}/processes`, { params });
   return response.data;
 }
 

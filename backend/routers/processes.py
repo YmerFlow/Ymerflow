@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from typing import Dict, Any, Optional
+from datetime import datetime
 from pydantic import BaseModel, Field
 import asyncio
 import json
@@ -122,6 +123,7 @@ async def create_process(
 async def list_processes(
     access: ProjectReadAccess = Depends(resolve_project_for_read),
     verbose: bool = Query(False, include_in_schema=False),
+    created_after: Optional[datetime] = Query(None, include_in_schema=False),
     db: AsyncSession = Depends(get_db)
 ):
     """List processes (jobs) in a project — one short summary row per process.
@@ -145,13 +147,32 @@ async def list_processes(
 
     (The frontend calls this with ?verbose=true to get the full per-version payload;
     that flag is not exposed to MCP tools.)
+
+    `created_after` (frontend-only, not exposed to MCP) scopes the result to the
+    incremental-refetch window: only processes that have a version with
+    `created_at >= created_after` are returned, and each such process carries only its
+    post-watermark versions. Every version that can still change has `created_at >=` the
+    client's watermark, so the window is guaranteed complete. The response shape is
+    identical (process-grouped `versions[]`); only which versions appear differs. With no
+    `created_after` this is the full historical load. See
+    docs/plans/incremental-process-list-refetch.md.
     """
+    # relationship.and_() filters the *loaded* collection, so to_dict(verbose=True) sees
+    # only the post-watermark versions; .any() keeps the process out entirely if none of
+    # its versions are in the window. Filtering in Python would re-load every version and
+    # defeat the point.
+    ver_filter = ProcessVersion.created_at >= created_after if created_after is not None else None
+    conds = [Process.project_id == access.project.id]
+    if ver_filter is not None:
+        conds.append(Process.versions.any(ver_filter))
+    versions_rel = Process.versions.and_(ver_filter) if ver_filter is not None else Process.versions
+
     stmt = select(Process).options(
-        selectinload(Process.versions).selectinload(ProcessVersion.datasets),
-        selectinload(Process.versions).selectinload(ProcessVersion.tags),
-        selectinload(Process.versions).selectinload(ProcessVersion.cluster),
-        selectinload(Process.versions).selectinload(ProcessVersion.environment),
-    ).where(Process.project_id == access.project.id)
+        selectinload(versions_rel).selectinload(ProcessVersion.datasets),
+        selectinload(versions_rel).selectinload(ProcessVersion.tags),
+        selectinload(versions_rel).selectinload(ProcessVersion.cluster),
+        selectinload(versions_rel).selectinload(ProcessVersion.environment),
+    ).where(*conds)
 
     result = await db.execute(stmt)
     processes = result.scalars().all()

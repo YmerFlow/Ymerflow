@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useMemo, useState, useEffect, useContext, useReducer, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useProcesses, useEnvironments, useProcessOutputDatasets, useProjects, useCreateProcess, useWorkspace, fetchEnvironmentProcessTypes } from "./datamodel/useQueries";
+import { useProcesses, useEnvironments, useProcessOutputDatasets, useProjects, useCreateProcess, useWorkspace, fetchEnvironmentProcessTypes, markProcessesFullReload } from "./datamodel/useQueries";
 import { loadDataset, DatasetCollectionAdapter } from './datamodel/dataset';
 import XYZ from './datamodel/libaarhusxyz';
 import { acceptsEdits, buildDiffColumns, diffFromColumns, editedVersionRequest, inUseDiffReducer, resolveEditTarget, saveIntermediateStep } from './datamodel/inUseDiffs';
@@ -427,11 +427,26 @@ export function ProcessProvider({ children }) {
     await invalidateHelpers.invalidateProject();
   }, [invalidateHelpers]);
 
+  // A reconnect means we may have missed state signals while disconnected, so the next
+  // process refetch must be a full reload (watermark reset) rather than an incremental
+  // slice. onOpen also fires on the very first connect; skip that one.
+  // See docs/plans/incremental-process-list-refetch.md.
+  const hasConnectedRef = useRef(false);
+  const handleWebSocketOpen = useCallback(async () => {
+    if (!hasConnectedRef.current) {
+      hasConnectedRef.current = true;
+      return;
+    }
+    markProcessesFullReload(currentProject);
+    await invalidateHelpers.invalidateProject();
+  }, [currentProject, invalidateHelpers]);
+
   // WebSocket for process state updates with auto-reconnect
   useWebSocket(`${WS_API}/ws/processes/updates`, {
     enabled: !!currentProject,
     name: 'Process State Updates',
-    onMessage: handleWebSocketMessage
+    onMessage: handleWebSocketMessage,
+    onOpen: handleWebSocketOpen
   });
 
   // Find the actual process object from activeProcess
