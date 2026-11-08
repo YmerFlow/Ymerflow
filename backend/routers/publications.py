@@ -56,7 +56,10 @@ async def list_publications(
         .order_by(Publication.created_at)
     )
     result = await db.execute(stmt)
-    return [p.to_dict() for p in result.scalars().all()]
+    publications = result.scalars().all()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+    return [p.to_dict() for p in publications]
 
 
 @router.delete("/projects/{project_id}/publications/{publication_id}", summary="Delete a publication")
@@ -101,9 +104,12 @@ async def list_public_publications(
         .where(Publication.findable == True)  # noqa: E712
     )
     result = await db.execute(stmt)
+    publications = result.scalars().all()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return [
         {"id": p.id, "project_name": p.project.name, "superpublic": p.superpublic}
-        for p in result.scalars().all()
+        for p in publications
     ]
 
 
@@ -160,9 +166,12 @@ async def list_findable_publications(db: AsyncSession = Depends(get_db)):
         .where(Publication.findable == True)  # noqa: E712
     )
     result = await db.execute(stmt)
+    publications = result.scalars().all()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return [
         {"id": p.id, "project_name": p.project.name}
-        for p in result.scalars().all()
+        for p in publications
     ]
 
 
@@ -193,6 +202,8 @@ async def get_publication(
     if not publication.allow_anonymous and auth is None:
         raise HTTPException(status_code=401, detail="Authentication required to view this publication")
 
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return {
         "id": publication.id,
         "project_id": publication.project_id,

@@ -50,6 +50,10 @@ async def available_clusters(
     """
     resource_requests = {"cpu": cpu, "memory": memory} if cpu or memory else None
     clusters = await get_allowed_clusters(db, auth.user, access.project.id, resource_requests)
+    # Free the pooled connection before the per-cluster K8s I/O loop below (see
+    # docs/plans/done/db-pool-commit-before-k8s-io.md). commit() (not rollback()) keeps the
+    # already-loaded clusters readable under expire_on_commit=False.
+    await db.commit()
     out = []
     for cluster in clusters:
         k8s_client = k8s_clients.get(cluster)
@@ -114,6 +118,11 @@ async def cluster_queues(
     )
     clusters = await get_allowed_clusters(db, auth.user, None)
 
+    # Free the pooled connection before the per-cluster loop's K8s I/O (list_workloads/list_pods,
+    # get_cluster_queue_limits) — see docs/plans/done/db-pool-commit-before-k8s-io.md. commit()
+    # (not rollback()) keeps member_ids/clusters readable under expire_on_commit=False.
+    await db.commit()
+
     out = []
     for cluster in clusters:
         entry = {
@@ -169,6 +178,10 @@ async def cluster_queues(
                 )
             )
             pv_by_job = {pv.k8s_job_name: pv for pv in rows}
+            # Free the pooled connection before serialization and the get_cluster_queue_limits K8s
+            # call below (see docs/plans/done/db-pool-commit-before-k8s-io.md). process→project and
+            # tags are eager-loaded, so post-commit serialization touches no lazy relationship.
+            await db.commit()
 
         # Order: admitted first (tie-break started_at/creation asc), then pending by
         # (−priority, workload creationTimestamp asc). Sort keys are strings/ints only.
@@ -244,6 +257,8 @@ async def available_storage_backends(
     allowed-backend set, sorted by sort_order — the same order the project-creation dropdown presents.
     """
     backends = await get_allowed_storage_backends(db, auth.user)
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return [b.to_dict() for b in backends]
 
 

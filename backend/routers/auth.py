@@ -113,6 +113,8 @@ async def get_tos(db: AsyncSession = Depends(get_db)):
     stmt = select(TosVersion).order_by(TosVersion.version.desc()).limit(1)
     result = await db.execute(stmt)
     latest = result.scalar_one_or_none()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
 
     if latest is None:
         return {"version": None, "body": None}
@@ -164,6 +166,9 @@ async def login(credentials: Dict[str, str], db: AsyncSession = Depends(get_db))
         if accepted_version is None or accepted_version < latest_tos.version:
             tos_pending = {"version": latest_tos.version, "body": latest_tos.body}
 
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -191,6 +196,8 @@ async def get_account(
     stmt = select(User).options(*extra_opts).where(User.id == auth.user.id)
     result = await db.execute(stmt)
     user = result.scalar_one()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return user.to_dict()
 
 
@@ -281,6 +288,9 @@ async def get_invite_info(token: str, db: AsyncSession = Depends(get_db)):
 
     if not invite:
         raise HTTPException(status_code=404, detail="Invite not found or expired")
+
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
 
     return {
         "email": invite.email,
@@ -423,6 +433,8 @@ async def list_api_keys(
     )
     result = await db.execute(stmt)
     keys = result.scalars().all()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return [k.to_dict() for k in keys]
 
 
@@ -490,6 +502,9 @@ async def admin_list_users(
     # Secondary username tiebreak keeps paging stable under low-cardinality sorts (e.g. is_admin).
     stmt = base.order_by(order, User.username.asc()).limit(limit).offset(offset)
     users = (await db.execute(stmt)).scalars().all()
+
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
 
     return {
         "items": [{"username": u.username, "email": u.email, "is_admin": u.is_admin} for u in users],

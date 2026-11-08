@@ -49,6 +49,9 @@ async def list_systems(
     result = await db.execute(stmt)
     systems = result.scalars().all()
 
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+
     systems_data = [_system_dict(s) for s in systems]
     response_bytes = msgpack.packb(systems_data, use_bin_type=True)
 

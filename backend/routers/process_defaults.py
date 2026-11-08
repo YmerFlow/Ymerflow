@@ -171,7 +171,10 @@ async def list_process_defaults(
         .where(or_(ProcessDefault.superpublic == True, ProcessDefault.project_id == access.project.id))  # noqa: E712
     )
     result = await db.execute(stmt)
-    return [d.to_dict() for d in result.scalars().all()]
+    defaults = result.scalars().all()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+    return [d.to_dict() for d in defaults]
 
 
 @router.get("/process-defaults/public", operation_id="list_public_process_defaults")
@@ -183,7 +186,10 @@ async def list_public_process_defaults(
     anonymous) can browse this — it backs the searchable public list in the selector."""
     stmt = select(ProcessDefault).options(*_LOAD).where(ProcessDefault.is_public == True)  # noqa: E712
     result = await db.execute(stmt)
-    return [d.to_dict(project_name=d.project.name if d.project else None) for d in result.scalars().all()]
+    defaults = result.scalars().all()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+    return [d.to_dict(project_name=d.project.name if d.project else None) for d in defaults]
 
 
 @router.get("/projects/{project_id}/process-default/{default_id}", operation_id="get_process_default")
@@ -198,4 +204,6 @@ async def get_process_default(
     default = (await db.execute(stmt)).scalar_one_or_none()
     if not default or not (default.is_public or default.superpublic or default.project_id == access.project.id):
         raise HTTPException(status_code=404, detail="Process default not found")
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return default.to_dict(project_name=default.project.name if default.project else None)

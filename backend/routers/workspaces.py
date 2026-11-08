@@ -241,6 +241,9 @@ async def list_workspaces(
     result = await db.execute(stmt)
     workspaces = result.scalars().all()
 
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+
     return [w.to_dict() for w in workspaces]
 
 
@@ -261,6 +264,9 @@ async def list_public_workspaces(
     stmt = select(Workspace).options(*_WORKSPACE_LOAD_OPTIONS).where(Workspace.is_public == True)  # noqa: E712
     result = await db.execute(stmt)
     workspaces = result.scalars().all()
+
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
 
     return [w.to_dict(project_name=w.project.name if w.project else None) for w in workspaces]
 
@@ -639,6 +645,9 @@ async def complete_process_version_path(
     prefix_lower = prefix.lower()
     processes = await _load_project_processes(project.id, db)
 
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+
     out: List[str] = []
     if _matches("current", prefix_lower):
         out.append("current")
@@ -667,6 +676,9 @@ async def complete_dataset_path(
     """
     prefix_lower = prefix.lower()
     processes = await _load_project_processes(project.id, db)
+
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
 
     out: List[str] = []
     for ds_name in _current_dataset_names(processes, example_process_id, version):
@@ -790,6 +802,9 @@ async def get_workspace(
 
     if not await _can_read_workspace(workspace, project_id, auth, db):
         raise HTTPException(status_code=404, detail="Workspace not found")
+
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
 
     return workspace.to_dict(project_name=workspace.project.name if workspace.project else None)
 

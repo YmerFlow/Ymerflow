@@ -79,6 +79,25 @@ producing a normal rooted dataset — today's behaviour, unchanged.
    always blend (separable-bilinear weights from the core bboxes), re-partition by
    flightline.
 
+## Implementation note to carry forward (post-build)
+
+Reuse rests on an unenforced invariant: **every multi-part producer — each
+fragmentable process *and* the manual-edit tooling — must link unchanged parts by
+reusing their prior URL, and mint new URLs only for parts whose content actually
+changed** (see [`reuse.md`](./reuse.md), "URL identity is content identity"). A
+producer that instead re-mints fresh URLs for unchanged parts stays *correct*
+(missed reuse is always safe) but silently becomes a reuse barrier for everything
+downstream of it — the fast-iteration win quietly evaporates with nothing to flag
+it.
+
+This is **easy to check by reading the code** (does the producer copy-forward
+prior URLs for untouched parts?) but **hard to enforce deterministically at
+runtime** (proving two differently-URL'd outputs are byte-identical is exactly the
+hashing the design avoids). So it is not a build-time task. Once the SDK's
+part-writing/linking path exists, **add a note to `CLAUDE.md`** recording the
+invariant as a review-time check for anyone writing or modifying a fragmentable
+process, pointing at the shared SDK helper that implements link-don't-copy.
+
 ## External dependency
 
 - **sounding-links** (`docs/plans/sounding-links-and-downline-distance.md`, branch

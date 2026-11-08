@@ -59,6 +59,9 @@ async def list_plugins(
     result = await db.execute(stmt)
     plugins = result.scalars().all()
 
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+
     rows = []
     for p in plugins:
         d = p.to_dict()
@@ -142,6 +145,9 @@ async def get_my_plugins(
     )
     result = await db.execute(stmt)
     user_plugins = result.scalars().all()
+
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
 
     remote = []
     for up in user_plugins:

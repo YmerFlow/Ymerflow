@@ -156,6 +156,9 @@ async def list_processes(
     result = await db.execute(stmt)
     processes = result.scalars().all()
 
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+
     return redact_project_id([p.to_dict(verbose=verbose) for p in processes], access)
 
 
@@ -201,6 +204,9 @@ async def get_process(
 
     if not process or process.project_id != access.project.id:
         raise HTTPException(status_code=404, detail="Process not found")
+
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
 
     return redact_project_id(process.to_dict(verbose=verbose, include_versions=True), access)
 
@@ -259,6 +265,8 @@ async def get_process_version(
     exist. Returns 404 if the process or the requested version is not found.
     """
     pv = await _load_process_version(db, access.project.id, process_id, version)
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return redact_project_id(pv.to_detail_dict(access.project.id), access)
 
 
@@ -288,6 +296,8 @@ async def get_process_version_outputs(
     segment) and call get_dataset, then use the 'url' field from that response.
     """
     pv = await _load_process_version(db, access.project.id, process_id, version)
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return redact_project_id({
         "version": pv.version,
         "state": pv.state.value,
@@ -341,7 +351,10 @@ async def get_process_logs(
         stmt = stmt.limit(limit)
 
     result = await db.execute(stmt)
-    return [log.to_dict() for log in result.scalars().all()]
+    logs = result.scalars().all()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+    return [log.to_dict() for log in logs]
 
 
 class CloneRequest(BaseModel):

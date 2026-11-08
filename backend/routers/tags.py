@@ -50,7 +50,10 @@ async def list_project_tags(
     result = await db.execute(
         select(ProcessTag).where(ProcessTag.project_id == access.project.id).order_by(ProcessTag.name)
     )
-    return [t.to_dict() for t in result.scalars().all()]
+    tags = result.scalars().all()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+    return [t.to_dict() for t in tags]
 
 
 @router.post("/projects/{project_id}/tags", operation_id="create_tag", summary="Create a project tag")

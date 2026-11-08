@@ -40,6 +40,14 @@ others **by part name** (a slug such as a flightline id — name matching, not
 content or position). A parameter may be a subset of the full part set; a part
 absent from a parameter is treated as **empty** for that parameter.
 
+Part names (the slugs) are assigned by the **process SDK**, not hand-chosen by
+individual processes — the same SDK machinery that already owns dataset
+directory-tree layout and upload. Because every producer slugs a given flightline
+through one shared code path, part names are aligned across inputs **by
+construction**: no process names its own parts, so two producers cannot disagree
+on a flightline's slug and silently break the union. Alignment is an SDK
+guarantee, not a per-process convention to be re-established and checked.
+
 Consequently a version fragment may receive an empty part for some of its inputs
 (e.g. a flightline with no manual edit gets the edit parameter empty for that
 part). "A part may be empty for any given input" is part of the contract a

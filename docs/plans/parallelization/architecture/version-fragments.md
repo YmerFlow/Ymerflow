@@ -153,6 +153,15 @@ refresher, not K.
 A fragment that is **linked** (reused from N−1 per [`reuse.md`](./reuse.md)) is in
 no batch and runs no Job; the coordinator records it directly as DONE.
 
+**Cancellation.** A version now owns up to `P` Jobs rather than one, so
+cancelling a version must cancel **every** batch it launched — deleting all of
+those Jobs (and their pods / Kueue Workloads), not the single Job cancel handles
+today. Linked fragments own no Job and need no teardown. (Fixing the
+pre-existing defect where cancel leaves a Kueue Workload holding quota behind — a
+manual `kubectl delete` is currently required — is **out of scope for this
+plan**; the plan only requires that cancel address all `P` of a version's
+batches, and does not undertake to fix that orphaning.)
+
 The Job's `active_deadline_seconds` is a **per-pod** budget, so it must be scaled
 to the batch — the per-fragment deadline times the number of fragments in the
 batch. The runner additionally enforces the per-fragment budget inside its loop so
@@ -173,6 +182,20 @@ which batch/pod ran it**:
 
 - root fragment → `{ "files": { … } }`
 - line fragment `L050` → `{ "parts": { "L050": { "files": { … } } } }`
+
+**The partial `info.json` is the fragment's commit marker.** A fragment MUST
+write it **last** — after all of its own part files are durably written — and
+**atomically** (write-to-temp-then-rename, as the storage layer already does
+elsewhere). This is a hard requirement on every fragmentable `run()`, not an
+incidental ordering: fragment state is derived from the partial's *presence*
+(below), so a partial that exists must imply that every part file it references
+is complete. Writing the partial first — or concurrently with the part files —
+would let a pod that dies mid-write leave a present partial pointing at a
+truncated part; that fragment would be read as DONE and would silently corrupt
+downstream reuse, because `same URL ⟺ same bytes` (see [`reuse.md`](./reuse.md))
+no longer holds. Written last and atomically, a crash can only ever *drop* the
+partial, never leave a premature one, so the `absent-partial ⟹ FAILED` rule
+stays correct.
 
 Fragments in the same pod write distinct part files and distinct partials, and
 fragments in different pods write into the same version's `datasets/{id}/` tree
@@ -216,6 +239,11 @@ artifact** once its batch's pod reaches a terminal state:
 
 - its partial `info.json` is present → fragment **DONE**;
 - its partial is absent → fragment **FAILED**.
+
+This rule is only sound because of the commit-marker invariant above: the partial
+is written last and atomically, so its presence guarantees its part files are
+complete, and a mid-write crash can only leave it absent (→ FAILED, correctly),
+never present-but-premature.
 
 Deriving fragment state from the presence of its artifact — rather than from the
 pod's exit code — is what lets a single pod carry many fragments: one fragment
