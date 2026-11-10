@@ -14,8 +14,9 @@ jsoneditor/
 ├── CustomForm.jsx              # Wrapper around @rjsf Form: custom fields/templates, form-data cleaning, error filtering
 ├── CustomStringField.jsx       # Custom string field: routes to DatasetPathField / DatasetSelector / FileUploadField by x-format
 ├── CustomNumberField.jsx       # Custom number field: routes to EPSGSelector for format: 'x-epsg'
-├── CustomObjectField.jsx       # Default object field with x-length-scale links applied to its children's changes
-├── lengthScale.js              # x-length-scale rules: alpha = alpha_s * L^2, which partner a change rewrites
+├── CustomObjectField.jsx       # Custom object field: routes to LengthScaleField for x-format 'length-scale', else the default
+├── LengthScaleField.jsx        # Length-scale group widget: each alpha beside its length, kept in step
+├── lengthScale.js              # Length-scale rules: alpha = alpha_s * L^2, which partner a change rewrites, row layout
 ├── CustomFieldTemplate.jsx     # Field wrapper: label, required marker, description tooltip, errors, help
 ├── CustomButtonTemplates.jsx   # Add/Copy/Move/Remove/Submit button templates (FontAwesome icons, Bootstrap classes)
 ├── DatasetSelector.jsx         # Searchable dropdown widget for selecting another process's dataset output
@@ -76,7 +77,7 @@ function ProcessEditor() {
 
 `CustomForm` is a thin wrapper around `@rjsf/core`'s `Form` (see `frontend/src/jsoneditor/CustomForm.jsx`). It passes through all normal `Form` props (including `validator`, which callers must still supply — see note above) and adds:
 
-- **Custom fields**: `StringField` → `CustomStringField` (dataset/upload/path widgets), `NumberField` → `CustomNumberField` (EPSG widget), `ObjectField` → `CustomObjectField` (linked `x-length-scale` fields, see [Linked Length-Scale Fields](#linked-length-scale-fields)), `AnyOfField` → an inline `CustomAnyOfField` that special-cases `x-format: 'expression'` schemas by rendering `ExpressionField` instead of the default `anyOf` UI
+- **Custom fields**: `StringField` → `CustomStringField` (dataset/upload/path widgets), `NumberField` → `CustomNumberField` (EPSG widget), `ObjectField` → `CustomObjectField` (routes `x-format: 'length-scale'` groups to `LengthScaleField`, see [Linked Length-Scale Fields](#linked-length-scale-fields), and every other object to the default field), `AnyOfField` → an inline `CustomAnyOfField` that special-cases `x-format: 'expression'` schemas by rendering `ExpressionField` instead of the default `anyOf` UI
 - **Custom templates**: `ButtonTemplates` (FontAwesome/Bootstrap-styled Add/Copy/Move/Remove/Submit buttons) and `FieldTemplate` → `CustomFieldTemplate` (label, required marker, description tooltip, errors, help text)
 - **Form-data cleaning**: `onSubmit` is wrapped to deep-strip `undefined`/`null` properties left behind when `anyOf` branches switch, before calling the caller's `onSubmit`
 - **Error filtering**: a default `transformErrors` (overridable via props) hides misleading per-branch validation errors on a field once an `anyOf` error already exists for that same path, so users see one clear error instead of every failed branch
@@ -207,72 +208,33 @@ Renders `FileUploadField`, a file `<input>` that uploads the selected file via t
 
 ## Linked Length-Scale Fields
 
-`x-length-scale` on a number field marks it as a length L paired with a weight alpha through a third field alpha_s, by alpha = alpha_s · L². The annotation names the other two fields, which must be siblings of the length in the same object:
+A group object with `x-format: "length-scale"` is rendered by `LengthScaleField`, the way `CustomStringField` picks a widget for a string by its `x-format`. Each pair the group names in `x-length-scales` is a length L and the weight alpha it sets, through the member named by `alpha_s`, by alpha = alpha_s · L². The pairs name only the group's own members:
 
 ```javascript
 {
   type: 'object',
+  'x-format': 'length-scale',
+  'x-length-scales': { alpha_s: 'alpha_s', pairs: { L_r: 'alpha_r', L_inline: 'alpha_r_inline' } },
   properties: {
+    mref:           { type: 'string', enum: ['auto', 'startmodel', 'halfspace'] },
     alpha_s:        { type: 'number' },
+    alpha_r:        { type: 'number' },
+    L_r:            { type: 'number' },
     alpha_r_inline: { type: 'number' },
-    L_inline:       { type: 'number', 'x-length-scale': { alpha: 'alpha_r_inline', alpha_s: 'alpha_s' } },
+    L_inline:       { type: 'number' },
   }
 }
 ```
 
-The form keeps each pair in step while the user types:
+simpeg's inversions declare their `regularization` group this way (swaggerspect merges the keys into the group it builds from the `regularization__*` parameters). The widget renders every member of the group, in schema order, with each alpha and its length side by side on one row at the alpha's place; other members (`mref` above) render as they would anywhere. The group keeps the form's usual object template for its title and description. It keeps each pair in step while the user types:
 
 - Editing a length rewrites its alpha, alpha = alpha_s · L², with the form's current alpha_s.
 - Editing an alpha rewrites its length, L = sqrt(alpha / alpha_s).
-- Editing alpha_s rewrites every alpha linked to it from its length. The lengths are held.
+- Editing alpha_s rewrites every alpha from its length. The lengths are held.
 - When a value can't be worked out, the partner is left as it is: the edited field is empty, alpha_s is empty or 0 or below, or an alpha is negative. 0 maps to 0.
 - The computed value is written as is, with no rounding, and is what the form submits.
 
-Several pairs can share one alpha_s. A field that is not linked, and every object whose properties carry no `x-length-scale`, behave exactly as before. The form knows nothing about what the fields mean, so any process type can use the annotation; inversion regularization (smoothness lengths and their alphas) is the first.
-
-`CustomForm` registers `CustomObjectField` (`frontend/src/jsoneditor/CustomObjectField.jsx`) as the `ObjectField`. For an object with annotated properties it wraps the default object field's `onChange`: after a child's change is passed on, each partner it rewrites is sent as one more change at that partner's path. Nested objects, array items and `anyOf` branches each get their own object field, so a pair works at any depth, for example inside a pipeline step. The rules are in `frontend/src/jsoneditor/lengthScale.js` (`lengthScaleUpdates`). The handler reads the object's data when the change happens, because rjsf re-renders a field only when its own value changes and keeps calling the handler it was first given.
-
-### Adding Custom Formats
-
-To add a new custom format:
-
-1. **Define schema property:**
-
-```javascript
-{
-  my_field: {
-    type: 'string',
-    format: 'my-custom-format',
-    'x-widget': 'custom',  // Optional additional hint
-    title: 'My Field'
-  }
-}
-```
-
-2. **Add detection in CustomStringField:**
-
-```javascript
-if (schema.format === 'my-custom-format') {
-  return <MyCustomWidget {...props} />;
-}
-```
-
-3. **Create widget component:**
-
-```javascript
-function MyCustomWidget({ value, onChange }) {
-  return (
-    <div>
-      <input
-        type="text"
-        value={value || ''}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      {/* Custom UI */}
-    </div>
-  );
-}
-```
+`CustomForm` registers `CustomObjectField` (`frontend/src/jsoneditor/CustomObjectField.jsx`) as the `ObjectField`; its only job is the dispatch, and any object without the `x-format` goes to rjsf's default object field unchanged. `LengthScaleField` passes each member's change on and then sends one more change per partner it rewrites, at that partner's path. The rules are in `frontend/src/jsoneditor/lengthScale.js` (`lengthScaleUpdates`, `lengthScaleRows`). The handler reads the group's data when the change happens, because rjsf re-renders a field only when its own value changes and keeps calling the handler it was first given.
 
 ## Schema Features
 
@@ -676,6 +638,6 @@ For more details on JSON Schema form features, see:
 - `x-format: "upload"`: File upload field
 - `x-format: "expression"` (on an `anyOf` schema): Expression field (column reference or computation)
 - `format: "x-epsg"` (on a number field): EPSG code selector
-- `x-length-scale: {alpha, alpha_s}` (on a number field): length linked to its alpha by alpha = alpha_s · L² (see [Linked Length-Scale Fields](#linked-length-scale-fields))
+- `x-format: "length-scale"` with `x-length-scales: {alpha_s, pairs}` (on an object): group whose lengths and alphas are linked by alpha = alpha_s · L² (see [Linked Length-Scale Fields](#linked-length-scale-fields))
 - Custom field detection in `CustomStringField.jsx` / `CustomNumberField.jsx`
 - Smart dataset grouping in `DatasetSelector.jsx`
