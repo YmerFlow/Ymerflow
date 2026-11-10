@@ -342,6 +342,8 @@ async def stats_summary(auth=Depends(require_admin), db: AsyncSession = Depends(
                 stmt = stmt.where(created_at >= start)
             cell[window] = (await db.execute(stmt)).scalar() or 0
         result[key] = cell
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return result
 
 
@@ -482,6 +484,9 @@ async def stats_pivot(
     for i, (_, _, kind, _) in enumerate(cols):
         raw_keys = [row[i] for row in result_rows]
         lookups.append(await _resolve_labels(db, kind, raw_keys))
+
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
 
     rows = []
     for row in result_rows:

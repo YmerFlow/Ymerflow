@@ -91,6 +91,9 @@ async def list_environments(
     result = await db.execute(stmt)
     environments = result.scalars().all()
 
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+
     return [e.to_dict() for e in environments]
 
 
@@ -148,6 +151,9 @@ async def get_process_types(
     if not environment or not await _can_read_environment(environment, project_id, auth, db):
         raise HTTPException(status_code=404, detail="Environment not found")
 
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+
     return environment.process_types or {}
 
 
@@ -183,6 +189,9 @@ async def get_process_type_schema(
     process_types = environment.process_types or {}
     if type_name not in process_types:
         raise HTTPException(status_code=404, detail=f"Process type '{type_name}' not found in environment")
+
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
 
     return process_types[type_name]
 

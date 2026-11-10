@@ -223,11 +223,79 @@ export function fetchEnvironmentProcessTypes(queryClient, environmentId) {
   });
 }
 
-// Hook to fetch all processes
+// Versions in one of these states can still change; everything else is terminal/immutable.
+const ACTIVE_STATES = new Set(['queued', 'starting', 'running']);
+
+// Projects flagged for a full (non-incremental) reload on their next refetch — set on
+// websocket reconnect, where the client may have missed state signals while disconnected.
+const fullReloadProjects = new Set();
+export function markProcessesFullReload(projectId) {
+  if (projectId) fullReloadProjects.add(projectId);
+}
+
+// The incremental-refetch watermark: the oldest created_at among versions that can still
+// change. Every version created before it is terminal, so a `created_after = watermark`
+// slice is guaranteed to include everything live. With no active versions the watermark is
+// the newest created_at seen (so the slice returns ≈ nothing). Returns null when there is
+// nothing cached to anchor against → caller does a full load.
+// See docs/plans/incremental-process-list-refetch.md.
+function processesWatermark(processes) {
+  if (!Array.isArray(processes) || processes.length === 0) return null;
+  let oldestActive = null;
+  let newestSeen = null;
+  for (const p of processes) {
+    for (const v of p.versions || []) {
+      if (!v.created_at) continue;
+      if (newestSeen === null || v.created_at > newestSeen) newestSeen = v.created_at;
+      if (ACTIVE_STATES.has(v.state) && (oldestActive === null || v.created_at < oldestActive)) {
+        oldestActive = v.created_at;
+      }
+    }
+  }
+  return oldestActive ?? newestSeen;
+}
+
+// Merge a post-watermark slice onto the previously cached full list: update/insert versions
+// by (process_id, version), insert brand-new processes, and refresh process-level fields.
+// Processes untouched by the slice (entirely below the watermark) are carried through as-is.
+function mergeProcessSlice(prev, slice) {
+  const byId = new Map(prev.map(p => [p.id, p]));
+  for (const sp of slice) {
+    const existing = byId.get(sp.id);
+    if (!existing) {
+      byId.set(sp.id, sp);
+      continue;
+    }
+    const versions = new Map((existing.versions || []).map(v => [v.version, v]));
+    for (const sv of sp.versions || []) versions.set(sv.version, sv);
+    byId.set(sp.id, {
+      ...existing,
+      ...sp, // refresh name / flow_x / flow_y / project_id from the slice
+      versions: Array.from(versions.values()).sort((a, b) => a.version - b.version),
+    });
+  }
+  return Array.from(byId.values());
+}
+
+// Hook to fetch all processes.
+//
+// Initial load is the full `?verbose=true` history. Every subsequent refetch (driven by the
+// /ws state signal) pulls only the post-watermark slice and merges it onto the cached list,
+// so a state change no longer re-pulls the whole project history. A flagged full reload (set
+// on websocket reconnect) falls back to a full load. See
+// docs/plans/incremental-process-list-refetch.md.
 export function useProcesses(projectId = null) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: queryKeys.processes(projectId),
-    queryFn: () => getProcesses(projectId),
+    queryFn: async () => {
+      const prev = queryClient.getQueryData(queryKeys.processes(projectId));
+      const forceFull = fullReloadProjects.delete(projectId);
+      const watermark = forceFull ? null : processesWatermark(prev);
+      if (!watermark) return getProcesses(projectId);
+      const slice = await getProcesses(projectId, watermark);
+      return mergeProcessSlice(prev, slice);
+    },
     enabled: !!projectId,
     staleTime: 10 * 1000, // 10 seconds
   });

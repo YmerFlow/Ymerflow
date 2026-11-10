@@ -28,6 +28,23 @@ Pass / fail — the failure *mode* is the signal:
 
 Run it on today's code first (expect RED), then after the fix (expect GREEN).
 
+Monitor-resilience gate (docs/plans/db-monitor-resilience-retry-and-sweep.md)
+----------------------------------------------------------------------------
+The same driver doubles as the gate for the monitor-resilience work. Two things changed about how
+to read it:
+
+  * `Job monitoring failed` must now NEVER appear in any job log. The monitor's catch-all no longer
+    records a terminal state from its own exception (Change B), so that string — which it used to
+    write on a pool-timeout self-fail — is a pure regression marker now. check_failure_mode treats
+    its presence as BAD regardless of cause.
+  * The 11-06 incident fired specifically when a node scale-up + long image pull held many jobs in
+    the wait-for-pod loop while the pool was contended — the monitor-exception path. There is no
+    HTTP lever to "mock slow pod start", so the way to exercise that path from here is to force real
+    node pressure: run with a LARGE burst (`--scenario node-wait`, which just bumps the default
+    n_jobs) against a cluster whose node pool must scale up to admit them, so jobs genuinely sit in
+    queued/starting for minutes. The pass criterion is the plan's done-when: no `Job monitoring
+    failed` anywhere, and every version ends done/failed (none stuck) with its outputs recorded.
+
 Config via env vars (or flags):
   YF_BASE_URL        API base URL                (default http://localhost:8000)
   YF_TOKEN           Bearer token (JWT / apk_)   (required unless YF_USERNAME/YF_PASSWORD given)
@@ -58,7 +75,12 @@ TERMINAL = {"done", "failed"}
 
 
 def _cfg(args):
+    scenario = args.scenario or os.environ.get("YF_SCENARIO", "fail-fast")
+    # node-wait bursts larger by default to force node scale-up (so jobs really sit in the
+    # wait-for-pod loop, the monitor-exception path); an explicit n_jobs still wins.
+    default_n = "50" if scenario == "node-wait" else "25"
     return {
+        "scenario": scenario,
         "base_url": (args.base_url or os.environ.get("YF_BASE_URL", "http://localhost:8000")).rstrip("/"),
         "token": args.token or os.environ.get("YF_TOKEN"),
         "username": os.environ.get("YF_USERNAME"),
@@ -66,7 +88,7 @@ def _cfg(args):
         "project_id": args.project_id or os.environ.get("YF_PROJECT_ID"),
         "environment_id": args.environment_id or os.environ.get("YF_ENVIRONMENT_ID"),
         "process_type": args.process_type or os.environ.get("YF_PROCESS_TYPE"),
-        "n_jobs": int(args.n_jobs or os.environ.get("YF_N_JOBS", "25")),
+        "n_jobs": int(args.n_jobs or os.environ.get("YF_N_JOBS", default_n)),
         "file_urls": [u for u in (args.file_urls or os.environ.get("YF_FILE_URLS", "")).split(",") if u.strip()],
         "timeout": float(os.environ.get("YF_TIMEOUT", "30")),
         "poll_seconds": float(os.environ.get("YF_POLL_SECONDS", "900")),
@@ -232,7 +254,13 @@ async def poll_terminal(client, cfg, project_id, proc_ids, findings):
 
 
 async def check_failure_mode(client, cfg, project_id, proc_ids, states, findings):
-    """Every job should be `failed` via the normal path — never via a QueuePool monitoring error."""
+    """Every job should reach terminal via the normal path — never via a monitor self-fail.
+
+    `queuepool` guards the pool fix (db-pool-commit-before-k8s-io). `job monitoring failed` is now a
+    pure regression marker for the monitor-resilience fix (Change B): the catch-all no longer writes
+    it, so its presence means the monitor terminalized on its own exception — exactly what must not
+    happen anymore. See docs/plans/db-monitor-resilience-retry-and-sweep.md.
+    """
     for pid in proc_ids:
         r = await _get_json(client, f"/projects/{project_id}/process/{pid}/logs", findings, "logs")
         if r is None:
@@ -273,7 +301,8 @@ async def run(cfg):
         project_id = await ensure_project(client, cfg, findings)
         env_id = await ensure_environment(client, cfg, project_id, findings)
         ptype = await pick_process_type(client, cfg, env_id, findings)
-        print(f"project={project_id} env={env_id} type={ptype} n_jobs={cfg['n_jobs']}", flush=True)
+        print(f"project={project_id} env={env_id} type={ptype} n_jobs={cfg['n_jobs']} "
+              f"scenario={cfg['scenario']}", flush=True)
 
         proc_ids = await burst_create(client, cfg, project_id, env_id, ptype, findings)
 
@@ -309,6 +338,10 @@ def main():
     ap.add_argument("--environment-id")
     ap.add_argument("--process-type")
     ap.add_argument("--n-jobs")
+    ap.add_argument("--scenario", choices=["fail-fast", "node-wait"],
+                    help="fail-fast (default): garbage input, jobs fail fast. node-wait: larger "
+                         "burst to force node scale-up so jobs sit in the wait-for-pod loop "
+                         "(exercises the monitor-exception path; see module docstring).")
     ap.add_argument("--file-urls", help="comma-separated /files/... or /uploads/... paths")
     args = ap.parse_args()
     sys.exit(asyncio.run(run(_cfg(args))))

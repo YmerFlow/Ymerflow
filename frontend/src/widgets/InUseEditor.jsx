@@ -5,6 +5,7 @@ import { MessageContext } from '../MessageContext';
 export default function InUseEditor() {
   const {
     inMemoryDiffs,
+    inMemoryDiffDirty,
     inUseAction,
     setInUseAction,
     undoLastEdit,
@@ -63,6 +64,15 @@ export default function InUseEditor() {
   }, [inMemoryDiffs]);
 
   const hasPendingEdits = stats.total > 0;
+  // Save writes only what changed since a save point's edit loaded, including an edit the
+  // person emptied, so it follows the dirty flags rather than the edit count.
+  const hasChanges = Object.values(inMemoryDiffDirty).some(Boolean);
+
+  // Re-entry guard: a second Save while the first is still running re-uploads the same
+  // edits and creates a duplicate version. The ref (set synchronously before the first
+  // await) is what actually blocks the double-click; `saving` only drives button state.
+  const savingRef = React.useRef(false);
+  const [saving, setSaving] = React.useState(false);
 
   function handleUndo() {
     const names = Object.keys(inMemoryDiffs);
@@ -72,10 +82,16 @@ export default function InUseEditor() {
   // Anything saveAllDiffs does not handle itself must still reach the user: a failed
   // Save keeps the edits in the editor, and they exist nowhere else.
   async function handleSave() {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
     try {
       await saveAllDiffs();
     } catch (e) {
       addMessage({ level: 'danger', message: `Save failed: ${e.message}. The edits are still in the editor.` });
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   }
 
@@ -111,11 +127,11 @@ export default function InUseEditor() {
           Undo (Ctrl+Z)
         </button>
         <button
-          style={{ ...btnBase, background: hasPendingEdits ? '#198754' : '#aaa', color: '#fff', borderColor: 'transparent', marginLeft: 'auto' }}
-          disabled={!hasPendingEdits}
+          style={{ ...btnBase, background: (hasChanges && !saving) ? '#198754' : '#aaa', color: '#fff', borderColor: 'transparent', marginLeft: 'auto' }}
+          disabled={!hasChanges || saving}
           onClick={handleSave}
         >
-          Save
+          {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
 

@@ -41,6 +41,13 @@ setup(
         'aiosmtplib',
         'fastapi-mcp',
         'mcp<2.0.0',  # fastapi-mcp 0.4.0 breaks on mcp 2.0.0 (Server.__init__ became kw-only); no fastapi-mcp release supports mcp 2.x yet
+        # python-dateutil 3.x/4.x (first published Nov 2026, after years at 2.9) collides with
+        # botocore's hard 'python-dateutil<3.0.0' cap (pulled transitively via s3fs->aiobotocore).
+        # Unpinned, pip grabs dateutil 4.0.0 for the unbounded kubernetes/pandas, then backtracks
+        # botocore AND pandas trying to escape the cap — eventually hitting the pandas-1.4.4 sdist,
+        # which fails to build (its setup.py imports pkg_resources, dropped from modern setuptools).
+        # Capping here keeps the whole AWS/scientific stack on the 2.9 line everything agrees on.
+        'python-dateutil<3.0.0',
 
         # Frontend-plugin build harness — imported by backend/services/job_orchestrator.py
         # (HOST_SHARED_VERSIONS) and run in-pod by the build_frontend_plugin process type. A

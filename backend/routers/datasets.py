@@ -62,6 +62,9 @@ async def search_datasets(
     result = await db.execute(stmt)
     datasets = result.scalars().all()
 
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+
     return redact_project_id([d.to_dict() for d in datasets], access)
 
 
@@ -115,6 +118,9 @@ async def get_dataset(
 
     if not dataset or dataset.project_id != access.project.id:
         raise HTTPException(status_code=404, detail="Dataset not found")
+
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
 
     return redact_project_id(dataset.to_dict(), access)
 

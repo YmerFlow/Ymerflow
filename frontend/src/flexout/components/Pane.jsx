@@ -1,6 +1,7 @@
 import React, { useContext, useState, useRef, Component, useMemo } from 'react';
 import { LayoutContext } from '../LayoutContext';
 import PaneMenuDropdown from './PaneMenuDropdown';
+import PaneMenuContent from './PaneMenuContent';
 import Split from './Split';
 import TabSet from './TabSet';
 import { useDrag, useDrop } from 'react-dnd';
@@ -9,6 +10,7 @@ import { Modal, Button } from 'react-bootstrap';
 import { CustomForm } from '../../jsoneditor';
 import validator from "@rjsf/validator-ajv8";
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { resolveGlobalCompact, isCompact } from '../headerMode';
 
 // Error Boundary to catch widget crashes
 class WidgetErrorBoundary extends Component {
@@ -82,9 +84,15 @@ function stripNoDataSentinels(val) {
   return val;
 }
 
-export default function Pane({ parentUpdate, onTabMoved, hideHeader, ...node }) {
+export default function Pane({ parentUpdate, onTabMoved, hideHeader, inheritedCompact, inheritedGlobalCompact, ...node }) {
   const { updateLayout, widgets, data_context } = useContext(LayoutContext);
   const isMobile = useIsMobile();
+
+  // The root pane is the only one whose inheritedGlobalCompact prop is undefined;
+  // it seeds the global flag from its own node, every other pane uses the prop.
+  const isRoot = inheritedGlobalCompact === undefined;
+  const globalCompact = resolveGlobalCompact(node, inheritedGlobalCompact);
+  const compact = isCompact({ node, inheritedCompact, globalCompact, isMobile });
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -191,6 +199,14 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, ...node }) 
     }
   };
 
+  // Merge flexout-owned node fields (compact, globalCompact) directly — these
+  // are never part of any widget's config schema.
+  const updateNodeFields = (patch) => {
+    const newNode = { ...node, ...patch };
+    if (parentUpdate) parentUpdate('replace', node.id, newNode);
+    else updateLayout(newNode);
+  };
+
   // -------------------------------
   // Drag and Drop
   const [{ isDragging }, drag] = useDrag({
@@ -216,9 +232,49 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, ...node }) 
 
   const style = { opacity: isDragging ? 0.5 : 1 };
 
+  const titleText = (node.customTitle !== undefined ? node.customTitle : Widget.title) || '\u00A0';
+
+  // Dropdown body shared by the full header's menu toggle and the compact corner
+  // arrow. In compact mode it carries its own title / rename row at the top, since
+  // there is no header strip to rename from.
+  const menuBody = (
+    <PaneMenuDropdown anchorRef={menuRef} onClose={() => setShowMenu(false)}>
+      <PaneMenuContent
+        node={node}
+        widgets={widgets}
+        isRoot={isRoot}
+        hasConfig={hasConfig}
+        onConfigure={handleConfigure}
+        onRemove={() => { handleRemove(); setShowMenu(false); }}
+        onChangeWidget={(name) => { handleChangeContent({ target: { value: name } }); setShowMenu(false); }}
+        onUpdateFields={updateNodeFields}
+        titleRow={compact ? (
+          <div className="pane-menu-title" onClick={(e) => e.stopPropagation()}>
+            {isEditingTitle ? (
+              <input
+                ref={titleInputRef}
+                type="text"
+                defaultValue={node.customTitle !== undefined ? node.customTitle : Widget.title}
+                onBlur={handleTitleSave}
+                onKeyDown={handleTitleKeyDown}
+                autoFocus
+                className="form-control form-control-sm"
+              />
+            ) : (
+              <span style={{ cursor: 'pointer' }} onClick={handleTitleClick}>{titleText}</span>
+            )}
+          </div>
+        ) : null}
+      />
+    </PaneMenuDropdown>
+  );
+
+  const showHeader = !hideHeader && !compact;
+  const showCornerArrow = !hideHeader && compact;
+
   return (
     <div ref={drop} style={style} className={`${hideHeader ? 'border-top ' : ''}d-flex flex-column ${isMobile ? '' : 'h-100'}`}>
-      {!hideHeader && (
+      {showHeader && (
         <div ref={drag} className="d-flex justify-content-between bg-light border-bottom align-items-center ps-1 pane-header">
           <div onClick={handleTitleClick} style={{ cursor: 'pointer', flexGrow: 1, minWidth: 0, minHeight: '1.5em' }}>
             {isEditingTitle ? (
@@ -234,48 +290,40 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, ...node }) 
                 onClick={(e) => e.stopPropagation()}
               />
             ) : (
-              (node.customTitle !== undefined ? node.customTitle : Widget.title) || '\u00A0'
+              titleText
             )}
           </div>
           <div ref={menuRef} className="pane-menu-anchor" onClick={(e) => e.stopPropagation()}>
             <button className="btn pane-menu-toggle" onClick={() => setShowMenu(v => !v)}>
               <i className={`fas fa-chevron-${showMenu ? 'up' : 'down'}`}></i>
             </button>
-            {showMenu && (
-              <PaneMenuDropdown anchorRef={menuRef} onClose={() => setShowMenu(false)}>
-                <div className="pane-menu-actions">
-                  {hasConfig && (
-                    <button className="btn btn-sm btn-secondary" onClick={handleConfigure}>
-                      <i className="fas fa-cog"></i>
-                    </button>
-                  )}
-                  <button className="btn btn-sm btn-danger" onClick={() => { handleRemove(); setShowMenu(false); }}>
-                    <i className="fas fa-times"></i>
-                  </button>
-                </div>
-                <div className="pane-menu-widget-list">
-                  {Object.entries(widgets).map(([name, widget]) => (
-                    <button
-                      key={name}
-                      className={node.widget === name ? 'active' : ''}
-                      onClick={() => { handleChangeContent({ target: { value: name } }); setShowMenu(false); }}
-                    >
-                      {widget.title}
-                    </button>
-                  ))}
-                </div>
-              </PaneMenuDropdown>
-            )}
+            {showMenu && menuBody}
           </div>
         </div>
       )}
-      <div className={
-        isMobile
-          ? (hideHeader ? 'p-1' : 'pt-1')
-          : `${hideHeader ? 'p-1' : 'pt-1'} flex-grow-1 overflow-auto`
-      }>
+      <div
+        className={
+          isMobile
+            ? ((hideHeader || compact) ? 'p-1' : 'pt-1')
+            : `${(hideHeader || compact) ? 'p-1' : 'pt-1'} flex-grow-1 overflow-auto`
+        }
+        style={showCornerArrow ? { position: 'relative' } : undefined}
+      >
+        {showCornerArrow && (
+          <div ref={menuRef} className="pane-compact-corner" onClick={(e) => e.stopPropagation()}>
+            <button ref={drag} className="btn pane-compact-arrow" onClick={() => setShowMenu(v => !v)}>
+              <i className={`fas fa-chevron-${showMenu ? 'up' : 'down'}`}></i>
+            </button>
+            {showMenu && menuBody}
+          </div>
+        )}
         <WidgetErrorBoundary widgetName={node.widget} node={node}>
-          <Widget parentUpdate={parentUpdate} {...node} />
+          <Widget
+            parentUpdate={parentUpdate}
+            {...node}
+            inheritedCompact={compact}
+            inheritedGlobalCompact={globalCompact}
+          />
         </WidgetErrorBoundary>
       </div>
 

@@ -96,7 +96,10 @@ def _apply_generic_fields(cluster: Cluster, body: Dict) -> None:
 @router.get("/admin/clusters")
 async def admin_list_clusters(auth=Depends(require_admin), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Cluster).order_by(Cluster.sort_order))
-    return [_cluster_admin_dict(c) for c in result.scalars().all()]
+    clusters = result.scalars().all()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+    return [_cluster_admin_dict(c) for c in clusters]
 
 
 @router.get("/admin/clusters/by-registration-token")
@@ -113,6 +116,8 @@ async def admin_get_cluster_by_registration_token(
     cluster = result.scalar_one_or_none()
     if cluster is None:
         raise HTTPException(status_code=404, detail="No cluster found for this registration token")
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return _cluster_admin_dict(cluster)
 
 
@@ -382,7 +387,10 @@ def _apply_storage_generic_fields(backend: StorageBackend, body: Dict) -> None:
 @router.get("/admin/storage-backends")
 async def admin_list_storage_backends(auth=Depends(require_admin), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(StorageBackend).order_by(StorageBackend.sort_order))
-    return [_storage_backend_admin_dict(b) for b in result.scalars().all()]
+    backends = result.scalars().all()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
+    return [_storage_backend_admin_dict(b) for b in backends]
 
 
 @router.post("/admin/storage-backends")
@@ -450,9 +458,12 @@ async def admin_list_tos_versions(auth=Depends(require_admin), db: AsyncSession 
         .order_by(TosVersion.version.desc())
     )
     result = await db.execute(stmt)
+    rows = result.all()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return [
         {**tos_version.to_dict(), "created_by_username": username}
-        for tos_version, username in result.all()
+        for tos_version, username in rows
     ]
 
 

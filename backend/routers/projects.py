@@ -127,6 +127,8 @@ async def list_projects(
             }
             result_list = [pinned_entry] + result_list
 
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return result_list
 
 
@@ -253,6 +255,8 @@ async def get_project_export(
     export_row = result.scalar_one_or_none()
     if not export_row:
         raise HTTPException(status_code=404, detail="Export not found")
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return export_row.to_dict()
 
 
@@ -307,6 +311,8 @@ async def get_project_import(
     import_row = result.scalar_one_or_none()
     if not import_row:
         raise HTTPException(status_code=404, detail="Import not found")
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return import_row.to_dict()
 
 
@@ -324,6 +330,8 @@ async def list_members(
     )
     result = await db.execute(stmt)
     members = result.scalars().all()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     return [m.to_dict() for m in members]
 
 
@@ -346,6 +354,8 @@ async def list_invites(
     )
     result = await db.execute(stmt)
     invites = result.scalars().all()
+    # Free the pooled connection before serialize+send (see docs/plans/done/db-pool-commit-before-k8s-io.md).
+    await db.commit()
     invite_dicts = []
     for inv in invites:
         d = inv.to_dict(include_token=True)

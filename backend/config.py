@@ -130,6 +130,16 @@ class Settings(BaseSettings):
     # PVC name (when volume_type == "pvc") or host path (when volume_type == "hostpath").
     plugin_npm_source_volume_source: Optional[str] = None
 
+    # Orphan-monitor sweep (docs/plans/db-monitor-resilience-retry-and-sweep.md).
+    # How often the periodic sweep runs: re-attaches monitors to orphaned non-terminal versions and
+    # reaps terminal-but-live K8s Jobs.
+    monitor_sweep_interval_seconds: int = 300
+    # A non-terminal version whose last_monitored_at is NULL or older than this is considered to
+    # have no live monitor. Must exceed the longest gap between a healthy monitor's heartbeats —
+    # the watch loop blocks up to ~300s per watch_job call, so 900s leaves comfortable margin
+    # against false re-attach while still detecting a dead monitor within ~1 sweep after it.
+    monitor_stale_seconds: int = 900
+
     class Config:
         env_file = "config.env"
         env_file_encoding = "utf-8"
