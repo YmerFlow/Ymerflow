@@ -2,10 +2,32 @@
 
 ## Status
 
-**DRAFT — pending operator decisions (see "Decisions needed").** Not yet implemented.
-Design substantially revised 2026-11-09 (see "Design" — the earlier infra/non-infra
-classifier and failure-path job-kill were dropped as a false premise; replaced by
-"the monitor never records a terminal state from its own exception").
+**IMPLEMENTED 2026-11-09.** Operator decisions resolved (see "Decisions needed" — each now
+annotated with the chosen option). Design substantially revised 2026-11-09 (see "Design" — the
+earlier infra/non-infra classifier and failure-path job-kill were dropped as a false premise;
+replaced by "the monitor never records a terminal state from its own exception").
+
+What shipped, by change:
+- **A** — `deps/Ymerflow-process-sdk/ymerflow_runner/runner.py` writes
+  `{storage_base}/processes/{process_id}/{version}/info.json` (`{status, completed_at}`) after
+  `run()` returns, before `sys.exit(0)`; never on the failure path. *(SDK: push to GitHub master so
+  the runner image rebuilds — see the stale-deps trap in project memory.)*
+- **B** — `backend/models/process.py` `monitor_job` catch-all now logs + finalizes + returns,
+  leaving state untouched (no `INFRA_EXCEPTIONS`/`_is_infra_error` — never introduced).
+- **C** — both TTL-404 paths call `ProcessVersion._resolve_ttl_404`, which reads the marker via
+  `_completion_marker_present`: present → `_handle_job_completion(..., "succeeded")`, absent →
+  `FAILED`.
+- **D** — `ProcessVersion.resume_orphaned_monitors(respect_heartbeat)` (recover + reap), wired into
+  `backend/main.py` `startup_event` (initial `respect_heartbeat=False`) and a periodic
+  `_orphan_sweep_loop`, cancelled in `shutdown_event`. Inline reap (`_reap_job`) on every terminal
+  path. New `K8sClient.list_jobs`. Liveness via the `last_monitored_at` heartbeat column
+  (migration `ab62620adb17`). Config: `monitor_sweep_interval_seconds=300`,
+  `monitor_stale_seconds=900`.
+
+Tests: `backend/test_monitor_resilience.py` (9 cases: catch-all no-fail, TTL-404 present/absent,
+recover respects heartbeat+job, startup recover ignores heartbeat, reap only terminal-unmonitored,
+`_reap_job` tolerance, SDK marker on success / not on failure). `backend/stress/stress_pool.py`
+extended with the `node-wait` scenario + the "Job monitoring failed" regression guard.
 
 Covers asks 2, 3 and 4 of ymerflow-business
 [#160](https://github.com/YmerFlow/ymerflow-business/issues/160)
@@ -186,18 +208,23 @@ historical FAILED-with-live-job versions.
 
 ## Decisions needed
 
-1. **Liveness tracking: in-memory registry (recommended) vs. `last_monitored_at` heartbeat
-   column.** Registry is simplest and enough for single-backend; heartbeat is migration + writes
-   but survives multi-replica and catches hung monitors. Pick based on whether multi-replica
-   backend is on the near horizon.
-2. **`SWEEP_INTERVAL`.** Proposed 60 s. Trade-off: faster orphan recovery vs. a small periodic
-   `SELECT` (indexable on `state`) plus one K8s Job list per cluster for the reap pass.
-3. **Reap scope.** Inline delete-on-terminal (recommended) + a sweep backstop, vs. inline only, vs.
-   sweep only. Also: should the sweep's reap pass do a one-time reconcile of *already*-FAILED
-   versions with live jobs from past incidents, or only going-forward leftovers?
-4. **Marker file name.** `info.json` at the version root (as requested) vs. `status.json` to avoid
-   confusion with the per-dataset `info.json`. Content: minimal `{status, completed_at}` vs. also
-   embedding the produced dataset ids.
+*(All resolved 2026-11-09; chosen option in **bold** per item.)*
+
+1. **Liveness tracking → `last_monitored_at` heartbeat column.** Chosen over the in-memory registry:
+   survives a multi-replica backend and detects hung-but-registered monitors. `monitor_job`
+   refreshes it each loop iteration (initial write before the first K8s call, then in the
+   wait/watch loops); the sweep treats NULL-or-older-than-`monitor_stale_seconds` as "no live
+   monitor". Startup passes `respect_heartbeat=False` so the possibly-recent heartbeats left by
+   now-dead monitors don't block re-attach.
+2. **`SWEEP_INTERVAL` → 300 s** (`monitor_sweep_interval_seconds`). Lighter periodic load; worst-case
+   orphan recovery is ~one interval after the heartbeat goes stale.
+3. **Reap scope → inline delete-on-terminal + sweep backstop, no historical reconcile.** `_reap_job`
+   fires inline on every terminal path (`_wait_for_pod` failures, `_handle_job_completion`); the
+   sweep's reap pass enumerates *live* K8s Jobs and deletes any behind a terminal, unmonitored
+   version. It does **not** add a separate DB scan over already-FAILED rows — a past incident's pods
+   are long TTL-gone, so "enumerate live jobs" naturally catches only recent leftovers.
+4. **Marker → `info.json` at the version root, minimal `{status, completed_at}`.** As requested in
+   Change A; no embedded dataset ids (`_create_outputs` already discovers those from storage).
 
 **Decided (not open):** the marker is the **TTL-404 fallback only**, never the primary success
 signal. The normal exit-code-0 path records `DONE` without consulting it, so the change is

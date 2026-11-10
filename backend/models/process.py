@@ -358,6 +358,12 @@ class ProcessVersion(Base):
     # plaintext token — same hash-and-compare pattern as ApiKey.key_hash.
     refresh_token_hash = Column(String(255), nullable=True)
 
+    # Monitor liveness heartbeat. monitor_job refreshes this on every loop iteration; the orphan
+    # sweep (resume_orphaned_monitors) treats a non-terminal version whose heartbeat is NULL or
+    # older than settings.monitor_stale_seconds as having no live monitor, and re-attaches one.
+    # See docs/plans/db-monitor-resilience-retry-and-sweep.md.
+    last_monitored_at = Column(DateTime, nullable=True)
+
     # Log retrieval tracking fields
     log_retrieval_state = Column(String(50), nullable=True)  # LogRetrievalState values
     log_last_timestamp = Column(DateTime, nullable=True)  # Last log timestamp retrieved
@@ -580,6 +586,11 @@ class ProcessVersion(Base):
                 cluster = await get_cluster_for_process_version(db, process_version)
                 k8s_client = k8s_clients.get(cluster)
 
+                # Heartbeat: claim this version as monitored before any long-running K8s I/O, so the
+                # orphan sweep doesn't see a NULL/stale heartbeat and double-attach. Refreshed in the
+                # wait/watch loops below. See docs/plans/db-monitor-resilience-retry-and-sweep.md.
+                process_version.last_monitored_at = datetime.utcnow()
+
                 # End the preamble read transaction before the first blocking K8s call so the
                 # pooled connection isn't parked idle-in-transaction across it (see
                 # docs/plans/done/db-pool-commit-before-k8s-io.md). commit() (not rollback()) keeps the
@@ -592,11 +603,13 @@ class ProcessVersion(Base):
                     logger.info(f"Current K8s job status: {current_status}")
                 except ApiException as e:
                     if e.status == 404:
-                        # Job was deleted (TTL cleanup)
+                        # Job gone (TTL-reaped before we witnessed its status). Storage is now the
+                        # source of truth — recover via the completion marker instead of blindly
+                        # failing (this is one of the 11-06 "completed-but-unrecorded" cases).
                         logger.warning(f"Job {job_name} not found (deleted by TTL)")
-                        await process_version.add_log_entry(db, "Job was cleaned up by Kubernetes TTL controller")
-                        await log_manager.finalize_logs()
-                        await process_version.update_state(db, ProcessState.FAILED, process.project_id)
+                        await ProcessVersion._resolve_ttl_404(
+                            process_version, process, job_name, db, logger, log_manager, k8s_client
+                        )
                         return
                     else:
                         raise
@@ -657,6 +670,13 @@ class ProcessVersion(Base):
                     # any transaction left by the preamble before entering the loop.
                     await db.commit()
                     while True:
+                        # Heartbeat for the orphan sweep, refreshed each watch iteration. watch_job
+                        # blocks up to its 300s timeout, so this is the coarsest heartbeat cadence —
+                        # settings.monitor_stale_seconds (900s) is sized to stay well above it. The
+                        # commit ends the transaction before the watch (no SQL may be open across it).
+                        process_version.last_monitored_at = datetime.utcnow()
+                        await db.commit()
+
                         final_status = None
                         async for job in k8s_client.watch_job(job_name, timeout_seconds=300):
                             status = job.status
@@ -680,9 +700,9 @@ class ProcessVersion(Base):
                         except ApiException as e:
                             if e.status == 404:
                                 logger.warning(f"Job {job_name} not found during poll (deleted by TTL)")
-                                await process_version.add_log_entry(db, "Job was cleaned up by Kubernetes TTL controller")
-                                await log_manager.finalize_logs()
-                                await process_version.update_state(db, ProcessState.FAILED, process.project_id)
+                                await ProcessVersion._resolve_ttl_404(
+                                    process_version, process, job_name, db, logger, log_manager, k8s_client
+                                )
                                 break
                             raise
 
@@ -696,26 +716,182 @@ class ProcessVersion(Base):
                         logger.info(f"Watch expired for {job_name}, job still running, re-watching")
 
         except Exception as e:
-            logger.error(f"❌ Job monitoring error: {process_id} v{version} - {str(e)}", exc_info=True)
+            # A caught exception means the MONITOR had a problem (pool timeout, K8s API 5xx,
+            # network blip, a bug in this code) — it is NEVER the signal that the JOB failed.
+            # Every genuine job failure is detected explicitly above (pod/job error status, pod
+            # exit code via K8s status, the TTL-404-marker path). So this handler must never
+            # record a terminal state: it logs, finalizes logs, and leaves the version state
+            # untouched (queued/starting/running). The orphan sweep (resume_orphaned_monitors)
+            # re-attaches a fresh monitor, which reconciles against K8s and records the true
+            # outcome. See docs/plans/db-monitor-resilience-retry-and-sweep.md.
+            logger.error(
+                f"❌ Job monitoring error (state left untouched; sweep will re-attach): "
+                f"{process_id} v{version} - {str(e)}",
+                exc_info=True,
+            )
             try:
-                # Finalize logs even on error
                 await log_manager.finalize_logs()
-
-                async with async_session_maker() as db:
-                    stmt = select(ProcessVersion).options(
-                        selectinload(ProcessVersion.process)
-                    ).where(
-                        ProcessVersion.process_id == process_id,
-                        ProcessVersion.version == version
-                    )
-                    result = await db.execute(stmt)
-                    process_version = result.scalar_one_or_none()
-                    if process_version:
-                        error_msg = f"Job monitoring failed: {type(e).__name__}: {str(e)}"
-                        await process_version.add_log_entry(db, error_msg)
-                        await process_version.update_state(db, ProcessState.FAILED, process_version.process.project_id)
             except Exception as inner_e:
-                logger.error(f"Failed to update process state after monitoring error: {inner_e}", exc_info=True)
+                logger.error(f"Failed to finalize logs after monitoring error: {inner_e}", exc_info=True)
+
+    @staticmethod
+    async def resume_orphaned_monitors(respect_heartbeat: bool = True):
+        """Re-attach monitors to orphaned non-terminal versions and reap terminal-but-live Jobs.
+
+        Called once at startup (respect_heartbeat=False) and then periodically (respect_heartbeat=
+        True). See docs/plans/db-monitor-resilience-retry-and-sweep.md.
+
+        Recover: find non-terminal versions with no live monitor and start a fresh monitor_job for
+        each. monitor_job is self-reconciling — it re-checks K8s (including the TTL-404-marker path),
+        so even a version whose Job already finished resolves to DONE/FAILED instead of stranding.
+
+        Reap: list live K8s Jobs per cluster; any whose version is already terminal and has no live
+        monitor is a leftover (failed inline reap, or a crash-before-delete race) — delete it to
+        release the pod + Kueue Workload.
+
+        Liveness is read from the last_monitored_at heartbeat: NULL or older than
+        settings.monitor_stale_seconds means "no live monitor". On startup the heartbeats left by
+        now-dead monitors may still look recent, so respect_heartbeat=False ignores them (this fresh
+        process has no monitors yet) and recovers/reaps unconditionally.
+        """
+        from sqlalchemy import or_
+        from backend.database import async_session_maker
+        from backend.config import settings
+        from backend.services.k8s_client import k8s_clients
+        from backend.models.cluster import Cluster
+        import logging
+
+        logger = logging.getLogger(__name__)
+        stale_before = datetime.utcnow() - timedelta(seconds=settings.monitor_stale_seconds)
+        non_terminal = [ProcessState.QUEUED, ProcessState.STARTING, ProcessState.RUNNING]
+
+        # --- Recover: re-attach monitors to orphaned non-terminal versions ---
+        async with async_session_maker() as db:
+            conds = [ProcessVersion.state.in_(non_terminal)]
+            if respect_heartbeat:
+                # Only versions whose Job already exists — skip ones still in run_task's pre-job
+                # setup (no k8s_job_name yet), which run_task is actively driving. And only those
+                # whose monitor is dead/stale (NULL heartbeat = never monitored, or heartbeat old).
+                conds.append(ProcessVersion.k8s_job_name.isnot(None))
+                conds.append(or_(ProcessVersion.last_monitored_at.is_(None),
+                                 ProcessVersion.last_monitored_at < stale_before))
+            orphaned = (await db.execute(select(ProcessVersion).where(*conds))).scalars().all()
+
+            orphan_keys = []
+            for pv in orphaned:
+                logger.info(f"Re-attaching monitor: {pv.process_id} v{pv.version} (state={pv.state.value})")
+                # Claim it (write a fresh heartbeat) before spawning, so a concurrent/next sweep
+                # doesn't double-attach in the window before the new monitor's own first heartbeat.
+                pv.last_monitored_at = datetime.utcnow()
+                orphan_keys.append((pv.process_id, pv.version))
+            await db.commit()
+
+        for process_id, version in orphan_keys:
+            asyncio.create_task(ProcessVersion.monitor_job(process_id, version))
+
+        # --- Reap: delete terminal-but-live Jobs across all active clusters ---
+        async with async_session_maker() as db:
+            clusters = (await db.execute(select(Cluster).where(Cluster.active == True))).scalars().all()
+            for cluster in clusters:
+                kc = k8s_clients.get(cluster)
+                try:
+                    jobs = await kc.list_jobs()
+                except Exception as e:
+                    # Per-cluster degradation (a cluster briefly unreachable must not abort the
+                    # sweep for the others). Logged, not swallowed (CLAUDE.md rule 8).
+                    logger.warning(f"Reap: cannot list jobs on cluster {cluster.name}: {e}")
+                    continue
+
+                job_names = [j.metadata.name for j in jobs if j.metadata and j.metadata.name]
+                if not job_names:
+                    continue
+
+                terminal = (await db.execute(select(ProcessVersion).where(
+                    ProcessVersion.k8s_job_name.in_(job_names),
+                    ProcessVersion.state.in_([ProcessState.DONE, ProcessState.FAILED]),
+                ))).scalars().all()
+
+                for pv in terminal:
+                    # If a monitor is still live (recent heartbeat), it will reap inline on
+                    # completion — leave it. Only reap genuinely unmonitored leftovers.
+                    if respect_heartbeat and pv.last_monitored_at and pv.last_monitored_at >= stale_before:
+                        continue
+                    logger.info(
+                        f"Reaping terminal-but-live job {pv.k8s_job_name} "
+                        f"(v{pv.version}, {pv.state.value})")
+                    await ProcessVersion._reap_job(kc, pv.k8s_job_name, logger)
+
+    @staticmethod
+    async def _completion_marker_present(db: AsyncSession, process: "Process", version: int) -> bool:
+        """Does the durable version-level completion marker exist in storage?
+
+        The runner writes {storage_base}/processes/{process_id}/{version}/info.json as its last act
+        on a successful run (ymerflow_runner/runner.py). Its presence is the storage-side truth that
+        the job completed successfully; absence means it did not. Consulted ONLY on the TTL-404 path
+        (the Job is gone, so the ephemeral K8s exit code is no longer available).
+        See docs/plans/db-monitor-resilience-retry-and-sweep.md.
+        """
+        from backend.services.storage_service import get_storage_base_url, get_fsspec_storage_options
+        import fsspec
+
+        storage_base = await get_storage_base_url(db, process.project_id)
+        marker_url = f"{storage_base}/processes/{process.id}/{version}/info.json"
+        storage_options = await get_fsspec_storage_options(db, process.project_id)
+        fs = fsspec.filesystem(storage_base.split('://')[0], **storage_options)
+
+        # End the read transaction before the synchronous storage call so the pooled connection
+        # isn't parked idle-in-transaction across it (same discipline as _create_outputs).
+        await db.commit()
+        return fs.exists(marker_url.split('://', 1)[1])
+
+    @staticmethod
+    async def _resolve_ttl_404(process_version: "ProcessVersion", process: "Process", job_name: str,
+                               db: AsyncSession, logger, log_manager, k8s_client):
+        """Resolve a job whose K8s Job vanished (TTL-reaped before we witnessed its status).
+
+        Storage is the source of truth once the Job is gone: a completion marker present means the
+        run succeeded (record outputs + DONE); absent means it did not successfully complete
+        (FAILED). This is the ONLY place the monitor terminalizes on something other than a
+        directly-witnessed K8s terminal status, and it is still an authoritative (durable) signal.
+        See docs/plans/db-monitor-resilience-retry-and-sweep.md.
+        """
+        await log_manager.finalize_logs()
+        if await ProcessVersion._completion_marker_present(db, process, process_version.version):
+            logger.info(f"Job {job_name} TTL-reaped but completion marker present → treating as succeeded")
+            await process_version.add_log_entry(
+                db, "Job was cleaned up by Kubernetes TTL controller after completing successfully; "
+                    "recovering outputs from storage")
+            await ProcessVersion._handle_job_completion(
+                process_version, process, job_name, "succeeded", db, logger, k8s_client
+            )
+        else:
+            logger.warning(f"Job {job_name} TTL-reaped with no completion marker → FAILED")
+            await process_version.add_log_entry(
+                db, "Job was cleaned up by Kubernetes TTL controller (no completion marker found)")
+            await process_version.update_state(db, ProcessState.FAILED, process.project_id)
+
+    @staticmethod
+    async def _reap_job(k8s_client, job_name: str, logger):
+        """Delete a terminal version's K8s Job, releasing its pod and Kueue Workload.
+
+        Called inline whenever the monitor sets a terminal state on a path where the Job may still
+        exist. The pod has already exited (backoff_limit=0 + restart_policy=Never), so nothing
+        running is harmed — this just frees the Kueue quota the finished Job's Workload still holds,
+        immediately rather than waiting out the TTL. Best-effort: a 404 means it's already gone; an
+        unreachable cluster is logged, not fatal (matches the cancel path, routers/processes.py).
+        See docs/plans/db-monitor-resilience-retry-and-sweep.md.
+        """
+        from kubernetes_asyncio.client.exceptions import ApiException
+        if not job_name or k8s_client is None:
+            return
+        try:
+            await k8s_client.delete_job(job_name)
+        except ApiException as e:
+            if e.status == 404:
+                return
+            logger.warning(f"Could not reap K8s job {job_name}: {e}")
+        except Exception as e:
+            logger.warning(f"Could not reap K8s job {job_name}: {e}")
 
     @staticmethod
     async def _wait_for_pod(process_version: "ProcessVersion", process: "Process", job_name: str, db: AsyncSession, logger, log_manager, k8s_client):
@@ -765,6 +941,9 @@ class ProcessVersion(Base):
                     await log_manager._retrieve_historical_logs(process_version, pod_name, db)
 
                     await process_version.update_state(db, ProcessState.FAILED, process.project_id)
+                    # Terminal state set with the Job likely still present → reap it inline to free
+                    # the pod + Kueue Workload immediately (the pod has already failed, backoff_limit=0).
+                    await ProcessVersion._reap_job(k8s_client, job_name, logger)
                     return None
 
                 # Pod exists with no pod-level error: it's coming up (scheduled / pulling image /
@@ -792,6 +971,8 @@ class ProcessVersion(Base):
                     await log_manager._retrieve_job_events(process_version, db)
 
                     await process_version.update_state(db, ProcessState.FAILED, process.project_id)
+                    # Reap the failed Job inline (frees its Kueue Workload immediately).
+                    await ProcessVersion._reap_job(k8s_client, job_name, logger)
                     return None
 
             # Periodic status logging
@@ -803,6 +984,9 @@ class ProcessVersion(Base):
                 await process_version.add_log_entry(db, msg)
                 await db.commit()
                 last_status_log_time = current_time
+
+            # Heartbeat for the orphan sweep (refreshed every poll while waiting for the pod).
+            process_version.last_monitored_at = datetime.utcnow()
 
             # No DB transaction may be parked across the poll interval. The status-check and
             # event-retrieval helpers above (add_log_entry / update_state / _retrieve_* ) each
@@ -883,6 +1067,12 @@ class ProcessVersion(Base):
             await process_version.add_log_entry(db, f"Process failed after {runtime_seconds:.1f}s")
             await process_version.update_state(db, ProcessState.FAILED, process.project_id)
             logger.error(f"❌ Process failed: {process_version.process_id} v{process_version.version}")
+
+        # Reap the finished Job inline (both success and failure). Its pod has already exited, and
+        # logs were finalized to storage before this method was called, so deleting it only releases
+        # the pod + Kueue Workload that would otherwise keep holding quota until the TTL. On the
+        # TTL-404 recovery path the Job is already gone, so this is a tolerated 404. See the plan.
+        await ProcessVersion._reap_job(k8s_client, job_name, logger)
 
     async def run_task(self, username: str):
         """Check balance, resolve dependencies, create K8s job, and monitor it.

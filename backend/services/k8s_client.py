@@ -597,6 +597,23 @@ class K8sClient:
         )
         return resp.get("items", [])
 
+    async def list_jobs(self) -> list:
+        """List all Jobs in this client's jobs namespace (raw V1Job objects).
+
+        Used by the orphan sweep's reap pass to find terminal-but-live Jobs left behind by a
+        failed inline reap or a crash-before-delete race, so their pods + Kueue Workloads can be
+        released (docs/plans/db-monitor-resilience-retry-and-sweep.md). Because the Job is
+        TTL-reaped 1h after finishing, only recent leftovers are ever returned.
+
+        Does NOT swallow errors (CLAUDE.md rule 8) — the caller handles per-cluster degradation.
+        """
+        await self._ensure_initialized()
+        resp = await self.batch_api.list_namespaced_job(
+            self.namespace,
+            _request_timeout=API_REQUEST_TIMEOUT_SECONDS,
+        )
+        return resp.items
+
     async def list_pods(self) -> list:
         """List all pods in this client's jobs namespace (raw V1Pod objects).
 

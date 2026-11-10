@@ -44,42 +44,50 @@ app.add_middleware(
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    sweep_task = getattr(app.state, "sweep_task", None)
+    if sweep_task is not None:
+        sweep_task.cancel()
     from backend.services.k8s_client import k8s_clients
     await k8s_clients.close_all()
 
 
+async def _orphan_sweep_loop():
+    """Periodically re-attach monitors to orphaned versions and reap terminal-but-live Jobs.
+
+    Supervisor loop: a transient failure in one pass (DB blip, a cluster briefly unreachable) is
+    logged and the loop continues — it must never die permanently on one error, which would silently
+    stop all orphan recovery. This logs (does not swallow, CLAUDE.md rule 8) and retries next tick.
+    """
+    import asyncio
+    from backend.models import ProcessVersion
+    while True:
+        await asyncio.sleep(settings.monitor_sweep_interval_seconds)
+        try:
+            await ProcessVersion.resume_orphaned_monitors(respect_heartbeat=True)
+        except Exception:
+            logger.exception("Orphan-monitor sweep pass failed; will retry next interval")
+
+
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database and resume monitoring for active jobs"""
+    """Initialize database, resume monitoring for active jobs, and start the periodic orphan sweep."""
     import asyncio
-    from backend.database import async_session_maker
-    from backend.models import ProcessVersion, ProcessState
+    from backend.models import ProcessVersion
     from backend.hooks import hooks
     from backend.plugin_assets import mount_plugin_assets
-    from sqlalchemy import select
 
     # Mount backend-bundled plugin frontends and register plugin routers
     mount_plugin_assets(app)
     hooks.run.register_routers(app)
 
-    # Resume monitoring for any jobs that were running when backend restarted
-    logger.info("Checking for active jobs to resume monitoring...")
-    async with async_session_maker() as db:
-        # Find all processes in QUEUED or RUNNING state
-        stmt = select(ProcessVersion).where(
-            ProcessVersion.state.in_([ProcessState.QUEUED, ProcessState.RUNNING])
-        )
-        result = await db.execute(stmt)
-        active_processes = result.scalars().all()
+    # Startup pass: this fresh process has no live monitors yet, so re-attach EVERY non-terminal
+    # version unconditionally (respect_heartbeat=False ignores the possibly-recent heartbeat the
+    # now-dead monitors left behind) and reap any terminal-but-live Jobs.
+    logger.info("Resuming monitoring for active jobs (startup sweep)...")
+    await ProcessVersion.resume_orphaned_monitors(respect_heartbeat=False)
 
-        if active_processes:
-            logger.info(f"Found {len(active_processes)} active job(s) to resume monitoring")
-            for pv in active_processes:
-                logger.info(f"  - Resuming: {pv.process_id} v{pv.version} (state: {pv.state.value})")
-                # Start monitoring in background
-                asyncio.create_task(ProcessVersion.monitor_job(pv.process_id, pv.version))
-        else:
-            logger.info("No active jobs found")
+    # Then keep sweeping on an interval to catch monitors that die while the backend keeps running.
+    app.state.sweep_task = asyncio.create_task(_orphan_sweep_loop())
 
 
 # Include routers
