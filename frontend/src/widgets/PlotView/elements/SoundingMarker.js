@@ -1,5 +1,6 @@
 import { LayerType, registerLayerType, AXIS_GEOMETRY } from 'gladly-plot';
 import { parseColor, fillColorArrays, resolveDataPath, getFrom, getKeys } from '../colorUtils.js';
+import { soundingIndex } from '../soundingMatch.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -43,7 +44,7 @@ registerLayerType('SoundingMarker', new LayerType({
 
   createLayer: function(regl, parameters, data, plot) {
     const rawData         = plot?._rawData ?? data;
-    const currentSounding = rawData?._currentSounding;
+    const currentSounding = soundingIndex(rawData, parameters.dataset);
     if (currentSounding === undefined || currentSounding === null) return [];
 
     const dataset     = resolveDataPath(rawData, parameters.dataset);
