@@ -227,9 +227,10 @@ Interactive editor for hand-building or editing synthetic AEM (airborne electrom
 Companion control panel for bulk-editing per-sounding, per-gate "in use" flags on AEM data, driven by lasso selections made in a `PlotView` pane's `ChannelPlot` or `GateAnomalyPlot` layers (see [In-use editing layers](#in-use-editing-layers)).
 
 **Features:**
+- All controls on one row, which wraps in a narrow pane: the title, E / D / C, Ctrl+Z, the edit count, a "?" and Save at the right end. Each button's full name and key are its tooltip, and the "?" carries the hint (turn on `inUseMode` on an editing layer, then Shift+drag in it to select). The row's right padding keeps Save clear of a compact pane's corner chevron.
 - Enable/Disable/Clear action modes, selectable via buttons or keyboard shortcuts (E/D/C)
 - Undo last edit (Ctrl+Z) and save the changed in-memory edits back to the processes that made the datasets (see [Saving edits](#saving-edits))
-- Shows aggregate stats (gate-sounding pairs edited, across how many datasets), counting edits loaded from save points
+- Shows a short edit count (edits, enabled, disabled) in the row's spare width, cut short with an ellipsis as the pane narrows and moved to a second line, beside "?" and Save, once less than 40 px is left for it; its tooltip gives the full figures, gate-sounding pairs edited across how many datasets, counting edits loaded from save points
 - Save is enabled only when an edit changed since it loaded, or was made from scratch
 - Reads/writes edit state via `ProcessContext`'s `inMemoryDiffs`, `inMemoryDiffDirty`, `inUseAction`, `undoLastEdit`, `saveAllDiffs`
 
