@@ -45,7 +45,9 @@ Read against gladly master at 1e1c983 with the three open gladly PRs from the fo
 
 ## Questions
 
-### 1. How the menu opens, and how it shares the right button with the polygon
+Each question is decided by picking one of its options by letter, for example "1a, 2a, 3b". The recommendation follows each table.
+
+### 1. How should the menu open, given that a right-click already closes a polygon?
 
 | | option | trade-off |
 |---|---|---|
@@ -55,7 +57,7 @@ Read against gladly master at 1e1c983 with the three open gladly PRs from the fo
 
 Recommendation: a. It needs no second way to close a polygon. Enter could be added to #37 in one line if wanted; it would also cover Firefox, which opens its own menu on a Shift+right-click whatever the page does.
 
-### 2. Which parts can be hidden, and how they are configured
+### 2. Which parts of an axis should get their own on/off switch?
 
 | | option | trade-off |
 |---|---|---|
@@ -65,7 +67,7 @@ Recommendation: a. It needs no second way to close a polygon. Enter could be add
 
 Recommendation: a.
 
-### 3. Whether hiding the tick labels or the title gives room back
+### 3. Should hiding the tick labels or the title give the space back?
 
 | | option | trade-off |
 |---|---|---|
@@ -75,7 +77,7 @@ Recommendation: a.
 
 Recommendation: b. It is the fixed-pixel placement business#145 already pointed to. With a tick band of about 8 px and a title band of about 20 px (one 16 px text row and a gap), and the decided 48 / 80 / 24 px kept as the totals with every part and with no axis, an x side is 48 px in full, 28 px without its title and 24 px with neither labels nor title. A y side is 80, 60 and 24 px.
 
-### 4. Saved with the workspace, or for this session only
+### 4. Should the switches be saved with the workspace, or last only for this session?
 
 | | option | trade-off |
 |---|---|---|
@@ -84,7 +86,7 @@ Recommendation: b. It is the fixed-pixel placement business#145 already pointed 
 
 Recommendation: a. The new layout config is built from `plot.getConfig()`, as the write-back after an update already is, so a zoomed range is kept.
 
-### 5. What one switch acts on
+### 5. Should a switch act on this plot only, or on every plot that shares that axis?
 
 | | option | trade-off |
 |---|---|---|
@@ -93,7 +95,7 @@ Recommendation: a. The new layout config is built from `plot.getConfig()`, as th
 
 Recommendation: a.
 
-### 6. What else the menu holds
+### 6. What else should the menu hold?
 
 | | item | trade-off |
 |---|---|---|
@@ -105,7 +107,7 @@ Recommendation: a.
 
 Recommendation: a, b and e in, c and d out.
 
-### 7. How the reset works, if it is in
+### 7. If reset view is in, how should it work?
 
 | | option | trade-off |
 |---|---|---|
@@ -115,7 +117,7 @@ Recommendation: a, b and e in, c and d out.
 
 Recommendation: a. After a reset PlotView writes every plot's config back at once with #143's `saveAllPlots()`, so a Save straight after keeps it. Like a zoomed or typed range, the reset range is kept when the next line loads, and a second reset fits the new line. A reset that keeps following the data from line to line would mean changing how ranges are written back, which neither this plan nor #143 does. Color ranges are not reset, and neither are locked axes (question 11).
 
-### 8. How the menu is laid out, and whether it matters where the click lands
+### 8. How should the menu be laid out, and should it change with where the click lands?
 
 | | option | trade-off |
 |---|---|---|
@@ -125,7 +127,7 @@ Recommendation: a. After a reset PlotView writes every plot's config back at onc
 
 Recommendation: c, with the full menu laid out as in (a). While an axis is hidden its Labels and Title boxes are grayed out and keep their state, so showing the axis again brings back what it had. Lock stays live on a hidden axis, since the range is kept whether or not the axis is drawn. Items for the plot area alone, such as the color items in business#116 item 17, would go in the full menu.
 
-### 9. Lock range: where the lock is kept, and what it stops
+### 9. Lock range: where should the lock be kept, and what should it stop?
 
 | | option | trade-off |
 |---|---|---|
@@ -135,7 +137,7 @@ Recommendation: c, with the full menu laid out as in (a). While an axis is hidde
 
 Recommendation: a. The lock stops the gestures: a left drag on the axis or the plot area, the wheel, and touch pan and pinch. A gesture in the plot area of a plot whose x axis is locked and whose y axis is free moves y only. The reset is question 11. The fit to the data never reaches a locked axis anyway, because its config carries `min` and `max`, which win over the data range. In gladly the lock is state on the axis, read from the config at `update()` and returned by `getConfig()`, so switching it needs no `update()` and rebuilds no layers. Switching it on also writes every plot's config back with #143's `saveAllPlots()`, so every linked plot saves the locked range rather than the range it last wrote.
 
-### 10. How a lock shows on the plot
+### 10. How should a locked axis show on the plot?
 
 | | option | trade-off |
 |---|---|---|
@@ -145,7 +147,7 @@ Recommendation: a. The lock stops the gestures: a left drag on the axis or the p
 
 Recommendation: a. Where the mark goes when the title is hidden is for the gladly review. A hidden axis draws no mark, and its lock shows in the menu. The mark could also unlock on a click; it is left display-only at first, since the menu is one right-click away.
 
-### 11. The lock with typed limits and with reset
+### 11. How should the lock behave with typed limits and with reset?
 
 | | option | trade-off |
 |---|---|---|
