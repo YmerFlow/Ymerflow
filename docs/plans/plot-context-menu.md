@@ -1,6 +1,6 @@
 # Plot right-click menu: axis parts, range lock, status bar and reset
 
-**State:** draft 2026-11-10, questions 1 to 11 open
+**State:** draft 2026-11-10, questions 1 to 11 open; two side points decided 2026-11-12 (Enter also closes a polygon, and no Mac-only right-click)
 **Labels:** enhancement, frontend, gladly
 **Tracking:** follows YmerFlow/ymerflow-business#145 (compact margins); the reset is item 12 of YmerFlow/ymerflow-business#116; the range lock was asked for on 2026-11-10; related bug YmerFlow/ymerflow-business#168
 
@@ -55,7 +55,9 @@ Each question is decided by picking one of its options by letter, for example "1
 | b | right-click always opens the menu; a polygon closes some other way, with Enter or a double-click | reverses the decided way of closing a polygon; a right-click part way through a polygon opens a menu over it |
 | c | no right button: a small menu button that appears in a plot corner on hover, or the plot's items added to the pane header menu through a new widget hook | no collision, and it works on touch; two clicks away and far from the axis; a corner button sits over the plot and next to a compact pane's corner chevron; the pane menu route needs a new flexout hook |
 
-Recommendation: a, because a right-click goes on closing a polygon as the shapes plan decided, and no second way to close one is needed. Enter could be added to #37 in one line if wanted; it would also cover Firefox, which opens its own menu on a Shift+right-click whatever the page does.
+Recommendation: a, because a right-click goes on closing a polygon as the shapes plan decided, so the menu needs no new way to close one.
+
+Decided 2026-11-12: Enter also closes a polygon, as a second way beside the right-click. It goes into #37 (about one line), or into this plan's gladly PR if #37 is merged first. It also covers Firefox, which opens its own menu on a Shift+right-click whatever the page does.
 
 ### 2. Which parts of an axis should get their own on/off switch?
 
@@ -186,7 +188,7 @@ One PR after the gladly release.
 - `frontend/package.json`: `gladly-plot` bumped to the release carrying this with `npm install --save gladly-plot@<version>`, a registry version and never a `file:` path. During development the Ymerflow side runs against the gladly branch with `npm install --no-save` from a local gladly checkout.
 - `backend/widget_schemas.json`: regenerated, which picks up the three new axis keys for the form.
 - Docs: `docs/user-guide.md` (right-click a plot or one of its axes to show or hide axis parts, lock an axis's range, switch the status bar and reset), `docs/frontend/widgets.md` (PlotView: the menu, and that it writes to `layoutConfig.axes` and `layoutConfig.statusBar`).
-- Checked in the running app: each switch on a profile and on a short strip, the strip's room shrinking and coming back; two stacked strips kept aligned; a right-click on each of the four axis strips opening that axis's switches, and in the plot area the full menu; a polygon closed by a right-click without the menu opening, and the menu on the next right-click; a right drag rotating a 3D curtain and a right-click there opening the menu; reset on a zoomed profile with a linked strip and sounding plot following only on their shared axes; the distance axis locked on the profile, then zoom, wheel and drag on the profile, the strip and a 3D curtain leaving distance alone on all of them while their other axes move, a typed distance limit moving all of them, reset leaving distance, the lock mark on every distance axis, and the lock switched off from the strip; Save and reload keeping the switches and the lock; the current sounding left alone by a right-click. The zooming is also checked on a workspace with linked explicit limits with nothing locked, against business#168.
+- Checked in the running app: each switch on a profile and on a short strip, the strip's room shrinking and coming back; two stacked strips kept aligned; a right-click on each of the four axis strips opening that axis's switches, and in the plot area the full menu; a polygon closed by a right-click without the menu opening, and the menu on the next right-click; a polygon closed with Enter; a right drag rotating a 3D curtain and a right-click there opening the menu; reset on a zoomed profile with a linked strip and sounding plot following only on their shared axes; the distance axis locked on the profile, then zoom, wheel and drag on the profile, the strip and a 3D curtain leaving distance alone on all of them while their other axes move, a typed distance limit moving all of them, reset leaving distance, the lock mark on every distance axis, and the lock switched off from the strip; Save and reload keeping the switches and the lock; the current sounding left alone by a right-click. The zooming is also checked on a workspace with linked explicit limits with nothing locked, against business#168.
 
 ### Order and releases
 
@@ -196,7 +198,8 @@ business#168 is found and fixed first. The lock works on the same zoom path, and
 
 ## Not in this plan
 
-- Touch input and long-press; a Mac Ctrl+click as a right-click.
+- Touch input and long-press.
+- A Mac Ctrl+click as a right-click, left out for good (decided 2026-11-12): the menu works the same on every system and gets no case for one. A two-button mouse and a trackpad's two-finger click both give the right button, and the menu event fires on the release on every system.
 - Color bars and filter bars in the menu, which have their own `colorbar` and `filterbar` settings, and a right-click on a color bar or filter bar, which opens nothing.
 - Typed limits and the selection shape in the menu (question 6).
 - Switching a part on a whole stack of plots at once (question 5b).
