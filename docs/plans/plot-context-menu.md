@@ -1,6 +1,8 @@
 # Plot context menu: wire up gladly's axis menu
 
-**State:** draft 2026-11-10, re-split 2026-11-13
+**State:** draft 2026-11-10, questions resolved and split into the gladly plan
+2026-11-13; two side points decided 2026-11-12 (Enter also closes a polygon, and
+no Mac-only right-click) carried into the gladly plan
 **Labels:** enhancement, frontend, gladly
 **Tracking:** follows business#145 (compact margins); the reset is item 12 of
 business#116; the range lock was asked for on 2026-11-10; related bug business#168
@@ -64,6 +66,17 @@ This plan is implemented **after the gladly release** carrying the menu.
 - `CLAUDE.md` keeps project-specific code out of `flexout/`; this plan adds none —
   the menu is gladly's, not a flexout dropdown.
 
+## Questions
+
+All eleven design questions have been decided and moved into the gladly plan
+(`deps/gladly/docs/plans/axis-context-menu.md`), where the menu now lives: the
+right-click event (1a), the three axis-part switches (2a), reclaiming the space
+from hidden parts (3b), saving switches with the workspace (4a), per-plot scope
+(5a), the extra menu items — status bar, reset, lock (6a/b/e), the reset (7a),
+the context-sensitive layout (8c), and the range lock (9a, 10a, 11a). The two
+side points decided 2026-11-12 are recorded with them: Enter also closes a
+polygon (into #37 or the gladly PR), and no Mac-only Ctrl+click.
+
 ## Design
 
 One PR after the gladly release.
@@ -118,8 +131,10 @@ gladly now.
 
 ## Not in this plan
 
-- Everything in the gladly plan's "Not in this plan" (touch, color/filter bars,
-  3D axis rows, per-plot margins, a reset that follows the data line to line).
+- Everything in the gladly plan's "Not in this plan" (touch and long-press, a Mac
+  Ctrl+click as a right-click, color/filter bars and a lock on color/filter axes,
+  3D axis rows, per-plot margins, a reset that follows the data line to line,
+  color items such as a color map picker — business#116 item 17).
 - Switching a part on a whole stack at once (one menu toggle still acts on one
   plot; a workspace fan-out of axis-part hiding was dropped).
 - Typed limits and the selection shape in the menu.
