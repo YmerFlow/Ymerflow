@@ -13,7 +13,7 @@
     "bootstrap": "^5.3.8",
     "d3": "^7.9.0",
     "geotiff": "^3.0.5",
-    "gladly-plot": "^0.0.19",
+    "gladly-plot": "github:YmerFlow/gladly#9ead855ff39bff4f650dbdcc0beb50010bb2b59d",
     "js-yaml": "^5.4.1",
     "leaflet": "^1.9.4",
     "markdown-to-jsx": "^9.8.2",

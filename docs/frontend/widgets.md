@@ -349,6 +349,8 @@ These are two unrelated conventions that happen to share the word "schema" — d
 
   `statusBar` is PlotView's own field, so it is preserved across the `plot.getConfig()` write-back (gladly would otherwise drop the unknown key). Its `get_schema()` output also feeds the workspace-schema export (see below).
 
+  **Write-back and typed limits:** `saveConfig()` writes `plot.getConfig()` into the layout node when it differs from the last write. It runs after every `plot.update()`, so a zoomed range reaches `layoutConfig.axes` at the plot's next update. A limit typed at an axis or color-bar end (gladly's `'axislimit'` event) instead writes at once, through `saveAllPlots()` on `PlotGroupContext`, in every PlotView: linked axes have moved too, and a Save straight after typing must keep them all. Typed limits land in the same `layoutConfig.axes.<slot or quantity kind>.min` / `max` as configured ones. The writes go one plot at a time (`frontend/src/plotSaveQueue.js`, `plotSaveQueue.test.js`), because a flexout container builds a child's replacement from the children it last rendered; two writes before a re-render would put the first plot's old config back.
+
 **Workspace-layout schema export (frontend-owned):**
 
 The frontend owns the whole workspace-layout JSON Schema and builds it in one place: `frontend/src/flexout/workspaceSchema.js`. `buildWorkspaceSchema(appWidgets)` declares the generic node envelope (`id`, `widget`, `customTitle`, `compact`, `additionalProperties: false`), merges the flexout builtins (`VerticalSplit`, `HorizontalSplit`, `TabSet`, `Grid`, `Empty` — imported from `LayoutContext.jsx`) with the app's leaf widgets, and emits one `<Widget>Node` def per widget under a recursive `Node = oneOf[...]`. For the container widgets it injects `children` (recursing to `#/$defs/Node`), `globalCompact`, and each container's structural fields (`size` / `activeTab` / `colWidths` / `rowHeights`). Each widget's `get_schema()` is merged in: a schema with a `layoutConfig` property nests under `layoutConfig` (PlotView), a bare schema's properties become top-level node fields (Grid's `rows`/`cols`). A widget's own `$defs` ride along on its node def.
@@ -567,16 +569,21 @@ export function PlotGroupProvider({ children }) {
   }
   useEffect(() => () => { groupRef.current?.destroy(); groupRef.current = null; }, []);
 
+  const saves = createSaveQueue();   // plotSaveQueue.js
   const value = {
-    addPlot:    (name, plot) => groupRef.current?.add(name, plot),
-    removePlot: (name)       => groupRef.current?.remove(name),
+    addPlot:      (name, plot, saveConfig) => { groupRef.current?.add(name, plot); saves.add(name, saveConfig); },
+    removePlot:   (name) => { groupRef.current?.remove(name); saves.remove(name); },
+    saveAllPlots: saves.saveAll,   // every PlotView writes its config into the layout, one at a time
+    configSaved:  saves.saved,     // a PlotView's write has arrived; the next may go
   };
   return <PlotGroupContext.Provider value={value}>{children}</PlotGroupContext.Provider>;
 }
 
 // Used inside PlotView:
-const { addPlot, removePlot } = useContext(PlotGroupContext);
+const { addPlot, removePlot, saveAllPlots, configSaved } = useContext(PlotGroupContext);
 ```
+
+The real provider also carries the workspace status bar's readout store (`publishReadout`, `subscribeReadout`) and a `hasPlots` flag.
 
 ## Best Practices
 
