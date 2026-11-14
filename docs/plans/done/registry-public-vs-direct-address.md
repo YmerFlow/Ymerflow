@@ -2,7 +2,7 @@
 
 ## Goal & scope
 
-Address the container registry by its **public URL** (e.g. `registry.redhog.org:443`, behind the
+Address the container registry by its **public URL** (e.g. `registry.example.org:443`, behind the
 frontend nginx TLS edge) for every image that is pulled *after* the system is live — the **backend
 Deployment** and the **runner / `Environment.docker_image`** — while keeping a **direct
 node-IP:NodePort** address (self-signed, `:30500`) for the images that must be pulled *during*
@@ -12,7 +12,7 @@ deployer Job, and the transient **migration** Job.
 This removes the LAN-IP coupling the operator observed as a job-pod event:
 
 ```
-[POD EVENT] Pulling image "192.168.1.179:30500/ymerflow-base-runner:bootstrap"
+[POD EVENT] Pulling image "192.0.2.179:30500/ymerflow-base-runner:bootstrap"
 ```
 
 That LAN IP is `REGISTRY_PUBLIC_HOST`, today the single registry address used *everywhere*. It
@@ -30,7 +30,7 @@ should be the public URL from `config.env`, except for the narrow bootstrap-only
    reorder.
 
 Out of scope: changing how the registry itself is provisioned (still docker-v2 NodePort 30500,
-self-signed, per `plugins/ymerflow-minikube`); the nginx `registry.redhog.org` edge itself (already
+self-signed, per `plugins/ymerflow-minikube`); the nginx `registry.example.org` edge itself (already
 built — see `docs/plans/done/nginx-letsencrypt-public-tls.md`); any GAR / cloud-registry protocol.
 
 ## Background — current state (verified in code)
@@ -66,7 +66,7 @@ edge is up. The design below splits exactly along that line.
 ### Push — always direct
 
 All images are pushed host-side to the **direct** address (`node-IP:30500`, self-signed). Pushing
-to the direct NodePort and later pulling the same digest via `registry.redhog.org:443` hit the
+to the direct NodePort and later pulling the same digest via `registry.example.org:443` hit the
 **same registry pod / storage** (NodePort 30500 → `registry` pod :5000; nginx edge →
 `registry.registry.svc:5000` → same pod), so there is nothing to reorder on the push side and no
 waiting-before-push.
@@ -86,7 +86,7 @@ waiting-before-push.
 
 1. migration Job (direct) — may run anytime; independent of the edge.
 2. frontend Deployment (direct) → nginx comes up, certbot issues/loads cert, `:443`
-   `registry.redhog.org` edge goes live.
+   `registry.example.org` edge goes live.
 3. **Wait until the public registry probes reachable** (bounded; generic `GET {public}/v2/`
    expecting `200`/`401`, TLS-verify skipped so it works for self-signed *and* real certs). On a
    re-run / external edge this returns immediately.
@@ -102,7 +102,7 @@ first-boot ACME issuance degrades to "noisy but eventually converges," never a h
 internet-facing address used for the backend Deployment + runner refs:
 
 ```sh
-REGISTRY_PUBLIC_HOST=registry.redhog.org   # public DNS behind the nginx :443 edge
+REGISTRY_PUBLIC_HOST=registry.example.org   # public DNS behind the nginx :443 edge
 REGISTRY_PUBLIC_PORT=443
 ```
 
@@ -122,8 +122,8 @@ The docker-v2 `RegistryBackend.config` gains the direct pair alongside the exist
 
 ```json
 { "user": "...", "password": "...",
-  "host": "registry.redhog.org", "port": 443,
-  "direct_host": "192.168.1.179", "direct_port": 30500 }
+  "host": "registry.example.org", "port": 443,
+  "direct_host": "192.0.2.179", "direct_port": 30500 }
 ```
 
 `host`/`port` stay the public (or public==direct) address so existing `image_url()` callers that
@@ -183,15 +183,15 @@ the explicit direct-ref call-sites.
   passes immediately; backend+runner refs are the external host; frontend/deployer stay direct
   (node IP, in-cluster reachable); no certbot dependency exercised.
 - **letsencrypt same-box first boot**: frontend comes up, probe blocks on ACME, then backend pulls
-  public; runner job pod event shows `registry.redhog.org/...` not the LAN IP.
+  public; runner job pod event shows `registry.example.org/...` not the LAN IP.
 - **letsencrypt re-run** (cert on PVC): probe passes immediately; no stall.
 - Push-direct / pull-public identity: confirm a digest pushed to `node-IP:30500` is pullable via
-  `registry.redhog.org:443` (same registry pod).
+  `registry.example.org:443` (same registry pod).
 
 ## Open questions to settle before/at implementation
 
-1. **Public hostname:** `config.env` + the LE cert SAN + the nginx edge use `registry.redhog.org`;
-   the operator's message said `repository.redhog.org`. Assume `registry.redhog.org` (no new
+1. **Public hostname:** `config.env` + the LE cert SAN + the nginx edge use `registry.example.org`;
+   the operator's message said `repository.example.org`. Assume `registry.example.org` (no new
    DNS/cert/nginx work) unless a new subdomain is actually wanted.
 2. **Direct address source:** default to `$(hostname -I | awk '{print $1}')` (the proven,
    currently-working value) vs `minikube ip`. Plan assumes the former.

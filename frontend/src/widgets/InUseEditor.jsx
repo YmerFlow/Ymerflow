@@ -2,6 +2,8 @@ import React, { useContext, useEffect, useMemo } from 'react';
 import { ProcessContext } from '../ProcessContext';
 import { MessageContext } from '../MessageContext';
 
+const HINT = 'Turn on inUseMode on a ChannelPlot or GateAnomalyPlot layer, then Shift+drag in it to select.';
+
 export default function InUseEditor() {
   const {
     inMemoryDiffs,
@@ -64,6 +66,13 @@ export default function InUseEditor() {
   }, [inMemoryDiffs]);
 
   const hasPendingEdits = stats.total > 0;
+  // The row shows the short count; the full sentence is its tooltip.
+  const statsShort = hasPendingEdits
+    ? `${stats.total.toLocaleString()} edit${stats.total !== 1 ? 's' : ''} (↑ ${stats.enabled.toLocaleString()} ↓ ${stats.disabled.toLocaleString()})`
+    : 'No pending edits';
+  const statsLong = hasPendingEdits
+    ? `${stats.total.toLocaleString()} gate-sounding pairs edited across ${stats.nDatasets} dataset${stats.nDatasets !== 1 ? 's' : ''} (↑ ${stats.enabled.toLocaleString()} enabled, ↓ ${stats.disabled.toLocaleString()} disabled)`
+    : 'No pending edits';
   // Save writes only what changed since a save point's edit loaded, including an edit the
   // person emptied, so it follows the dirty flags rather than the edit count.
   const hasChanges = Object.values(inMemoryDiffDirty).some(Boolean);
@@ -95,49 +104,54 @@ export default function InUseEditor() {
     }
   }
 
-  const btnBase = { padding: '4px 12px', border: '1px solid #aaa', borderRadius: 4, cursor: 'pointer', fontSize: 13 };
-  const activeBtn = { ...btnBase, background: '#2269A7', color: '#fff', borderColor: '#2269A7' };
+  const btnBase = { padding: '2px 8px', border: '1px solid #aaa', borderRadius: 4, cursor: 'pointer', fontSize: 13 };
+  // The border shorthand throughout: mixing it with borderColor makes React warn on rerender.
+  const activeBtn = { ...btnBase, background: '#2269A7', color: '#fff', border: '1px solid #2269A7' };
   const inactiveBtn = { ...btnBase, background: '#f8f9fa', color: '#333' };
+  const helpMark = {
+    width: 18, height: 18, lineHeight: '16px', textAlign: 'center', borderRadius: '50%',
+    border: '1px solid #aaa', color: '#666', fontSize: 12, cursor: 'help', flex: 'none',
+  };
 
+  // One row that wraps in a narrow pane. The right padding keeps Save clear of the
+  // corner chevron a compact pane draws over its widget.
   return (
-    <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'sans-serif' }}>
-      <div style={{ fontWeight: 600, fontSize: 14 }}>InUse Editor</div>
-
-      {/* Edit statistics */}
-      <div style={{ fontSize: 12, color: '#555', minHeight: 32 }}>
-        {hasPendingEdits
-          ? `${stats.total.toLocaleString()} gate-sounding pairs edited across ${stats.nDatasets} dataset${stats.nDatasets !== 1 ? 's' : ''} (↑ ${stats.enabled.toLocaleString()} enabled, ↓ ${stats.disabled.toLocaleString()} disabled)`
-          : 'No pending edits. Shift+drag to select points.'}
-      </div>
+    <div style={{ padding: '4px 24px 4px 6px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontFamily: 'sans-serif' }}>
+      <div style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap' }}>InUse Editor</div>
 
       {/* Action mode radio group */}
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button style={inUseAction === 'enable'  ? activeBtn : inactiveBtn} onClick={() => setInUseAction('enable')}>Enable (E)</button>
-        <button style={inUseAction === 'disable' ? activeBtn : inactiveBtn} onClick={() => setInUseAction('disable')}>Disable (D)</button>
-        <button style={inUseAction === 'clear'   ? activeBtn : inactiveBtn} onClick={() => setInUseAction('clear')}>Clear (C)</button>
+      <button style={inUseAction === 'enable'  ? activeBtn : inactiveBtn} title="Enable (E)"  onClick={() => setInUseAction('enable')}>E</button>
+      <button style={inUseAction === 'disable' ? activeBtn : inactiveBtn} title="Disable (D)" onClick={() => setInUseAction('disable')}>D</button>
+      <button style={inUseAction === 'clear'   ? activeBtn : inactiveBtn} title="Clear (C)"   onClick={() => setInUseAction('clear')}>C</button>
+
+      <button
+        style={{ ...inactiveBtn, opacity: hasPendingEdits ? 1 : 0.5 }}
+        title="Undo the last edit (Ctrl+Z)"
+        disabled={!hasPendingEdits}
+        onClick={handleUndo}
+      >
+        Ctrl+Z
+      </button>
+
+      {/* Edit statistics: the small basis lets the count give up width first, cut short
+          with an ellipsis, and move to a second line only when less than 40 px is left. */}
+      <div
+        title={statsLong}
+        style={{ flex: '1 1 40px', minWidth: 0, fontSize: 12, color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+      >
+        {statsShort}
       </div>
 
-      {/* Undo + Save */}
-      <div style={{ display: 'flex', gap: 6 }}>
+      {/* "?" and Save wrap together and stay at the right end of whichever line they are on. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+        <div style={helpMark} title={HINT}>?</div>
         <button
-          style={{ ...inactiveBtn, opacity: hasPendingEdits ? 1 : 0.5 }}
-          disabled={!hasPendingEdits}
-          onClick={handleUndo}
-        >
-          Undo (Ctrl+Z)
-        </button>
-        <button
-          style={{ ...btnBase, background: (hasChanges && !saving) ? '#198754' : '#aaa', color: '#fff', borderColor: 'transparent', marginLeft: 'auto' }}
+          style={{ ...btnBase, background: (hasChanges && !saving) ? '#198754' : '#aaa', color: '#fff', border: '1px solid transparent' }}
           disabled={!hasChanges || saving}
           onClick={handleSave}
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
-      </div>
-
-      {/* Instructions */}
-      <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
-        Enable <b>inUseMode</b> on a ChannelPlot layer, then shift+drag to select.
       </div>
     </div>
   );
