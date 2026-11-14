@@ -8,7 +8,11 @@ no Mac-only right-click) carried into the gladly plan. The gladly side is now
 `menu-customization-hook.md`); this plan is updated below to the API gladly
 actually shipped (`'axisoptions'`/`'axislimit'` events, the `'contextmenu_open'`
 hook, the `axis_menu`/`plot_menu` gates), and the gladly release carrying the
-menu is out as **gladly-plot 0.0.21** (2026-11-14).
+menu is out as **gladly-plot 0.0.21** (2026-11-14). A follow-up release,
+**gladly-plot 0.0.22** (2026-11-14), broadens the `'axisoptions'` event to also
+cover `scale` / `colorscale` / `colorbar` / `filterbar` / `enabled` changes and
+2D colour-pair changes (carried with `axis: null` + an `axis2d` key); this plan
+now targets 0.0.22.
 **Labels:** enhancement, frontend, gladly
 **Tracking:** follows business#145 (compact margins); the reset is item 12 of
 business#116; the range lock was asked for on 2026-11-10; related bug business#168
@@ -37,8 +41,8 @@ app-specific item (the status-bar toggle), persist its changes — including the
 workspace-wide fan-out for lock and reset — and regenerate the form schema for
 the new axis keys.
 
-This plan is implemented against the gladly release carrying the menu,
-**gladly-plot 0.0.21**.
+This plan is implemented against **gladly-plot 0.0.22** (the menu shipped in
+0.0.21; 0.0.22 broadens the `'axisoptions'` event the persistence path relies on).
 
 ## What gladly provides (as built, see the gladly plans)
 
@@ -59,13 +63,21 @@ This plan is implemented against the gladly release carrying the menu,
   the lock mark (red axis line + lock glyph), the title-click lock toggle, and the
   margin reclaim. Plus per-axis accessors `axis.getConfig()` / `axis.setConfig()`
   and static `Axis.schema()`.
-- An **`'axisoptions'`** event emitted from the config write path whenever
-  `visible` / `tickLabelsVisible` / `titleVisible` / `locked` changes on a slot,
-  carrying `{ type: 'axisoptions', axis: slot, key, value }` — keyed by *what*
+- An **`'axisoptions'`** event emitted from the config write path, keyed by *what*
   changed, not who, so it fires for a menu toggle, a `setAxisLocked()` call or a
-  direct `plot.update({config})` alike. Domain/range changes keep using the
-  existing **`'axislimit'`** event. These two events are the persistence hook;
-  there is no `'menuchange'` event.
+  direct `plot.update({config})` alike. As of **0.0.22** it covers two groups of
+  keys:
+  - **Per-slot keys** (`axes.<slot>`): `visible` / `tickLabelsVisible` /
+    `titleVisible` / `locked`, plus (new in 0.0.22) `scale` (`"log"`/`"linear"`),
+    `colorscale`, `colorbar` and `filterbar`. For these, `event.axis` is the slot
+    string and `event.axis2d` is absent — `{ type: 'axisoptions', axis: slot, key,
+    value }`.
+  - **2D colour-pair keys** (`colorbars[]`, new in 0.0.22): `colorscale`,
+    `colorbar` and `enabled`. A pair has no single slot, so `event.axis` is `null`
+    and `event.axis2d` is the ordered quantity-kind pair key `"<qkX>__<qkY>"` —
+    `{ type: 'axisoptions', axis: null, axis2d, key, value }`.
+  Domain/range changes keep using the existing **`'axislimit'`** event. These two
+  events are the persistence hook; there is no `'menuchange'` event.
 - A **`'contextmenu_open'`** event for injecting extra rows: `cb(e, coords, region,
   menuEl)` fires just before the built-in menu is placed, handing the host the
   fully-built menu `<div>` to mutate in place (append rows/buttons, wire handlers).
@@ -108,12 +120,12 @@ polygon (into #37 or the gladly PR), and no Mac-only Ctrl+click.
 
 ## Design
 
-One PR, against gladly-plot 0.0.21.
+One PR, against gladly-plot 0.0.22.
 
-- **`frontend/package.json`:** bump `gladly-plot` to `0.0.21` (the release
-  carrying the menu: `npm install --save gladly-plot@0.0.21` — a registry
-  version, never a `file:` path). During development, run against the gladly
-  branch with `npm install --no-save` from the local `deps/gladly` checkout.
+- **`frontend/package.json`:** bump `gladly-plot` to `0.0.22` (`npm install
+  --save gladly-plot@0.0.22` — a registry version, never a `file:` path). During
+  development, run against the gladly branch with `npm install --no-save` from the
+  local `deps/gladly` checkout.
 - **`frontend/src/widgets/PlotView/index.jsx`:**
   - Nothing to enable — gladly's menu is on by default (`axis_menu`/`plot_menu`
     both default `true`). Leave them unset.
@@ -125,7 +137,11 @@ One PR, against gladly-plot 0.0.21.
     range rather than the one it last wrote. Because `'axisoptions'` is keyed by
     *what* changed, the handler branches on `event.key` (`locked` → `saveAllPlots`,
     else per-plot write-back); the reset (via `'axislimit'` from the data refit, or
-    a dedicated signal) also fans out through `saveAllPlots()`.
+    a dedicated signal) also fans out through `saveAllPlots()`. As of 0.0.22 the
+    event also fires for `scale`/`colorscale`/`colorbar`/`filterbar`/`enabled` and
+    for 2D colour pairs (`axis: null`, `axis2d` set); the handler treats every
+    non-`locked` key as a plain per-plot write-back of `plot.getConfig()`, so it
+    needs no per-key enumeration and must not assume `event.axis` is a slot.
   - Inject the **Status bar** row through gladly's **`'contextmenu_open'`** hook:
     `plot.on('contextmenu_open', (e, coords, region, menuEl) => …)` appends a
     checkbox (wrapped in a `data-gladly-control` element) bound to
@@ -179,13 +195,14 @@ gladly now.
 
 ## Implementation steps
 
-1. gladly PR — **done, merged, and released** as gladly-plot 0.0.21
+1. gladly PR — **done, merged, and released** as gladly-plot 0.0.21, with the
+   broadened `'axisoptions'` event following in 0.0.22
    (see `deps/gladly/docs/plans/done/`).
-2. Ymerflow PR: the bump (to gladly-plot 0.0.21), the
+2. Ymerflow PR: the bump (to gladly-plot 0.0.22), the
    `'axisoptions'`/`'axislimit'` persistence (per-plot write-back + `saveAllPlots()`
    for lock/reset), the `'contextmenu_open'`-injected status-bar item, the
    regenerated schema, docs; checked in the running app. No menu enabling needed —
    `axis_menu`/`plot_menu` default on.
 
 About three quarters of a day, most of it the check in the running app. The
-gladly release (gladly-plot 0.0.21) is out, so no wait remains.
+gladly release (gladly-plot 0.0.22) is out, so no wait remains.
