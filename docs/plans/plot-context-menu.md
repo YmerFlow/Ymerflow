@@ -2,7 +2,13 @@
 
 **State:** draft 2026-11-10, questions resolved and split into the gladly plan
 2026-11-13; two side points decided 2026-11-12 (Enter also closes a polygon, and
-no Mac-only right-click) carried into the gladly plan
+no Mac-only right-click) carried into the gladly plan. The gladly side is now
+**built and merged** (2026-11-14) — three plans in `deps/gladly/docs/plans/done/`
+(`axis-visibility-lock-reset.md`, `axis-context-menu.md`,
+`menu-customization-hook.md`); this plan is updated below to the API gladly
+actually shipped (`'axisoptions'`/`'axislimit'` events, the `'contextmenu_open'`
+hook, the `axis_menu`/`plot_menu` gates), and the gladly release carrying the
+menu is out as **gladly-plot 0.0.21** (2026-11-14).
 **Labels:** enhancement, frontend, gladly
 **Tracking:** follows business#145 (compact margins); the reset is item 12 of
 business#116; the range lock was asked for on 2026-11-10; related bug business#168
@@ -21,28 +27,50 @@ it straight back into the layout node after every `update()` — so "save a swit
 into the layout config" is just setting a gladly `axes.<slot>` key. The menu, its
 layout, the right button it opens on, the axis-part hiding, the margin reclaim,
 the range lock, the lock mark and the reset are therefore all gladly's, specified
-in `deps/gladly/docs/plans/axis-context-menu.md`.
+in the three gladly plans now in `deps/gladly/docs/plans/done/`
+(`axis-visibility-lock-reset.md` — the axis keys, lock, reset, lock mark and the
+title-click toggle; `axis-context-menu.md` — the `'contextmenu'` event and the
+menu widget; `menu-customization-hook.md` — the `'contextmenu_open'` hook).
 
 What is genuinely Ymerflow's is small: turn the menu on, feed it the one
 app-specific item (the status-bar toggle), persist its changes — including the
 workspace-wide fan-out for lock and reset — and regenerate the form schema for
 the new axis keys.
 
-This plan is implemented **after the gladly release** carrying the menu.
+This plan is implemented against the gladly release carrying the menu,
+**gladly-plot 0.0.21**.
 
-## What gladly provides (see the gladly plan)
+## What gladly provides (as built, see the gladly plans)
 
 - `axes.<slot>.tickLabelsVisible`, `axes.<slot>.titleVisible`, `axes.<slot>.locked`
   config keys (in `Plot.schema()`), beside the existing `visible`.
-- A `'contextmenu'` plot event for a right-click gladly did not use (it carries
-  which axis strip the click was on).
-- The menu widget itself: per-axis rows with Axis / Labels / Title / Lock
-  checkboxes and a Reset view item; context-sensitive (axis strip → that axis
-  only; plot area → full menu); grey-out of a hidden axis's Labels/Title.
+- A `'contextmenu'` plot event for a right-click gladly did not use (its callback
+  is `(e, coords, region)`; `region` carries which axis strip the click was on —
+  `region?.type === 'axis'` with `region.axes[0]` the slot, or `null` for the plot
+  area / a corner).
+- The menu widget itself (`AxisMenu`, a `data-gladly-control` float): per-axis rows
+  with Axis / Labels / Title / Lock checkboxes and a Reset view item;
+  context-sensitive (axis strip → that axis only; plot area → full menu); grey-out
+  of a hidden axis's Labels/Title. Opening is gated by two top-level config
+  booleans `axis_menu` (single-axis menu) and `plot_menu` (full menu), **both
+  default `true`** — so the menu is on with no opt-in; set one to `false` only to
+  suppress the built-in menu and bind your own on `'contextmenu'`.
 - `plot.resetAxes()`, `plot.isAxisLocked(slot)`, `plot.setAxisLocked(slot, on)`,
-  the lock mark, and the margin reclaim.
-- A `'menuchange'` event emitted after any menu-driven change (for persistence),
-  and a menu-item hook for the host to inject extra rows.
+  the lock mark (red axis line + lock glyph), the title-click lock toggle, and the
+  margin reclaim. Plus per-axis accessors `axis.getConfig()` / `axis.setConfig()`
+  and static `Axis.schema()`.
+- An **`'axisoptions'`** event emitted from the config write path whenever
+  `visible` / `tickLabelsVisible` / `titleVisible` / `locked` changes on a slot,
+  carrying `{ type: 'axisoptions', axis: slot, key, value }` — keyed by *what*
+  changed, not who, so it fires for a menu toggle, a `setAxisLocked()` call or a
+  direct `plot.update({config})` alike. Domain/range changes keep using the
+  existing **`'axislimit'`** event. These two events are the persistence hook;
+  there is no `'menuchange'` event.
+- A **`'contextmenu_open'`** event for injecting extra rows: `cb(e, coords, region,
+  menuEl)` fires just before the built-in menu is placed, handing the host the
+  fully-built menu `<div>` to mutate in place (append rows/buttons, wire handlers).
+  It augments the built-in menu rather than replacing it; mark added interactive
+  DOM with `data-gladly-control`.
 
 ## What exists in Ymerflow
 
@@ -60,7 +88,8 @@ This plan is implemented **after the gladly release** carrying the menu.
   `saveAllPlots()` in `PlotGroupContext`, which write every PlotView's config back
   at once — used here to persist a lock/reset across the linked workspace.
 - business#168 (open): zooming one plot drops another's linked explicit-limit axis
-  to 0..1. Fixed on the gladly side before the lock lands (see the gladly plan).
+  to 0..1. The three merged gladly plans do **not** cover this; it still needs a
+  gladly-side fix before (or alongside) the lock lands, tracked separately.
 - `PlotView`'s `plot.on('click')` moves the current sounding; a right-click fires
   no `click`, so it leaves the sounding alone.
 - `CLAUDE.md` keeps project-specific code out of `flexout/`; this plan adds none —
@@ -68,8 +97,8 @@ This plan is implemented **after the gladly release** carrying the menu.
 
 ## Questions
 
-All eleven design questions have been decided and moved into the gladly plan
-(`deps/gladly/docs/plans/axis-context-menu.md`), where the menu now lives: the
+All eleven design questions have been decided and moved into the gladly plans
+(now in `deps/gladly/docs/plans/done/`), where the menu now lives: the
 right-click event (1a), the three axis-part switches (2a), reclaiming the space
 from hidden parts (3b), saving switches with the workspace (4a), per-plot scope
 (5a), the extra menu items — status bar, reset, lock (6a/b/e), the reset (7a),
@@ -79,22 +108,30 @@ polygon (into #37 or the gladly PR), and no Mac-only Ctrl+click.
 
 ## Design
 
-One PR after the gladly release.
+One PR, against gladly-plot 0.0.21.
 
-- **`frontend/package.json`:** bump `gladly-plot` to the release carrying the
-  menu (`npm install --save gladly-plot@<version>` — a registry version, never a
-  `file:` path). During development, run against the gladly branch with
-  `npm install --no-save` from the local `deps/gladly` checkout.
+- **`frontend/package.json`:** bump `gladly-plot` to `0.0.21` (the release
+  carrying the menu: `npm install --save gladly-plot@0.0.21` — a registry
+  version, never a `file:` path). During development, run against the gladly
+  branch with `npm install --no-save` from the local `deps/gladly` checkout.
 - **`frontend/src/widgets/PlotView/index.jsx`:**
-  - Enable gladly's menu on the plot (whatever the gladly API is — a config flag
-    or leaving the default `'contextmenu'` handler on).
-  - On gladly's `'menuchange'` event, persist: write the plot's new
-    `plot.getConfig()` back via the existing update effect for an axis-part
-    change, and call `saveAllPlots()` (#143) for a lock or reset so every linked
-    plot saves the shared range rather than the one it last wrote.
-  - Inject the **Status bar** row through gladly's menu-item hook: a checkbox
-    bound to `layoutConfig.statusBar`, toggling it through the normal layout
-    update. This is the only app-specific menu item.
+  - Nothing to enable — gladly's menu is on by default (`axis_menu`/`plot_menu`
+    both default `true`). Leave them unset.
+  - Persist on gladly's **`'axisoptions'`** event (axis-part and lock changes) and
+    **`'axislimit'`** event (typed/reset range changes). For an axis-part change
+    (`visible`/`tickLabelsVisible`/`titleVisible`) write the plot's new
+    `plot.getConfig()` back via the existing update effect. For a `locked` change
+    or a reset, call `saveAllPlots()` (#143) so every linked plot saves the shared
+    range rather than the one it last wrote. Because `'axisoptions'` is keyed by
+    *what* changed, the handler branches on `event.key` (`locked` → `saveAllPlots`,
+    else per-plot write-back); the reset (via `'axislimit'` from the data refit, or
+    a dedicated signal) also fans out through `saveAllPlots()`.
+  - Inject the **Status bar** row through gladly's **`'contextmenu_open'`** hook:
+    `plot.on('contextmenu_open', (e, coords, region, menuEl) => …)` appends a
+    checkbox (wrapped in a `data-gladly-control` element) bound to
+    `layoutConfig.statusBar`, toggling it through the normal layout update. This is
+    the only app-specific menu item; the callback runs on every open, so it appends
+    fresh each time and owns its own state.
 - **`backend/widget_schemas.json`:** regenerated, picking up the three new axis
   keys (`tickLabelsVisible`, `titleVisible`, `locked`) for the config form.
 - **Docs:** `docs/user-guide.md` (right-click a plot or an axis to show/hide axis
@@ -142,10 +179,13 @@ gladly now.
 
 ## Implementation steps
 
-1. gladly PR + release (see `deps/gladly/docs/plans/axis-context-menu.md`).
-2. Ymerflow PR: the bump, enabling the menu, the `'menuchange'` persistence
-   (per-plot write-back + `saveAllPlots()` for lock/reset), the injected
-   status-bar item, the regenerated schema, docs; checked in the running app.
+1. gladly PR — **done, merged, and released** as gladly-plot 0.0.21
+   (see `deps/gladly/docs/plans/done/`).
+2. Ymerflow PR: the bump (to gladly-plot 0.0.21), the
+   `'axisoptions'`/`'axislimit'` persistence (per-plot write-back + `saveAllPlots()`
+   for lock/reset), the `'contextmenu_open'`-injected status-bar item, the
+   regenerated schema, docs; checked in the running app. No menu enabling needed —
+   `axis_menu`/`plot_menu` default on.
 
-About three quarters of a day, most of it the check in the running app, plus the
-wait for the gladly review and release.
+About three quarters of a day, most of it the check in the running app. The
+gladly release (gladly-plot 0.0.21) is out, so no wait remains.
