@@ -77,6 +77,37 @@ Interactive scientific plotting:
 - **Interactive**: Zoom, pan, hover for details
 - **Multi-dataset**: Overlay multiple datasets
 - **Unit Matching**: Automatic axis assignment by units
+- **Right-click menu**: Right-click a plot for axis controls (see below)
+
+##### Right-click menu (axes, lock, reset, status bar)
+
+Right-click a plot to open its menu:
+
+- **On an axis strip** (the margin where an axis's ticks and title are drawn): the menu shows
+  just that axis.
+- **In the plot area or a corner**: the full menu shows a row per axis.
+
+Each axis row has four checkboxes:
+
+- **Axis** — show or hide the whole axis. Hiding it gives the freed margin back to the plot,
+  so a short strip stacked above a profile can drop an axis it shares with the profile and
+  regain the room.
+- **Labels** — show or hide just the numeric tick labels.
+- **Title** — show or hide just the axis title. (Labels and Title are greyed out while the
+  whole axis is hidden; turning the axis back on restores whatever they were.)
+- **Lock** — pin that axis's range so zoom, scroll, pan and a reset leave it alone until you
+  switch it off. A locked axis is drawn with a red axis line and a lock mark by its title;
+  clicking the title also toggles the lock. Because every plot in a workspace shares an axis
+  by quantity kind (e.g. distance), a locked range stays put on this plot while its other
+  axes — and the other plots' matching axes — still move; a typed limit still moves it.
+- **Status bar** — toggles this plot's own status bar (the same setting as the Configure form).
+- **Reset view** / **Reset axis** — snaps the view back to the data range (locked axes kept),
+  and follows the shared axes across every linked plot.
+
+The menu closes on Escape, a click outside, or Reset. A right-click only opens the menu — it
+never moves the current sounding, and a right-click that closes a drawing polygon or rotates a
+3D curtain does not open it. All of these settings are saved with the workspace, so they come
+back on reload.
 
 #### EnvironmentView - Manage Environments
 
@@ -132,7 +163,8 @@ apart.)
 
 A status bar along the bottom of the workspace shows the cursor coordinates of whichever plot
 the pointer is over, and the last point you clicked in any plot. A plot can also show its own
-status bar underneath it — turn on **Status bar** in that PlotView's Configure form.
+status bar underneath it — turn on **Status bar** in that PlotView's Configure form, or in its
+right-click menu (see [Right-click menu](#right-click-menu-axes-lock-reset-status-bar)).
 
 #### Workspaces - Saving and Sharing Layouts
 

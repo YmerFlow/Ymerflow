@@ -7,6 +7,10 @@ export const PlotGroupContext = createContext(null);
 export function PlotGroupProvider({ children }) {
   const groupRef = useRef(null);
   const apiRef = useRef(null);
+  // Per-plot "write my current config back into the layout" callbacks, keyed by plot id.
+  // Used to fan a persist out across the whole linked workspace (a lock's pinned range, a
+  // reset) — see saveAllPlots.
+  const saversRef = useRef(new Map());
   const [plotCount, setPlotCount] = useState(0);
 
   if (!groupRef.current) {
@@ -17,8 +21,24 @@ export function PlotGroupProvider({ children }) {
     // React state only so the workspace status bar can hide when no plot is open.
     const readout = createReadoutStore();
     apiRef.current = {
-      addPlot:    (name, plot) => { groupRef.current?.add(name, plot); setPlotCount(c => c + 1); },
-      removePlot: (name)       => { groupRef.current?.remove(name); setPlotCount(c => Math.max(0, c - 1)); },
+      addPlot:    (name, plot, save) => {
+        groupRef.current?.add(name, plot);
+        if (save) saversRef.current.set(name, save);
+        setPlotCount(c => c + 1);
+      },
+      removePlot: (name) => {
+        groupRef.current?.remove(name);
+        saversRef.current.delete(name);
+        setPlotCount(c => Math.max(0, c - 1));
+      },
+      // Persist every open plot's current config. A reset or a range lock changes the
+      // shared range on every linked plot, not just the one acted on, so each must write
+      // its own config back. Errors are isolated so one plot cannot block the rest.
+      saveAllPlots: () => {
+        for (const save of saversRef.current.values()) {
+          try { save(); } catch (e) { console.error('[PlotGroup] saveAllPlots:', e); }
+        }
+      },
       publishReadout:   readout.publish,
       subscribeReadout: readout.subscribe,
     };

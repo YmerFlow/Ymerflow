@@ -253,6 +253,16 @@
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {
+            "axis_menu": {
+              "type": "boolean",
+              "default": true,
+              "description": "When true (the default), a right-click on an axis strip opens gladly's built-in single-axis menu. When false, gladly opens no menu there and the 'contextmenu' event still fires, so a consumer can bind their own."
+            },
+            "plot_menu": {
+              "type": "boolean",
+              "default": true,
+              "description": "When true (the default), a right-click on the plot area / a corner / an empty margin opens gladly's built-in full menu. When false, gladly opens no menu there and the 'contextmenu' event still fires, so a consumer can bind their own."
+            },
             "transforms": {
               "type": "array",
               "description": "Named data transforms applied before layers. Each item is a { name, transform: { ClassName: params } } object.",
@@ -352,8 +362,7 @@
                           "yData",
                           "zData",
                           "zAxis",
-                          "pointSize",
-                          "selection"
+                          "pointSize"
                         ]
                       }
                     },
@@ -447,8 +456,7 @@
                           "xData",
                           "yData",
                           "zData",
-                          "zAxis",
-                          "selection"
+                          "zAxis"
                         ]
                       }
                     },
@@ -482,8 +490,7 @@
                           }
                         },
                         "required": [
-                          "colorAxis",
-                          "selection"
+                          "colorAxis"
                         ]
                       }
                     },
@@ -514,8 +521,7 @@
                         },
                         "required": [
                           "xAxis",
-                          "yAxis",
-                          "selection"
+                          "yAxis"
                         ]
                       }
                     },
@@ -549,8 +555,7 @@
                           }
                         },
                         "required": [
-                          "filterAxis",
-                          "selection"
+                          "filterAxis"
                         ]
                       }
                     },
@@ -1575,8 +1580,7 @@
                           }
                         },
                         "required": [
-                          "source",
-                          "selection"
+                          "source"
                         ]
                       }
                     },
@@ -1650,8 +1654,7 @@
                         },
                         "required": [
                           "xData",
-                          "yData",
-                          "selection"
+                          "yData"
                         ]
                       }
                     },
@@ -3444,8 +3447,7 @@
                         },
                         "required": [
                           "dtmSource",
-                          "satSource",
-                          "selection"
+                          "satSource"
                         ]
                       }
                     },
@@ -3511,8 +3513,7 @@
                           }
                         },
                         "required": [
-                          "dataset",
-                          "selection"
+                          "dataset"
                         ]
                       }
                     },
@@ -3586,8 +3587,7 @@
                         },
                         "required": [
                           "dataset",
-                          "channel",
-                          "selection"
+                          "channel"
                         ]
                       }
                     },
@@ -3683,8 +3683,7 @@
                         },
                         "required": [
                           "dataset",
-                          "channel",
-                          "selection"
+                          "channel"
                         ]
                       }
                     },
@@ -3733,8 +3732,7 @@
                           }
                         },
                         "required": [
-                          "dataset",
-                          "selection"
+                          "dataset"
                         ]
                       }
                     },
@@ -3792,8 +3790,7 @@
                         },
                         "required": [
                           "dataset",
-                          "channel",
-                          "selection"
+                          "channel"
                         ]
                       }
                     },
@@ -3850,8 +3847,7 @@
                           }
                         },
                         "required": [
-                          "dataset",
-                          "selection"
+                          "dataset"
                         ]
                       }
                     },
@@ -3927,8 +3923,7 @@
                           }
                         },
                         "required": [
-                          "dataset",
-                          "selection"
+                          "dataset"
                         ]
                       }
                     },
@@ -3977,8 +3972,7 @@
                           }
                         },
                         "required": [
-                          "dataset",
-                          "selection"
+                          "dataset"
                         ]
                       }
                     },
@@ -4046,8 +4040,7 @@
                           }
                         },
                         "required": [
-                          "dataset",
-                          "selection"
+                          "dataset"
                         ]
                       }
                     },
@@ -4113,8 +4106,7 @@
                           "xData",
                           "yData",
                           "zData",
-                          "colorData",
-                          "selection"
+                          "colorData"
                         ]
                       }
                     },
@@ -4168,8 +4160,7 @@
                           }
                         },
                         "required": [
-                          "dataset",
-                          "selection"
+                          "dataset"
                         ]
                       }
                     },
@@ -4194,8 +4185,7 @@
                           }
                         },
                         "required": [
-                          "column",
-                          "selection"
+                          "column"
                         ]
                       }
                     },
@@ -4210,6 +4200,12 @@
               "type": "object",
               "additionalProperties": {
                 "type": "object",
+                "required": [
+                  "visible",
+                  "tickLabelsVisible",
+                  "titleVisible",
+                  "locked"
+                ],
                 "properties": {
                   "quantity_kind": {
                     "type": "string"
@@ -4229,6 +4225,22 @@
                       "linear",
                       "log"
                     ]
+                  },
+                  "visible": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "tickLabelsVisible": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "titleVisible": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "locked": {
+                    "type": "boolean",
+                    "default": false
                   },
                   "rotate": {
                     "type": "boolean"
@@ -4347,7 +4359,7 @@
                   },
                   "colorscale": {
                     "type": "string",
-                    "description": "Colorscale override. A 2D colorscale name enables the true-2D path.",
+                    "description": "Colorscale override.",
                     "enum": [
                       "none",
                       "viridis",
@@ -4425,16 +4437,26 @@
                       "boys_surface",
                       "diverging_sequential"
                     ]
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "When false, this entry does not override its member axes' colorscales; the pair colours from each axis's own colorscale (same state as having no entry at all)."
+                  },
+                  "colorbar": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "When false, the floating colorbar widget for this entry is not drawn."
                   }
                 }
               }
             },
             "interactions": {
               "type": "object",
-              "description": "Interactive behaviours. All share the same data-point selection mechanism.",
+              "description": "Interactive behaviours.",
               "properties": {
                 "lasso": {
-                  "description": "Lasso selection. true = one lasso per selection name found in layers, trigger=shift. Array = explicit list.",
+                  "description": "Lasso selection.",
                   "oneOf": [
                     {
                       "type": "boolean",
@@ -4447,8 +4469,7 @@
                         "type": "object",
                         "properties": {
                           "selection": {
-                            "type": "string",
-                            "description": "Selection channel name matching the layer's selection field."
+                            "type": "string"
                           },
                           "trigger": {
                             "type": "string",
@@ -4457,6 +4478,24 @@
                               "ctrl"
                             ],
                             "default": "shift"
+                          },
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "lasso",
+                              "rectangle",
+                              "triangle",
+                              "polygon",
+                              "circle",
+                              "ellipse",
+                              "band"
+                            ],
+                            "description": "Selection shape. Without it the plot's current mode applies (see setLassoMode), 'lasso' by default."
+                          },
+                          "bandWidth": {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "description": "Width of a band click, in the x axis's data units."
                           }
                         },
                         "required": [

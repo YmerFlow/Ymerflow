@@ -28,7 +28,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
 
   // Map of "procName.version.dsName" → raw data object for non-current process datasets
   const [lazilyLoadedData, setLazilyLoadedData] = useState(new Map());
-  const { addPlot, removePlot, publishReadout } = useContext(PlotGroupContext);
+  const { addPlot, removePlot, publishReadout, saveAllPlots } = useContext(PlotGroupContext);
 
   const containerRef          = useRef(null);
   const plotRef               = useRef(null);
@@ -52,6 +52,29 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     () => layoutConfig || PlotView.get_default().layoutConfig,
     [layoutConfig],
   );
+
+  // Latest config, readable from the long-lived gladly event handlers (the mount effect's
+  // closures capture only the first render's values).
+  const configPropRef = useRef(config);
+  configPropRef.current = config;
+
+  // Force this plot's current gladly config (plus our own statusBar field) back into the
+  // layout node. The update effect below only writes back when it re-runs; a gladly menu
+  // change ('axisoptions'/'axislimit') does not change the React config prop, so its
+  // handlers call this directly. Reassigned every render so it always closes over the
+  // latest props. An optional statusBarOverride lets the status-bar toggle set its value.
+  const saveConfigRef = useRef(() => {});
+  saveConfigRef.current = (statusBarOverride) => {
+    const plot = plotRef.current;
+    if (!plot || !parentUpdateRef.current || !id) return;
+    const fullConfig = { ...plot.getConfig() };
+    const sb = statusBarOverride !== undefined ? statusBarOverride : config.statusBar;
+    if (sb !== undefined) fullConfig.statusBar = sb;
+    const fullConfigJson = JSON.stringify(fullConfig);
+    if (fullConfigJson === lastSavedRef.current) return;
+    lastSavedRef.current = fullConfigJson;
+    parentUpdateRef.current('replace', id, { id, widget, layoutConfig: fullConfig, ...rest });
+  };
 
   // Scan layer parameters for non-current dataset paths and lazily load their data.
   useEffect(() => {
@@ -109,7 +132,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     if (!container) return;
     const plot = new Plot(container, { margin: PLOT_MARGIN });
     plotRef.current = plot;
-    addPlot(id, plot);
+    addPlot(id, plot, () => saveConfigRef.current());
 
     // Show data-space coordinates on mousemove — in this plot's own bar (when shown)
     // and in the shared workspace status bar.
@@ -239,10 +262,56 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
       sel.clear();
     });
 
+    // Persist gladly's built-in axis menu / axis changes. None of these change our React
+    // config prop, so the update effect won't re-run — persist explicitly here.
+    //  - 'axisoptions' non-locked keys (visible/tickLabelsVisible/titleVisible, and the
+    //    0.0.22 scale/colorscale/colorbar/filterbar/2D-pair keys): a plain per-plot
+    //    write-back of this plot's getConfig(). We never assume event.axis is a slot.
+    //  - 'axisoptions' locked: the lock itself is local to this plot (gladly), but it pins
+    //    a range shared across the linked workspace, so persist every plot.
+    //  - 'axislimit' (a typed limit): propagates across linked axes, so persist every plot.
+    const axisOptHandle = plot.on('axisoptions', (event) => {
+      if (event.key === 'locked') saveAllPlots();
+      else saveConfigRef.current();
+    });
+    const axisLimitHandle = plot.on('axislimit', () => saveAllPlots());
+
+    // Augment the built-in menu as it opens: inject our one app-specific row (the
+    // status-bar toggle), and — because gladly fires no event for a reset — persist a
+    // reset by listening on the menu's own Reset button. The callback runs on every open,
+    // appending fresh DOM that is discarded with the menu, so it owns its own state.
+    const ctxOpenHandle = plot.on('contextmenu_open', (e, coords, region, menuEl) => {
+      const row = document.createElement('label');
+      row.setAttribute('data-gladly-control', 'statusbar-toggle');
+      Object.assign(row.style, {
+        display: 'flex', alignItems: 'center', gap: '5px',
+        marginTop: '4px', cursor: 'pointer', font: '12px sans-serif',
+      });
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!configPropRef.current?.statusBar;
+      cb.addEventListener('change', () => saveConfigRef.current(cb.checked));
+      row.appendChild(cb);
+      row.appendChild(document.createTextNode('Status bar'));
+      menuEl.appendChild(row);
+
+      // gladly's Reset button ("Reset view" / "Reset axis") fires no event, so hook it
+      // directly. Our listener runs after gladly's (added later); a microtask lets the
+      // reset's linked-axis domain changes settle before we read getConfig() everywhere.
+      for (const btn of menuEl.querySelectorAll('button')) {
+        if (/^Reset/.test(btn.textContent || '')) {
+          btn.addEventListener('click', () => Promise.resolve().then(() => saveAllPlots()));
+        }
+      }
+    });
+
     return () => {
       selHandle.remove();
       moveHandle.remove();
       clickHandle.remove();
+      axisOptHandle.remove();
+      axisLimitHandle.remove();
+      ctxOpenHandle.remove();
       removePlot(id);
       plot.destroy();
       plotRef.current = null;
