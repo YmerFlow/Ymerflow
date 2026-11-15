@@ -95,6 +95,8 @@ const XYZ_STATIC_QK = {
   elev: 'elevation_m',      Elev: 'elevation_m',
   DEM: 'elevation_m',       Topo: 'elevation_m', topo: 'elevation_m',
   Topography: 'elevation_m', topography: 'elevation_m',
+  // Elevation of the bird above the datum (Topography + TxAltitude), not its altitude
+  zb: 'elevation_m',
   // Flight altitude
   alt: 'altitude_m', Alt: 'altitude_m',
   altitude: 'altitude_m',   Altitude: 'altitude_m',
