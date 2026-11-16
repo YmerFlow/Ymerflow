@@ -1,8 +1,38 @@
-import { LayerType, registerLayerType, AXIS_GEOMETRY } from 'gladly-plot';
+import { LayerType, registerLayerType, AXIS_GEOMETRY, resolveQuantityKind } from 'gladly-plot';
 import { parseColor, fillColorArrays, toFloat32Array, resolveDataPath } from '../colorUtils.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
+
+// Preferred columns in priority order, with the QK we fall back to when the data
+// isn't resolvable yet (axis still needs *a* QK at resolveAxisConfig time).
+function pickColumns(parameters, data) {
+  const dataset = parameters.dataset;
+  const tryCol = (explicit, prefs) => {
+    if (explicit) return explicit;
+    for (const c of prefs) {
+      if (dataset && resolveQuantityKind(`${dataset}.${c}`, data) != null) return c;
+    }
+    return prefs[0];                     // nothing resolved yet — default
+  };
+  const xCol = tryCol(parameters.x_column, ['x_web', 'lon']);
+  const yCol = tryCol(parameters.y_column, ['y_web', 'lat']);
+  const xQK  = (dataset && resolveQuantityKind(`${dataset}.${xCol}`, data)) || 'epsg_3857_x';
+  const yQK  = (dataset && resolveQuantityKind(`${dataset}.${yCol}`, data)) || 'epsg_3857_y';
+  return { xCol, yCol, xQK, yQK };
+}
+
+// Finite [min, max] extent of a numeric array, skipping NaN/Inf; null if none finite.
+function finiteExtent(arr) {
+  let min = Infinity, max = -Infinity;
+  for (let i = 0; i < arr.length; i++) {
+    const v = arr[i];
+    if (!Number.isFinite(v)) continue;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  return min <= max ? [min, max] : null;
+}
 
 const RGB_VERT = `#version 300 es
   precision mediump float;
@@ -27,12 +57,15 @@ const RGB_FRAG = `#version 300 es
 registerLayerType('FlightlinePlot', new LayerType({
   name: 'FlightlinePlot',
 
-  getAxisConfig: (parameters) => ({
-    xAxis: parameters.xAxis ?? 'xaxis_bottom',
-    xAxisQuantityKind: 'epsg_4326_x',
-    yAxis: parameters.yAxis ?? 'yaxis_left',
-    yAxisQuantityKind: 'epsg_4326_y',
-  }),
+  getAxisConfig: (parameters, data) => {
+    const { xQK, yQK } = pickColumns(parameters, data);
+    return {
+      xAxis: parameters.xAxis ?? 'xaxis_bottom',
+      xAxisQuantityKind: xQK,
+      yAxis: parameters.yAxis ?? 'yaxis_left',
+      yAxisQuantityKind: yQK,
+    };
+  },
 
   vert: RGB_VERT,
   frag: RGB_FRAG,
@@ -41,8 +74,8 @@ registerLayerType('FlightlinePlot', new LayerType({
     type: 'object',
     properties: {
       dataset:  { type: 'string', 'x-format': 'datasetPath' },
-      x_column: { type: 'string', default: 'lon' },
-      y_column: { type: 'string', default: 'lat' },
+      x_column: { type: 'string', default: 'x_web' },
+      y_column: { type: 'string', default: 'y_web' },
       mode:     { type: 'string', enum: ['lines', 'markers', 'lines+markers'], default: 'markers' },
       color:    { type: 'string', default: 'blue' },
       xAxis:    { type: 'string', enum: X_AXES, default: 'xaxis_bottom' },
@@ -57,8 +90,9 @@ registerLayerType('FlightlinePlot', new LayerType({
     const flightlines = dataset?.flightlines;
     if (!flightlines) return [];
 
-    const xRaw = flightlines[parameters.x_column || 'lon'];
-    const yRaw = flightlines[parameters.y_column || 'lat'];
+    const { xCol, yCol, xQK, yQK } = pickColumns(parameters, rawData);
+    const xRaw = flightlines[xCol];
+    const yRaw = flightlines[yCol];
     if (!xRaw || !yRaw) return [];
 
     const n   = xRaw.length;
@@ -71,8 +105,14 @@ registerLayerType('FlightlinePlot', new LayerType({
     const mode    = parameters.mode || 'markers';
     const results = [];
 
-    if (mode.includes('markers')) results.push({ attributes: attribs, uniforms: { pointSize: 3.0 }, primitive: 'points'     });
-    if (mode.includes('lines'))   results.push({ attributes: attribs, uniforms: { pointSize: 1.0 }, primitive: 'line strip' });
+    const xDom = finiteExtent(x);
+    const yDom = finiteExtent(y);
+    const domains = {};
+    if (xDom) domains[xQK] = xDom;
+    if (yDom) domains[yQK] = yDom;
+
+    if (mode.includes('markers')) results.push({ attributes: attribs, uniforms: { pointSize: 3.0 }, primitive: 'points',     domains });
+    if (mode.includes('lines'))   results.push({ attributes: attribs, uniforms: { pointSize: 1.0 }, primitive: 'line strip', domains });
     return results;
   },
 }));
