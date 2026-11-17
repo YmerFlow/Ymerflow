@@ -26,6 +26,7 @@ export default function CustomStringField(props) {
         formData={props.formData}
         onChange={props.onChange}
         fieldPathId={props.fieldPathId}
+        targetMediatypes={schema['x-target-mediatypes']}
       />
     );
   }
@@ -49,6 +50,7 @@ export default function CustomStringField(props) {
               value={widgetProps.value || ''}
               onChange={widgetProps.onChange}
               required={widgetProps.required}
+              targetMediatypes={schema['x-target-mediatypes']}
             />
           );
         }

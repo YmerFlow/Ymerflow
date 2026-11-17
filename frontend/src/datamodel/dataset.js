@@ -1024,7 +1024,8 @@ function createDatasetInstance(metadata) {
     return new JsonDataset(metadata);
   }
 
-  if (mimeType === 'application/x-aarhusxyz-msgpack') {
+  if (mimeType === 'application/x-aarhusxyz-msgpack' ||
+      mimeType === 'application/x-aarhusxyz-model-msgpack') {
     return new XyzDataset(metadata);
   }
 

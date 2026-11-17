@@ -3,12 +3,13 @@ import { Form } from 'react-bootstrap';
 import { ProcessContext } from '../ProcessContext';
 import { API, getDataset } from '../datamodel/api';
 import { useSearchDatasets } from '../datamodel/useQueries';
+import { datasetMatchesMediatypes } from './mediatypeMatch';
 
 // Resolve the API base to an absolute URL for matching stored dataset URLs.
 // When API is a relative path (e.g. "/api"), prepend the current origin.
 const apiBase = API.startsWith('http') ? API : window.location.origin + API;
 
-export default function DatasetSelector({ value, onChange, id, required }) {
+export default function DatasetSelector({ value, onChange, id, required, targetMediatypes }) {
   const { currentProject } = useContext(ProcessContext);
   const [searchText, setSearchText] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -86,9 +87,12 @@ export default function DatasetSelector({ value, onChange, id, required }) {
 
   // Smart grouping logic
   const getDisplayItems = () => {
+    // Hide datasets that do not expose the media types this field targets
+    // (empty/absent constraint → everything passes).
+    const filtered = datasets.filter(ds => datasetMatchesMediatypes(ds, targetMediatypes));
     // Group datasets by process
     const grouped = {};
-    datasets.forEach(ds => {
+    filtered.forEach(ds => {
       const key = `${ds.process_name} / v${ds.process_version}`;
       if (!grouped[key]) {
         grouped[key] = [];
@@ -123,7 +127,7 @@ export default function DatasetSelector({ value, onChange, id, required }) {
       });
     } else {
       // Show all datasets individually
-      return datasets.map(ds => ({
+      return filtered.map(ds => ({
         type: 'item',
         display: `${ds.process_name} / v${ds.process_version} / ${ds.dataset_name}`,
         url: ds.url,

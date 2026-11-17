@@ -8,8 +8,11 @@ import { resolveProcessRef } from '../datamodel/processRef';
 // readable name instead, falling back to the raw MIME type for kinds not listed here.
 const MIME_DISPLAY_NAMES = {
   'application/x-aarhusxyz-msgpack': 'AEM data (msgpack)',
+  'application/x-aarhusxyz-model-msgpack': 'AEM resistivity model (msgpack)',
   'application/x-magdata-msgpack': 'Magnetic data (msgpack)',
   'application/x-webxtile': 'Gridded tiles (webxtile)',
+  'application/x-mag-grid-webxtile': 'Magnetic grid (webxtile)',
+  'application/x-mag-model-webxtile': 'Magnetic 3D model (webxtile)',
   'application/geo+json': 'Geometry (GeoJSON)',
   'application/json': 'JSON document',
   'application/vnd.ymerflow.stats+json': 'Statistics (JSON)',

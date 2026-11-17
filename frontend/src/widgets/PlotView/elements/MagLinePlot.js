@@ -37,7 +37,7 @@ registerLayerType('MagLinePlot', new LayerType({
   schema: (data) => ({
     type: 'object',
     properties: {
-      dataset: { type: 'string', 'x-format': 'datasetPath' },
+      dataset: { type: 'string', 'x-format': 'datasetPath', 'x-target-mediatypes': ['application/x-magdata-msgpack'] },
       columns: { type: 'array', items: { type: 'string' }, default: ['magcom', 'diurnal'] },
       xcolumn: { type: 'string', default: 'fidcount' },
       mode:    { type: 'string', enum: ['lines', 'markers', 'lines+markers'], default: 'lines' },

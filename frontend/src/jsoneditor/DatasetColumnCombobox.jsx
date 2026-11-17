@@ -1,10 +1,39 @@
-import React, { useState, useContext, useRef, useEffect } from 'react';
+import React, { useState, useContext, useRef, useEffect, useMemo } from 'react';
 import { ProcessContext } from '../ProcessContext';
 import { loadDataset } from '../datamodel/dataset';
 import { encodeSeg } from '../datamodel/datasetPath';
+import { useSearchDatasets } from '../datamodel/useQueries';
+import { datasetMatchesMediatypes } from './mediatypeMatch';
 
-export default function DatasetColumnCombobox({ value, onChange, mode }) {
-  const { processes, fetchedData, currentProject } = useContext(ProcessContext);
+export default function DatasetColumnCombobox({ value, onChange, mode, targetMediatypes }) {
+  const { processes, fetchedData, datasetObjects, currentProject } = useContext(ProcessContext);
+
+  // Resolve media types for datasets owned by *other* process versions (the
+  // combobox only has their URLs). The current version's datasets carry their
+  // parts on the loaded Dataset instances in datasetObjects. Only fetched when a
+  // constraint is actually present; the query is shared/cached with DatasetSelector.
+  const constrained = !!(targetMediatypes && targetMediatypes.length);
+  const { data: allDatasets = [] } = useSearchDatasets('', true, currentProject, {
+    enabled: constrained && !!currentProject,
+  });
+  const datasetById = useMemo(
+    () => new Map(allDatasets.map(d => [d.id, d])),
+    [allDatasets],
+  );
+
+  // Whether a path listed in `dataset` mode passes the media-type constraint.
+  // Unconstrained → always true. A dataset we cannot yet classify (search cache
+  // miss) is kept rather than hidden.
+  const datasetPathAllowed = (dsName, outputUrl) => {
+    if (!constrained) return true;
+    if (outputUrl === undefined) {
+      // current.<ds> — use the loaded Dataset instance (has .parts)
+      const dsObj = datasetObjects?.[dsName];
+      return dsObj ? datasetMatchesMediatypes(dsObj, targetMediatypes) : true;
+    }
+    const ds = datasetById.get(outputUrl.split('/').pop());
+    return ds ? datasetMatchesMediatypes(ds, targetMediatypes) : true;
+  };
   const [inputValue, setInputValue] = useState(value || '');
   const [options, setOptions] = useState([]);
   const [open, setOpen] = useState(false);
@@ -41,6 +70,7 @@ export default function DatasetColumnCombobox({ value, onChange, mode }) {
       }
     } else if (mode === 'dataset') {
       for (const dsName of Object.keys(fetchedData || {})) {
+        if (!datasetPathAllowed(dsName, undefined)) continue;
         const path = `current.${encodeSeg(dsName)}`;
         if (!filter || path.toLowerCase().includes(lower)) opts.push(path);
       }
@@ -48,6 +78,7 @@ export default function DatasetColumnCombobox({ value, onChange, mode }) {
         for (const ver of (proc.versions || [])) {
           if (ver.outputs) {
             for (const dsName of Object.keys(ver.outputs)) {
+              if (!datasetPathAllowed(dsName, ver.outputs[dsName])) continue;
               const path = `${encodeSeg(proc.name)}.${ver.version}.${encodeSeg(dsName)}`;
               if (!filter || path.toLowerCase().includes(lower)) opts.push(path);
             }

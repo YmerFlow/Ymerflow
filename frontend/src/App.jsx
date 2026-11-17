@@ -67,10 +67,13 @@ import KubeconfigClusterForm from './clusterProviders/KubeconfigClusterForm';
 import S3StorageForm from './storageProviders/S3StorageForm';
 
 registerHook('dataset_types', () => [
-  { mimeType: 'application/json',                cls: JsonDataset },
-  { mimeType: 'application/x-aarhusxyz-msgpack', cls: XyzDataset },
-  { mimeType: 'application/x-magdata-msgpack',   cls: MagDataset },
-  { mimeType: 'application/x-webxtile',          cls: WebxtileDataset },
+  { mimeType: 'application/json',                      cls: JsonDataset },
+  { mimeType: 'application/x-aarhusxyz-msgpack',       cls: XyzDataset },
+  { mimeType: 'application/x-aarhusxyz-model-msgpack', cls: XyzDataset },
+  { mimeType: 'application/x-magdata-msgpack',         cls: MagDataset },
+  { mimeType: 'application/x-webxtile',                cls: WebxtileDataset },
+  { mimeType: 'application/x-mag-grid-webxtile',       cls: WebxtileDataset },
+  { mimeType: 'application/x-mag-model-webxtile',      cls: WebxtileDataset },
 ]);
 
 // ── Register built-in widgets ─────────────────────────────────────────────────

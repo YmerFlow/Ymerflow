@@ -41,7 +41,7 @@ registerLayerType('SoundingResistivityPlot', new LayerType({
   schema: (data) => ({
     type: 'object',
     properties: {
-      dataset:     { type: 'string', 'x-format': 'datasetPath' },
+      dataset:     { type: 'string', 'x-format': 'datasetPath', 'x-target-mediatypes': [['application/x-aarhusxyz-model-msgpack'], ['application/x-aarhusxyz-msgpack']] },
       topo_column: { type: 'string', default: 'topo' },
       color: {
         type: 'string',
