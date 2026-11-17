@@ -8,7 +8,8 @@ import { LayoutContext } from "../../flexout/LayoutContext";
 import ProcessNode from './ProcessNode';
 import TagFilterBar from './TagFilterBar';
 import { getLatestVersion, getProcessVersion, updateProcessPosition } from '../../datamodel/api';
-import { useProjectTags } from '../../datamodel/useQueries';
+import { useProjectTags, useSearchDatasets } from '../../datamodel/useQueries';
+import { buildMimeColorMap } from './mimeColors';
 import { useIsMobile } from '../../hooks/useIsMobile';
 
 // ---- Pure helper functions ----
@@ -192,6 +193,15 @@ export default function FlowView({ parentUpdate, selectedFilterTagNames: savedFi
   );
 
   const { data: projectTags = [] } = useProjectTags(currentProject);
+
+  // Color each process's output (dataset) boxes by their dataset's main mime type,
+  // using a project-wide categorical palette. Mimes are sorted alphabetically before
+  // color assignment (in buildMimeColorMap), so colors are stable across the project.
+  const { data: allDatasets = [] } = useSearchDatasets('', true, currentProject);
+  const datasetColorById = useMemo(() => {
+    const mimeColor = buildMimeColorMap(allDatasets.map(d => d.mime_type));
+    return new Map(allDatasets.map(d => [d.id, mimeColor.get(d.mime_type)]));
+  }, [allDatasets]);
 
   const userPositionedNodes = useRef({});
   const lastProcessStructure = useRef(null);
@@ -394,7 +404,8 @@ export default function FlowView({ parentUpdate, selectedFilterTagNames: savedFi
           onVersionChange: handleVersionChange,
           onClick: handleNodeClick,
           activeProcess,
-          visibleVersionsForProcess: visibleVersions === null ? null : (visibleVersions.get(p.id) || new Set())
+          visibleVersionsForProcess: visibleVersions === null ? null : (visibleVersions.get(p.id) || new Set()),
+          datasetColorById
         }
       };
     });
@@ -437,7 +448,7 @@ export default function FlowView({ parentUpdate, selectedFilterTagNames: savedFi
       // out far enough to fit large graphs.
       setTimeout(() => rfInstanceRef.current?.fitView({ padding: 0.2, duration: 300, minZoom: 0.05 }), 50);
     }
-  }, [processes, visibleProcessIds, visibleVersions, selectedVersions, filterKey, calculateDepths, handleVersionChange, handleNodeClick, activeProcess, setNodes, setEdges, getProcessStructure]);
+  }, [processes, visibleProcessIds, visibleVersions, selectedVersions, filterKey, calculateDepths, handleVersionChange, handleNodeClick, activeProcess, setNodes, setEdges, getProcessStructure, datasetColorById]);
 
   return (
     <div style={{ width: "100%", height: isMobile ? "70vh" : "100%", position: "relative", display: "flex", flexDirection: "column" }}>

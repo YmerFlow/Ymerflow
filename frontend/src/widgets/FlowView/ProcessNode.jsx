@@ -3,9 +3,10 @@ import { Handle, Position } from 'reactflow';
 import { ProcessContext } from '../../ProcessContext';
 import TagSelector from './TagSelector';
 import StateBadge from './StateBadge';
+import { contrastText } from './mimeColors';
 
 const ProcessNode = React.memo(({ data }) => {
-  const { process, selectedVersion, onVersionChange, onClick, activeProcess, visibleVersionsForProcess } = data;
+  const { process, selectedVersion, onVersionChange, onClick, activeProcess, visibleVersionsForProcess, datasetColorById } = data;
   const { currentProject } = useContext(ProcessContext);
 
   const isSelected = activeProcess?.processId === process.id;
@@ -98,14 +99,21 @@ const ProcessNode = React.memo(({ data }) => {
         </div>
       ))}
 
-      {outputNames.map((name, idx) => (
+      {outputNames.map((name, idx) => {
+        // Color the dataset box by its dataset's main mime type (falls back to the
+        // default label style when the dataset's color isn't known yet).
+        const outputUrl = versionObj?.outputs?.[name];
+        const datasetId = outputUrl ? outputUrl.split('/').pop() : null;
+        const bg = (datasetId && datasetColorById?.get(datasetId)) || null;
+        return (
         <div
           key={`output-${name}`}
           style={{
             position: 'absolute',
             right: `0px`,
             top: `${headerHeight + idx * handleSpacing}px`,
-            ...labelStyle
+            ...labelStyle,
+            ...(bg ? { background: bg, color: contrastText(bg), borderColor: bg } : {})
           }}
           title={name}
         >
@@ -126,7 +134,8 @@ const ProcessNode = React.memo(({ data }) => {
             }}
           />
         </div>
-      ))}
+        );
+      })}
 
       <div style={{
         minHeight: `${headerHeight}px`,
