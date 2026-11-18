@@ -8,7 +8,10 @@
 import { useDrag, useDrop } from 'react-dnd';
 
 export const DATASET_DRAG_TYPE = 'dataset';
-// payload shape: { datasetId, datasetPath, datasetName }
+// payload shape: { datasetId, datasetPath, datasetName, processId, processVersion }
+// processId/processVersion identify the source output so a drop target can tell whether
+// the dragged dataset is the active process's active version (→ an unpinned "current.<ds>"
+// layer) or another process/version (→ the pinned datasetPath).
 
 // Drag source — returns the connector ref to attach to a draggable element.
 export function useDatasetDragSource(item) {

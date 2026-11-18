@@ -23,13 +23,19 @@ const PLOT_MARGIN = { top: 50, right: 80, bottom: 60, left: 80 };
 // Layer types that edit in-use flags with the InUse Editor's lasso.
 const IN_USE_LAYER_TYPES = ['ChannelPlot', 'GateAnomalyPlot'];
 
+// Status-bar backgrounds: default, and the red shown when a dataset is dropped onto a
+// plot that has no layer type able to accept it.
+const DEFAULT_BG = '#f8f9fa';
+const ERROR_BG = '#f8d7da';
+const ERROR_MSG = 'Dataset not compatible with existing layers';
+
 // inheritedCompact / inheritedGlobalCompact are flexout header-mode props Pane passes
 // to every widget; PlotView ignores them but must destructure them out so they never
 // leak into `...rest` and get persisted into the saved layout node by the write-back below.
 export default function PlotView({ layoutConfig, parentUpdate, id, widget, inheritedCompact, inheritedGlobalCompact, ...rest }) {
   const isMobile = useIsMobile();
   const { fetchedData, datasetsLoading, dataLoading, currentSounding, setCurrentSounding, datasetCollection, processes,
-    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject, currentPart, ensureSavePointEditLoaded } = useContext(ProcessContext);
+    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject, currentPart, ensureSavePointEditLoaded, activeProcess } = useContext(ProcessContext);
 
   // Map of key → { path, part, dsObj, rawData } (or { path, part, message } when there is no
   // part to show) for non-current process datasets; see pinnedDatasets.js.
@@ -44,8 +50,18 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
 
   const containerRef          = useRef(null);
   const plotRef               = useRef(null);
+  const statusBarRef          = useRef(null);   // this plot's own status-bar outer div
   const statusCoordsRef       = useRef(null);   // left: live mouse coordinates
   const statusPickRef         = useRef(null);   // right: last clicked point
+  // Per-slot background color for this plot's own status bar (mirror of PlotStatusBar's
+  // channels); the bar paints pick ?? coords ?? default. Written imperatively like the
+  // mirror text, so applyStatusBg() recomputes the background.
+  const statusColorsRef       = useRef({ coords: undefined, pick: undefined });
+  const applyStatusBg = () => {
+    if (statusBarRef.current)
+      statusBarRef.current.style.background =
+        statusColorsRef.current.pick ?? statusColorsRef.current.coords ?? DEFAULT_BG;
+  };
   const configRef             = useRef(null);   // tracks latest sanitized config for pick resolution
   const fetchedDataRef        = useRef(fetchedData);
   const setCurrentSoundingRef = useRef(setCurrentSounding);
@@ -100,33 +116,65 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     parentUpdateRef.current('replace', id, { id, widget, layoutConfig: next, ...rest });
   };
 
+  // Clear the incompatible-drop red: a no-color pick clears the shared bar's red, and the
+  // mirror's own pick color is reset. Called on every successful layer append.
+  const clearDropError = () => {
+    publishReadout({ pick: '' });
+    statusColorsRef.current.pick = undefined;
+    applyStatusBg();
+  };
+
   // A dataset dropped onto the plot: filter candidate layer types by media type +
-  // axis conflict-avoidance; 0 → no-op, 1 → append directly, >1 → show the picker.
+  // axis conflict-avoidance. 0 → red "not compatible" message; otherwise show the picker,
+  // except the one case with nothing to choose (exactly 1 candidate AND the pin is fixed),
+  // which auto-appends. The pin is adjustable only for the active process's active version.
   const handleDatasetDrop = useCallback((item, offset) => {
     const dict = (allDatasets || []).find(d => d.id === item.datasetId);
     if (!dict) return;
     const layers = configPropRef.current?.layers || [];
     const data = plotDataRef.current;
     const cands = compatibleLayerTypes(dict, layers, data);
-    if (cands.length === 0) return;
-    if (cands.length === 1) {
-      appendLayerRef.current(buildLayer(cands[0], item.datasetPath, data));
+
+    if (cands.length === 0) {
+      publishReadout({ pick: ERROR_MSG, pickColor: ERROR_BG });
+      if (statusPickRef.current) statusPickRef.current.textContent = ERROR_MSG;
+      statusColorsRef.current.pick = ERROR_BG;
+      applyStatusBg();
       return;
     }
+
+    // "Current" = the active process's active version — exactly what current.<ds> resolves
+    // to; only then is the pin toggleable (and unpinned by default). datasetPath is the
+    // pinned <proc>.<ver>.<ds>; its already-encoded 3rd segment is the dataset name.
+    const isCurrent =
+      item.processId === activeProcess?.processId &&
+      String(item.processVersion) === String(activeProcess?.version);
+    const pinnedPath  = item.datasetPath;
+    const currentPath = 'current.' + item.datasetPath.split('.')[2];
+
+    if (cands.length === 1 && !isCurrent) {
+      appendLayerRef.current(buildLayer(cands[0], pinnedPath, data));
+      clearDropError();
+      return;
+    }
+
     setDropMenu({
       x: offset?.x ?? 0,
       y: offset?.y ?? 0,
-      datasetPath: item.datasetPath,
+      pinnedPath,
+      currentPath,
+      pinnable: isCurrent,
       items: cands.map(c => ({ ...c, label: c.name })),
     });
-  }, [allDatasets]);
+  }, [allDatasets, activeProcess]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dropRef = useDatasetDrop(handleDatasetDrop);
 
-  const handleDropPick = useCallback((item) => {
-    appendLayerRef.current(buildLayer(item, dropMenu.datasetPath, plotDataRef.current));
+  const handleDropPick = useCallback((item, path) => {
+    appendLayerRef.current(buildLayer(item, path, plotDataRef.current));
+    clearDropError();
     setDropMenu(null);
-  }, [dropMenu]);
+  }, [dropMenu]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The current dataset the selected sounding indexes; pinned layers match its row by line and gtime.
   const currentFlightlines = useMemo(
@@ -174,6 +222,8 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
         .map(([k, v]) => `${k}: ${Number(v).toPrecision(5)}`);
       const text = parts.join('   ');
       if (statusCoordsRef.current) statusCoordsRef.current.textContent = text;
+      statusColorsRef.current.coords = undefined;
+      applyStatusBg();
       publishReadout({ coords: text });
     });
 
@@ -207,6 +257,8 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
           Object.entries(row).map(([k, v]) => `${k}=${v}`).join('  ');
       }
       if (statusPickRef.current) statusPickRef.current.textContent = pickText;
+      statusColorsRef.current.pick = undefined;
+      applyStatusBg();
       publishReadout({ pick: pickText });
 
       // --- Sounding selection ---
@@ -460,11 +512,11 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
         )}
       </div>
       {config.statusBar && (
-        <div style={{
+        <div ref={statusBarRef} style={{
           display: 'flex',
           fontSize: '12px',
           fontFamily: 'monospace',
-          background: '#f8f9fa',
+          background: DEFAULT_BG,
           borderTop: '1px solid #dee2e6',
           flexShrink: 0,
           minHeight: '20px',
@@ -480,6 +532,9 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
           x={dropMenu.x}
           y={dropMenu.y}
           items={dropMenu.items}
+          pinnable={dropMenu.pinnable}
+          pinnedPath={dropMenu.pinnedPath}
+          currentPath={dropMenu.currentPath}
           onPick={handleDropPick}
           onClose={() => setDropMenu(null)}
         />

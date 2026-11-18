@@ -13,8 +13,8 @@ import { useDatasetDragSource } from '../../dnd/datasetDnd';
 // 'auto' (labelStyle disables them). The reactflow source Handle still draws edges.
 // Extracted into its own component because react-dnd's useDrag hook can't run in a
 // .map loop.
-function DatasetOutputBox({ name, datasetId, datasetPath, top, labelStyle, bg }) {
-  const dragRef = useDatasetDragSource({ datasetId, datasetPath, datasetName: name });
+function DatasetOutputBox({ name, datasetId, datasetPath, processId, processVersion, top, labelStyle, bg }) {
+  const dragRef = useDatasetDragSource({ datasetId, datasetPath, datasetName: name, processId, processVersion });
   return (
     <div
       ref={dragRef}
@@ -158,6 +158,8 @@ const ProcessNode = React.memo(({ data }) => {
             name={name}
             datasetId={datasetId}
             datasetPath={datasetPath}
+            processId={process.id}
+            processVersion={selectedVersion}
             top={headerHeight + idx * handleSpacing}
             labelStyle={labelStyle}
             bg={bg}

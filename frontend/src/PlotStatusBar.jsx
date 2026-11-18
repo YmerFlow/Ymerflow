@@ -6,15 +6,30 @@ import { PlotGroupContext } from './PlotGroupContext';
 // a click in any plot (right) — the same readout each PlotView used to show for itself.
 // It subscribes to the PlotGroupContext readout store and writes textContent directly,
 // so the many-per-second mousemove updates never re-render React.
+const DEFAULT_BG = '#f8f9fa';
+
 export default function PlotStatusBar() {
   const { hasPlots, subscribeReadout } = useContext(PlotGroupContext);
+  const barRef = useRef(null);
   const coordsRef = useRef(null);
   const pickRef = useRef(null);
+  // Per-slot background color that travels with each slot's value; the bar paints
+  // pick ?? coords ?? default.
+  const colorsRef = useRef({ coords: undefined, pick: undefined });
 
   useEffect(() => {
-    return subscribeReadout(({ coords, pick }) => {
-      if (coords !== undefined && coordsRef.current) coordsRef.current.textContent = coords;
-      if (pick !== undefined && pickRef.current) pickRef.current.textContent = pick;
+    return subscribeReadout(({ coords, coordsColor, pick, pickColor }) => {
+      if (coords !== undefined) {
+        if (coordsRef.current) coordsRef.current.textContent = coords;
+        colorsRef.current.coords = coordsColor;
+      }
+      if (pick !== undefined) {
+        if (pickRef.current) pickRef.current.textContent = pick;
+        colorsRef.current.pick = pickColor;
+      }
+      if (barRef.current)
+        barRef.current.style.background =
+          colorsRef.current.pick ?? colorsRef.current.coords ?? DEFAULT_BG;
     });
   }, [subscribeReadout]);
 
@@ -22,11 +37,11 @@ export default function PlotStatusBar() {
   if (!hasPlots) return null;
 
   return (
-    <div style={{
+    <div ref={barRef} style={{
       display: 'flex',
       fontSize: '12px',
       fontFamily: 'monospace',
-      background: '#f8f9fa',
+      background: DEFAULT_BG,
       borderTop: '1px solid #dee2e6',
       flexShrink: 0,
       minHeight: '20px',
