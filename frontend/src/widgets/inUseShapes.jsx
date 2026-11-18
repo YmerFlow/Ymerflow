@@ -40,7 +40,8 @@ export const SHAPES = [
     icon: <svg {...ICON}><ellipse cx="8" cy="8" rx="6.3" ry="3.4" transform="rotate(-30 8 8)" /></svg>,
   },
   {
-    mode: 'band', name: 'Band', gesture: 'Shift+drag across the line, or Shift+click for a strip of the set width',
+    mode: 'band', name: 'Band',
+    gesture: 'Shift+drag sideways for a range of distance, top to bottom, or up and down for a strip across the whole width; Shift+click for a strip of the set width',
     icon: <svg {...ICON}><path d="M3 2 V14 M13 2 V14 M5 8 H11 M7 6 L5 8 L7 10 M9 6 L11 8 L9 10" /></svg>,
   },
 ].map((shape, i) => ({ ...shape, key: String(i + 1) }));

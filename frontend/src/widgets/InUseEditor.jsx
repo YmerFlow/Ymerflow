@@ -7,7 +7,8 @@ const HINT = 'Turn on inUseMode on a ChannelPlot or GateAnomalyPlot layer, then 
   + 'Pick the shape with the buttons or the keys 1 to 7. Triangle: start at the apex. '
   + 'Polygon: Shift+click the corners, then right-click or press Enter. '
   + 'Ellipse: Shift+click the center, the end of one axis, then the width. '
-  + 'Band: Shift+drag across, or Shift+click for a strip of the set width. Escape drops a shape in progress.';
+  + 'Band: Shift+drag sideways for a range of distance, or up and down for a strip across the whole width; '
+  + 'Shift+click for a strip of the set width. Escape drops a shape in progress.';
 
 // The action buttons, each with its key, which the label shows underlined.
 const ACTIONS = [

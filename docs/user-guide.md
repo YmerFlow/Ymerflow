@@ -121,7 +121,7 @@ The InUse Editor turns gates on and off in a `ChannelPlot` or `GateAnomalyPlot` 
   - Polygon (4): Shift+click each corner, then right-click or press Enter to close it.
   - Circle (5): Shift+press at the center and drag out to the radius.
   - Ellipse (6): Shift+click the center, then the end of one axis, then how wide it is.
-  - Band (7): Shift+drag across the line to select every gate between the two edges, top to bottom; or Shift+click for a strip of the width set beside the buttons, in meters.
+  - Band (7): a Shift+drag that is mostly sideways selects every gate between the two distances, top to bottom; one that is mostly up or down selects a strip across the whole width between the two heights, for example a run of gates along the whole line in the anomaly section. A Shift+click selects a strip of the width set beside the buttons, in meters, centered on the click.
 - Escape drops a polygon or ellipse in progress, as do a click without Shift, a wheel zoom, or a shape change. A Shift-click never moves the current sounding.
 - The editor lays itself out as one row in a wide pane and as a column in a narrow one.
 

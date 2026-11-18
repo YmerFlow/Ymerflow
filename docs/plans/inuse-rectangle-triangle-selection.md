@@ -136,6 +136,7 @@ The gladly maintainer reviewed the plan after steps 0 to 2 landed and asked for 
 - Enable, Disable and Clear show their whole words again, with the key letter underlined, since letters alone were too terse.
 - The shape icons stay drawn inline SVGs, all in one outline style. Font Awesome Free was tried first, but it has no free lasso, triangle, ellipse or band, and its only triangles are filled.
 - Each shape button shows its key digit small in the top-left corner and the icon in the bottom-right, so every shape button is the same small size in the row and in the column.
+- The band as released in gladly 0.0.25 goes further than question 9: the drag's longer side sets its direction, so a mostly sideways drag selects a range of distance from top to bottom and a mostly up-or-down drag selects a strip across the whole width. Its one-click strip of the set width is in the release too, but selects nothing until the app passes a band width, which no Ymerflow code did before step 3; step 3 passes it through `setLassoMode`.
 
 ## Design
 
