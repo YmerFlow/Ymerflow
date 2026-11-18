@@ -35,7 +35,8 @@ const ERROR_MSG = 'Dataset not compatible with existing layers';
 export default function PlotView({ layoutConfig, parentUpdate, id, widget, inheritedCompact, inheritedGlobalCompact, ...rest }) {
   const isMobile = useIsMobile();
   const { fetchedData, datasetsLoading, dataLoading, currentSounding, setCurrentSounding, datasetCollection, processes,
-    inMemoryDiffs, applyInMemoryEdit, inUseAction, currentProject, currentPart, ensureSavePointEditLoaded, activeProcess } = useContext(ProcessContext);
+    inMemoryDiffs, applyInMemoryEdit, inUseAction, selectionShape, selectionBandWidth,
+    currentProject, currentPart, ensureSavePointEditLoaded, activeProcess } = useContext(ProcessContext);
 
   // Map of key → { path, part, dsObj, rawData } (or { path, part, message } when there is no
   // part to show) for non-current process datasets; see pinnedDatasets.js.
@@ -231,6 +232,9 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     const clickHandle = plot.on('click', async (e, coords) => {
       const p = plotRef.current;
       if (!p) return;
+      // Shift is the selection modifier: every selection shape ends in a Shift press and
+      // release, and polygon and ellipse points are Shift-clicks. None of them picks a sounding.
+      if (e.shiftKey) return;
 
       const rect = container.getBoundingClientRect();
       let result;
@@ -402,6 +406,13 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
       plotRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The InUse editor's selection shape and band width [m], set on the plot at run time: no
+  // rebuild, and gladly keeps them for the lasso interactions a later update() builds.
+  // Declared after the effect that creates the plot, so the plot exists on the first run.
+  useEffect(() => {
+    plotRef.current?.setLassoMode(selectionShape, { bandWidth: selectionBandWidth });
+  }, [selectionShape, selectionBandWidth]);
 
   // Update plot whenever config, data or sounding changes.
   // _currentSounding is merged into the data object so LayerTypes that need it
