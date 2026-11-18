@@ -7,7 +7,8 @@ import { resolveProcessRef } from '../datamodel/processRef';
 // The parts structure keys files by MIME type, which is an implementation detail — show a
 // readable name instead, falling back to the raw MIME type for kinds not listed here.
 const MIME_DISPLAY_NAMES = {
-  'application/x-aarhusxyz-msgpack': 'AEM data (msgpack)',
+  'application/x-aarhusxyz-msgpack': 'AEM data/model (legacy msgpack)',
+  'application/x-aarhusxyz-data-msgpack': 'AEM data (msgpack)',
   'application/x-aarhusxyz-model-msgpack': 'AEM resistivity model (msgpack)',
   'application/x-magdata-msgpack': 'Magnetic data (msgpack)',
   'application/x-webxtile': 'Gridded tiles (webxtile)',

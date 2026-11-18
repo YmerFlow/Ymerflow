@@ -138,7 +138,7 @@ registerLayerType('GateAnomalyPlot', new LayerType({
   schema: (data) => ({
     type: 'object',
     properties: {
-      dataset: { type: 'string', 'x-format': 'datasetPath', 'x-target-mediatypes': ['application/x-aarhusxyz-msgpack'] },
+      dataset: { type: 'string', 'x-format': 'datasetPath', 'x-target-mediatypes': [['application/x-aarhusxyz-data-msgpack'], ['application/x-aarhusxyz-msgpack']] },
       channel: { type: 'string', enum: ['Ch01', 'Ch02'], default: 'Ch01' },
       inUseMode: {
         type: 'boolean',

@@ -1024,8 +1024,9 @@ function createDatasetInstance(metadata) {
     return new JsonDataset(metadata);
   }
 
-  if (mimeType === 'application/x-aarhusxyz-msgpack' ||
-      mimeType === 'application/x-aarhusxyz-model-msgpack') {
+  if (mimeType === 'application/x-aarhusxyz-msgpack' ||          // legacy mixed data/model
+      mimeType === 'application/x-aarhusxyz-model-msgpack' ||    // resistivity model
+      mimeType === 'application/x-aarhusxyz-data-msgpack') {     // data (no rho layer)
     return new XyzDataset(metadata);
   }
 

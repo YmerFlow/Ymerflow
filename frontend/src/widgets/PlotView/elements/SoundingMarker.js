@@ -34,7 +34,7 @@ registerLayerType('SoundingMarker', new LayerType({
   schema: (data) => ({
     type: 'object',
     properties: {
-      dataset: { type: 'string', 'x-format': 'datasetPath', 'x-target-mediatypes': ['application/x-aarhusxyz-msgpack'] },
+      dataset: { type: 'string', 'x-format': 'datasetPath', 'x-target-mediatypes': [['application/x-aarhusxyz-data-msgpack'], ['application/x-aarhusxyz-msgpack']] },
       color:   { type: 'string', default: '#ff0000' },
       xAxis:   { type: 'string', enum: X_AXES, default: 'xaxis_bottom' },
       yAxis:   { type: 'string', enum: Y_AXES, default: 'yaxis_left'   },

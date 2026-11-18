@@ -73,7 +73,7 @@ registerLayerType('FlightlinePlot', new LayerType({
   schema: (data) => ({
     type: 'object',
     properties: {
-      dataset:  { type: 'string', 'x-format': 'datasetPath', 'x-target-mediatypes': [['application/x-aarhusxyz-msgpack'], ['application/x-aarhusxyz-model-msgpack']] },
+      dataset:  { type: 'string', 'x-format': 'datasetPath', 'x-target-mediatypes': [['application/x-aarhusxyz-msgpack'], ['application/x-aarhusxyz-model-msgpack'], ['application/x-aarhusxyz-data-msgpack']] },
       x_column: { type: 'string', default: 'x_web' },
       y_column: { type: 'string', default: 'y_web' },
       mode:     { type: 'string', enum: ['lines', 'markers', 'lines+markers'], default: 'markers' },

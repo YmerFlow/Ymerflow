@@ -70,6 +70,7 @@ registerHook('dataset_types', () => [
   { mimeType: 'application/json',                      cls: JsonDataset },
   { mimeType: 'application/x-aarhusxyz-msgpack',       cls: XyzDataset },
   { mimeType: 'application/x-aarhusxyz-model-msgpack', cls: XyzDataset },
+  { mimeType: 'application/x-aarhusxyz-data-msgpack',  cls: XyzDataset },
   { mimeType: 'application/x-magdata-msgpack',         cls: MagDataset },
   { mimeType: 'application/x-webxtile',                cls: WebxtileDataset },
   { mimeType: 'application/x-mag-grid-webxtile',       cls: WebxtileDataset },

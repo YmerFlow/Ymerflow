@@ -40,7 +40,7 @@ registerLayerType('SoundingPlot', new LayerType({
   schema: (data) => ({
     type: 'object',
     properties: {
-      dataset: { type: 'string', 'x-format': 'datasetPath', 'x-target-mediatypes': ['application/x-aarhusxyz-msgpack'] },
+      dataset: { type: 'string', 'x-format': 'datasetPath', 'x-target-mediatypes': [['application/x-aarhusxyz-data-msgpack'], ['application/x-aarhusxyz-msgpack']] },
       channel: { type: 'string', enum: ['Ch01', 'Ch02'], default: 'Ch01'   },
       color:   { type: 'string',                         default: '#e41a1c' },
       xAxis:   { type: 'string', enum: X_AXES,           default: 'xaxis_bottom' },
