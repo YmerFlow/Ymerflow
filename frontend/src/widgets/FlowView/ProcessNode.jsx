@@ -4,6 +4,51 @@ import { ProcessContext } from '../../ProcessContext';
 import TagSelector from './TagSelector';
 import StateBadge from './StateBadge';
 import { contrastText } from './mimeColors';
+import { encodeSeg } from '../../datamodel/datasetPath';
+import { useDatasetDragSource } from '../../dnd/datasetDnd';
+
+// One output-dataset box on a node's right edge. It is a dataset drag source (drop
+// it onto another widget, e.g. a plot, to add the dataset there) rather than a
+// node-drag grip — hence `nodrag` (reactflow leaves it alone) and pointerEvents
+// 'auto' (labelStyle disables them). The reactflow source Handle still draws edges.
+// Extracted into its own component because react-dnd's useDrag hook can't run in a
+// .map loop.
+function DatasetOutputBox({ name, datasetId, datasetPath, top, labelStyle, bg }) {
+  const dragRef = useDatasetDragSource({ datasetId, datasetPath, datasetName: name });
+  return (
+    <div
+      ref={dragRef}
+      className="nodrag"
+      style={{
+        position: 'absolute',
+        right: `0px`,
+        top: `${top}px`,
+        ...labelStyle,
+        pointerEvents: 'auto',
+        cursor: 'grab',
+        ...(bg ? { background: bg, color: contrastText(bg), borderColor: bg } : {}),
+      }}
+      title={name}
+    >
+      {name}
+      <Handle
+        type="source"
+        position={Position.Right}
+        id={name}
+        style={{
+          position: 'absolute',
+          right: `0px`,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          background: 'transparent',
+          border: 'none',
+          width: 10,
+          height: 10,
+        }}
+      />
+    </div>
+  );
+}
 
 const ProcessNode = React.memo(({ data }) => {
   const { process, selectedVersion, onVersionChange, onClick, activeProcess, visibleVersionsForProcess, datasetColorById } = data;
@@ -105,35 +150,18 @@ const ProcessNode = React.memo(({ data }) => {
         const outputUrl = versionObj?.outputs?.[name];
         const datasetId = outputUrl ? outputUrl.split('/').pop() : null;
         const bg = (datasetId && datasetColorById?.get(datasetId)) || null;
+        // Dataset path PlotView expects for a pinned (other-process) output.
+        const datasetPath = `${encodeSeg(process.name)}.${selectedVersion}.${encodeSeg(name)}`;
         return (
-        <div
-          key={`output-${name}`}
-          style={{
-            position: 'absolute',
-            right: `0px`,
-            top: `${headerHeight + idx * handleSpacing}px`,
-            ...labelStyle,
-            ...(bg ? { background: bg, color: contrastText(bg), borderColor: bg } : {})
-          }}
-          title={name}
-        >
-          {name}
-          <Handle
-            type="source"
-            position={Position.Right}
-            id={name}
-            style={{
-              position: 'absolute',
-              right: `0px`,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              background: 'transparent',
-              border: 'none',
-              width: 10,
-              height: 10
-            }}
+          <DatasetOutputBox
+            key={`output-${name}`}
+            name={name}
+            datasetId={datasetId}
+            datasetPath={datasetPath}
+            top={headerHeight + idx * handleSpacing}
+            labelStyle={labelStyle}
+            bg={bg}
           />
-        </div>
         );
       })}
 

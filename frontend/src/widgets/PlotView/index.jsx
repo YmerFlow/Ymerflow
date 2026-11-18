@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Plot, DataGroup } from 'gladly-plot';
 import { ProcessContext } from '../../ProcessContext';
 import { PlotGroupContext } from '../../PlotGroupContext';
@@ -9,6 +9,10 @@ import { cellEditEntries, segmentEditEntries } from './inUseEdits.js';
 import { addPinnedData, loadPinnedData, pinnedEntries } from './pinnedDatasets.js';
 import { currentSoundingFrom } from './soundingMatch.js';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useSearchDatasets } from '../../datamodel/useQueries';
+import { useDatasetDrop } from '../../dnd/datasetDnd';
+import DatasetDropMenu from '../../dnd/DatasetDropMenu';
+import { compatibleLayerTypes, buildLayer } from './datasetDrop.js';
 import './elements/index.js';
 
 // Register quantity kinds once at module load
@@ -32,6 +36,12 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
   const [lazilyLoadedData, setLazilyLoadedData] = useState(new Map());
   const { addPlot, removePlot, publishReadout, saveAllPlots } = useContext(PlotGroupContext);
 
+  // All project datasets (search results carry `.parts`): used to look up a dropped
+  // dataset's media types when a dataset is dragged onto this plot.
+  const { data: allDatasets = [] } = useSearchDatasets('', true, currentProject);
+  // Picker shown when a dropped dataset has >1 candidate layer type.
+  const [dropMenu, setDropMenu] = useState(null);
+
   const containerRef          = useRef(null);
   const plotRef               = useRef(null);
   const statusCoordsRef       = useRef(null);   // left: live mouse coordinates
@@ -43,6 +53,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
   const applyInMemoryEditRef  = useRef(applyInMemoryEdit);
   const lastSavedRef          = useRef(null);      // JSON of last config we sent via parentUpdate
   const lastPropConfigRef     = useRef(null);      // JSON of last prop config passed to plot.update()
+  const plotDataRef           = useRef(null);      // latest DataGroup passed to plot.update() (for drop filtering)
   const parentUpdateRef       = useRef(parentUpdate);
   useEffect(() => { parentUpdateRef.current = parentUpdate; }, [parentUpdate]);
   useEffect(() => { fetchedDataRef.current = fetchedData; }, [fetchedData]);
@@ -77,6 +88,45 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     lastSavedRef.current = fullConfigJson;
     parentUpdateRef.current('replace', id, { id, widget, layoutConfig: fullConfig, ...rest });
   };
+
+  // Append a layer to this plot's config and persist it (mirrors the write above).
+  // Reassigned every render so it closes over the latest props. The new config
+  // changes our React prop, so the update effect re-runs and renders the layer.
+  const appendLayerRef = useRef(() => {});
+  appendLayerRef.current = (newLayer) => {
+    if (!parentUpdateRef.current || !id) return;
+    const base = configPropRef.current || PlotView.get_default().layoutConfig;
+    const next = { ...base, layers: [...(base.layers || []), newLayer] };
+    parentUpdateRef.current('replace', id, { id, widget, layoutConfig: next, ...rest });
+  };
+
+  // A dataset dropped onto the plot: filter candidate layer types by media type +
+  // axis conflict-avoidance; 0 → no-op, 1 → append directly, >1 → show the picker.
+  const handleDatasetDrop = useCallback((item, offset) => {
+    const dict = (allDatasets || []).find(d => d.id === item.datasetId);
+    if (!dict) return;
+    const layers = configPropRef.current?.layers || [];
+    const data = plotDataRef.current;
+    const cands = compatibleLayerTypes(dict, layers, data);
+    if (cands.length === 0) return;
+    if (cands.length === 1) {
+      appendLayerRef.current(buildLayer(cands[0], item.datasetPath, data));
+      return;
+    }
+    setDropMenu({
+      x: offset?.x ?? 0,
+      y: offset?.y ?? 0,
+      datasetPath: item.datasetPath,
+      items: cands.map(c => ({ ...c, label: c.name })),
+    });
+  }, [allDatasets]);
+
+  const dropRef = useDatasetDrop(handleDatasetDrop);
+
+  const handleDropPick = useCallback((item) => {
+    appendLayerRef.current(buildLayer(item, dropMenu.datasetPath, plotDataRef.current));
+    setDropMenu(null);
+  }, [dropMenu]);
 
   // The current dataset the selected sounding indexes; pinned layers match its row by line and gtime.
   const currentFlightlines = useMemo(
@@ -355,6 +405,9 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     // Merge lazily loaded non-current datasets for the selected part (see addPinnedData).
     addPinnedData(dataForPlot, pinnedEntries(lazilyLoadedData, currentPart));
 
+    // Expose the built data to the dataset-drop handler (axis conflict-avoidance).
+    plotDataRef.current = dataForPlot;
+
     // When only data/sounding changed (prop config is unchanged), pass gladly's current
     // config back to plot.update() so the user's pan/zoom state is preserved.
     // When the prop config actually changed (user edited layers/axes), apply the new config.
@@ -385,7 +438,8 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
   }, [config, fetchedData, datasetCollection, currentSounding, datasetsLoading, dataLoading, lazilyLoadedData, inMemoryDiffs, currentPart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className={isMobile ? 'd-flex flex-column' : 'h-100 d-flex flex-column'}
+    <div ref={dropRef}
+         className={isMobile ? 'd-flex flex-column' : 'h-100 d-flex flex-column'}
          style={isMobile ? { height: '70vh' } : undefined}>
       <div className="flex-grow-1" style={{ position: 'relative', minHeight: 0 }}>
         <div
@@ -420,6 +474,15 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
           <div ref={statusCoordsRef} style={{ flex: '0 1 auto', padding: '2px 8px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }} />
           <div ref={statusPickRef}   style={{ flex: '1 1 0', padding: '2px 8px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', textAlign: 'right', borderLeft: '1px solid #dee2e6' }} />
         </div>
+      )}
+      {dropMenu && (
+        <DatasetDropMenu
+          x={dropMenu.x}
+          y={dropMenu.y}
+          items={dropMenu.items}
+          onPick={handleDropPick}
+          onClose={() => setDropMenu(null)}
+        />
       )}
     </div>
   );
