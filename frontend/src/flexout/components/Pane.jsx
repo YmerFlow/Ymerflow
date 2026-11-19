@@ -328,29 +328,31 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, inheritedCo
       </div>
 
       {/* Configuration Modal */}
-      <Modal show={showConfigModal} onHide={() => setShowConfigModal(false)} size="lg">
+      <Modal show={showConfigModal} onHide={() => setShowConfigModal(false)} size="lg" scrollable>
         <Modal.Header closeButton>
           <Modal.Title>Configure {Widget.title}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {hasConfig && (
             <CustomForm
+              id="widget-config-form"
               schema={Widget.get_schema(data_context)}
               formData={formData}
               validator={validator}
               onSubmit={handleConfigSubmit}
             >
-              <div className="d-flex justify-content-end gap-2 mt-3">
-                <Button variant="secondary" onClick={() => setShowConfigModal(false)}>
-                  Cancel
-                </Button>
-                <Button variant="primary" type="submit">
-                  Save Configuration
-                </Button>
-              </div>
+              <></>
             </CustomForm>
           )}
         </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowConfigModal(false)}>
+            Cancel
+          </Button>
+          <Button variant="primary" type="submit" form="widget-config-form">
+            Save Configuration
+          </Button>
+        </Modal.Footer>
       </Modal>
     </div>
   );

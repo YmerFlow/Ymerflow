@@ -267,23 +267,25 @@ export default function TabSet({ parentUpdate, inheritedCompact, inheritedGlobal
       </div>
 
       {configTab && configSchema && (
-        <Modal show onHide={() => setConfigTab(null)} size="lg">
+        <Modal show onHide={() => setConfigTab(null)} size="lg" scrollable>
           <Modal.Header closeButton>
             <Modal.Title>Configure {configWidget?.title}</Modal.Title>
           </Modal.Header>
           <Modal.Body>
             <CustomForm
+              id="tab-config-form"
               schema={configSchema}
               formData={configFormData}
               validator={validator}
               onSubmit={handleTabConfigSubmit}
             >
-              <div className="d-flex justify-content-end gap-2 mt-3">
-                <Button variant="secondary" onClick={() => setConfigTab(null)}>Cancel</Button>
-                <Button variant="primary" type="submit">Save Configuration</Button>
-              </div>
+              <></>
             </CustomForm>
           </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setConfigTab(null)}>Cancel</Button>
+            <Button variant="primary" type="submit" form="tab-config-form">Save Configuration</Button>
+          </Modal.Footer>
         </Modal>
       )}
     </div>
