@@ -1,6 +1,6 @@
 # InUse editor: one row, and six new selection shapes
 
-**State:** questions 1, 2 (with 2a) and 3 decided 2026-11-05, questions 4 and 6 to 10 on 2026-11-06; question 5 settled by the 0.0.25 release; the step 3 changes from review decided 2026-11-18 (see [Changes for step 3](#changes-for-step-3-decided-2026-11-18)); steps 0 to 2 done
+**State:** questions 1, 2 (with 2a) and 3 decided 2026-11-05, questions 4 and 6 to 10 on 2026-11-06; question 5 settled by the 0.0.25 release; the step 3 changes from review decided 2026-11-18 (see [Changes for step 3](#changes-for-step-3-decided-2026-11-18)); steps 0 to 3 done
 **Labels:** enhancement, frontend, gladly
 **Tracking:** YmerFlow/ymerflow-business#156 (shapes), YmerFlow/ymerflow-business#157 (one row)
 
