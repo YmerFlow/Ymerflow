@@ -150,22 +150,24 @@ $headings-font-weight:   600;   // Semibold headings
   }
 }
 
-// JSON Schema Form - Array fields styling
-.field-array {
-  .array-item {
-    margin-left: 1rem;
-    margin-bottom: 0.75rem;
-    padding: 0.75rem;
-    border: 1px solid $border-color;
-    border-radius: 0.375rem;
-    background-color: $gray-100;
+// JSON Schema Form - collection item boxes.
+// Each item in a collection renders as one indented, bordered box: array items
+// (layers, colorbars, transforms, interactions) and the keyed entries of an
+// additionalProperties object-map (axes). rjsf v6 prefixes array classes with
+// `rjsf-`; a map is identified by its "add" control (.rjsf-object-property-expand),
+// whose sibling .rjsf-field-object divs are the map's entries.
+.rjsf-field-array .rjsf-array-item,
+fieldset:has(> .row > .rjsf-object-property-expand) > .rjsf-field-object {
+  margin-left: 1rem;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid $border-color;
+  border-radius: 0.375rem;
+  background-color: $gray-100;
+}
 
-    .array-item-toolbox {
-      .btn {
-        margin-left: 0.25rem;
-      }
-    }
-  }
+.rjsf-field-array .rjsf-array-item .array-item-toolbox .btn {
+  margin-left: 0.25rem;
 }
 
 // JSON Schema Form - anyOf/oneOf fields styling
@@ -180,6 +182,17 @@ $headings-font-weight:   600;   // Semibold headings
   > .form-group {
     margin-bottom: 0.75rem;
   }
+}
+
+// A layer is an array of oneOf: rjsf nests the oneOf panel inside the array item,
+// so both would draw a box. The array item already provides the box; flatten the
+// inner panel so each layer reads as a single bordered box (not a box-in-a-box).
+.rjsf-array-item .panel.panel-default.panel-body {
+  margin-left: 0;
+  margin-bottom: 0;
+  padding: 0;
+  border: none;
+  background-color: transparent;
 }
 
 // JSON Schema Form - Field description tooltip
