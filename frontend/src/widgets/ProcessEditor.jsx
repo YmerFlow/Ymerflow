@@ -8,10 +8,14 @@ import { getProcessVersion, getLatestVersion, getLatestProcessType } from '../da
 import { LayoutContext } from '../flexout/LayoutContext';
 import { AuthContext } from '../AuthContext';
 import TagSelector from './FlowView/TagSelector';
-import ProcessTypeSelect from './ProcessTypeSelect';
+import ProcessTypeSelect, { typeTitle } from './ProcessTypeSelect';
 import ProcessDefaultSelect from './ProcessDefaultSelect';
 import EnvironmentSelect from './EnvironmentSelect';
 import { hooks } from '../plugins/hooks';
+import { useDatasetDrop } from '../dnd/datasetDnd';
+import { useDatasetLookup } from '../dnd/useDroppedDataset';
+import DatasetDropMenu from '../dnd/DatasetDropMenu';
+import { compatibleProcessTypes } from './ProcessEditor.datasetDrop';
 
 function useActivateProcessLog() {
   const { findWidgetPaths, activatePath } = useContext(LayoutContext);
@@ -186,6 +190,36 @@ export default function ProcessEditor() {
     return rest;
   }, [rawSchema]);
 
+  // Dataset dropped onto the editor (D4): candidate process types are those whose
+  // main dataset input accepts the dropped dataset. 1 → auto-select; >1 → a menu
+  // (the current localType highlighted if it is itself a candidate). The field
+  // target inside the editor consumes its own drop first (didDrop guard in the hook).
+  const { droppedDict } = useDatasetLookup();
+  const [typeMenu, setTypeMenu] = useState(null);
+
+  // value: for a URL field, the dict's canonical dataset URL (exactly what a manual
+  // DatasetSelector pick stores, so the widget resolves it); for a datasetPath field,
+  // the pinned <proc>.<ver>.<ds> path.
+  const applyCandidate = ({ type, field }, item, dict) => {
+    const value = field.format === 'dataset' ? dict.url : item.datasetPath;
+    if (type === localType) setFormData(fd => ({ ...fd, [field.name]: value }));
+    else { setLocalType(type); setFormData({ [field.name]: value }); }
+  };
+
+  const onEditorDrop = (item, offset) => {
+    const dict = droppedDict(item);
+    if (!dict) return;
+    const cands = compatibleProcessTypes(types, dict);
+    if (cands.length === 0) return;
+    if (cands.length === 1) { applyCandidate(cands[0], item, dict); return; }
+    setTypeMenu({ x: offset?.x ?? 0, y: offset?.y ?? 0, cands, item, dict });
+  };
+
+  const editorDropRef = useDatasetDrop(
+    onEditorDrop,
+    item => { const d = droppedDict(item); return !!d && compatibleProcessTypes(types, d).length > 0; },
+  );
+
   if (activeProcess && (!process || !versionObj)) return null;
 
   const handleCreateNew = () => {
@@ -300,7 +334,7 @@ export default function ProcessEditor() {
   };
 
   return (
-    <div className="container-fluid">
+    <div className="container-fluid" ref={editorDropRef}>
       <div className="row">
         <div className="col-md-6">
           <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
@@ -480,6 +514,21 @@ export default function ProcessEditor() {
           validator={validator}
           onChange={e => setFormData(cleanFormData(e.formData))}
           onSubmit={handleSubmit}
+        />
+      )}
+
+      {typeMenu && (
+        <DatasetDropMenu
+          x={typeMenu.x}
+          y={typeMenu.y}
+          showPin={false}
+          highlightName={localType}
+          items={typeMenu.cands.map(c => ({ name: c.type, label: typeTitle(c.type, types[c.type]) }))}
+          onPick={picked => {
+            applyCandidate(typeMenu.cands.find(c => c.type === picked.name), typeMenu.item, typeMenu.dict);
+            setTypeMenu(null);
+          }}
+          onClose={() => setTypeMenu(null)}
         />
       )}
     </div>

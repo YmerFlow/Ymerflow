@@ -4,9 +4,12 @@ import { loadDataset } from '../datamodel/dataset';
 import { encodeSeg } from '../datamodel/datasetPath';
 import { useSearchDatasets } from '../datamodel/useQueries';
 import { datasetMatchesMediatypes } from './mediatypeMatch';
+import { useDatasetDrop } from '../dnd/datasetDnd';
+import { useDatasetLookup } from '../dnd/useDroppedDataset';
+import DatasetDropMenu from '../dnd/DatasetDropMenu';
 
 export default function DatasetColumnCombobox({ value, onChange, mode, targetMediatypes }) {
-  const { processes, fetchedData, datasetObjects, currentProject } = useContext(ProcessContext);
+  const { processes, fetchedData, datasetObjects, currentProject, activeProcess } = useContext(ProcessContext);
 
   // Resolve media types for datasets owned by *other* process versions (the
   // combobox only has their URLs). The current version's datasets carry their
@@ -39,6 +42,22 @@ export default function DatasetColumnCombobox({ value, onChange, mode, targetMed
   const [open, setOpen] = useState(false);
   const [lazilyLoadedColumns, setLazilyLoadedColumns] = useState(new Map());
   const wrapperRef = useRef(null);
+
+  // Drop target (D1/D2) — only datasetPath fields render mode="dataset", so only
+  // they accept a dropped dataset. Dropping the active process's active version
+  // opens the pin toggle (default current.<ds>); any other output writes the
+  // pinned <proc>.<ver>.<ds> path directly.
+  const { matches } = useDatasetLookup();
+  const [dropMenu, setDropMenu] = useState(null);
+  const handleDrop = (item, offset) => {
+    const isCurrent = item.processId === activeProcess?.processId
+      && String(item.processVersion) === String(activeProcess?.version);
+    const pinnedPath = item.datasetPath;
+    const currentPath = 'current.' + item.datasetPath.split('.')[2];
+    if (!isCurrent) { onChange(pinnedPath); setInputValue(pinnedPath); return; }
+    setDropMenu({ x: offset?.x ?? 0, y: offset?.y ?? 0, pinnedPath, currentPath });
+  };
+  const dropRef = useDatasetDrop(handleDrop, item => mode === 'dataset' && matches(item, targetMediatypes));
 
   // Sync external value changes
   useEffect(() => {
@@ -167,7 +186,10 @@ export default function DatasetColumnCombobox({ value, onChange, mode, targetMed
   };
 
   return (
-    <div ref={wrapperRef} style={{ position: 'relative' }}>
+    <div
+      ref={node => { wrapperRef.current = node; if (mode === 'dataset') dropRef(node); }}
+      style={{ position: 'relative' }}
+    >
       <input
         type="text"
         value={inputValue}
@@ -211,6 +233,18 @@ export default function DatasetColumnCombobox({ value, onChange, mode, targetMed
             </li>
           ))}
         </ul>
+      )}
+      {dropMenu && (
+        <DatasetDropMenu
+          x={dropMenu.x}
+          y={dropMenu.y}
+          items={[{ name: 'use', label: 'Use dataset' }]}
+          pinnable
+          pinnedPath={dropMenu.pinnedPath}
+          currentPath={dropMenu.currentPath}
+          onPick={(_, path) => { onChange(path); setInputValue(path); setDropMenu(null); }}
+          onClose={() => setDropMenu(null)}
+        />
       )}
     </div>
   );

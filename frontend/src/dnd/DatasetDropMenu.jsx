@@ -11,7 +11,12 @@ import ReactDOM from 'react-dom';
 // unpinned `current.<ds>` path. When `pinnable` is false (dataset belongs to another
 // process/version) the pin is forced on and greyed out. onPick(item, path) receives the
 // chosen path.
-export default function DatasetDropMenu({ x, y, items, pinnable, pinnedPath, currentPath, onPick, onClose }) {
+//
+// `showPin` (default true) draws the thumbtack strip; the ProcessEditor's process-type
+// menu passes false (there is no path to choose). `highlightName` bolds/outlines the item
+// whose `name` equals it (the editor highlights its current process type when it is a
+// candidate).
+export default function DatasetDropMenu({ x, y, items, pinnable, pinnedPath, currentPath, onPick, onClose, showPin = true, highlightName }) {
   const dropdownRef = useRef(null);
   // A current-process dataset starts unpinned (follows current); another process is always pinned.
   const [pinned, setPinned] = useState(!pinnable);
@@ -32,29 +37,34 @@ export default function DatasetDropMenu({ x, y, items, pinnable, pinnedPath, cur
       style={{ position: 'fixed', top: y, left: x, zIndex: 9999 }}
       onClick={e => e.stopPropagation()}
     >
-      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '2px 4px' }}>
-        <i
-          className="fas fa-thumbtack"
-          title={pinnable
-            ? (pinned ? 'Pinned to this process version (click to follow current)'
-                      : 'Following current process (click to pin)')
-            : 'Pinned: dataset belongs to another process'}
-          style={{
-            cursor: pinnable ? 'pointer' : 'not-allowed',
-            opacity: pinned ? 1 : 0.4,
-            transform: pinned ? 'none' : 'rotate(45deg)',
-            color: pinnable ? undefined : '#adb5bd',
-          }}
-          onMouseDown={e => e.stopPropagation()}
-          onClick={pinnable ? (e => { e.stopPropagation(); setPinned(p => !p); }) : undefined}
-        />
-      </div>
+      {showPin && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '2px 4px' }}>
+          <i
+            className="fas fa-thumbtack"
+            title={pinnable
+              ? (pinned ? 'Pinned to this process version (click to follow current)'
+                        : 'Following current process (click to pin)')
+              : 'Pinned: dataset belongs to another process'}
+            style={{
+              cursor: pinnable ? 'pointer' : 'not-allowed',
+              opacity: pinned ? 1 : 0.4,
+              transform: pinned ? 'none' : 'rotate(45deg)',
+              color: pinnable ? undefined : '#adb5bd',
+            }}
+            onMouseDown={e => e.stopPropagation()}
+            onClick={pinnable ? (e => { e.stopPropagation(); setPinned(p => !p); }) : undefined}
+          />
+        </div>
+      )}
       <div className="pane-menu-widget-list">
         {items.map(item => (
           <button
             key={item.name}
             type="button"
             onClick={() => onPick(item, pinned ? pinnedPath : currentPath)}
+            style={item.name === highlightName
+              ? { fontWeight: 'bold', outline: '2px solid #2269A7', outlineOffset: '-2px' }
+              : undefined}
           >
             {item.label || item.name}
           </button>

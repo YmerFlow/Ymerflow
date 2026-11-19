@@ -4,6 +4,8 @@ import { ProcessContext } from '../ProcessContext';
 import { API, getDataset } from '../datamodel/api';
 import { useSearchDatasets } from '../datamodel/useQueries';
 import { datasetMatchesMediatypes } from './mediatypeMatch';
+import { useDatasetDrop } from '../dnd/datasetDnd';
+import { useDatasetLookup } from '../dnd/useDroppedDataset';
 
 // Resolve the API base to an absolute URL for matching stored dataset URLs.
 // When API is a relative path (e.g. "/api"), prepend the current origin.
@@ -17,6 +19,20 @@ export default function DatasetSelector({ value, onChange, id, required, targetM
   const [showDropdown, setShowDropdown] = useState(false);
   const debounceTimer = useRef(null);
   const wrapperRef = useRef(null);
+
+  // Drop target (D1/D3): a compatible dataset dropped here sets the field to its
+  // absolute URL; incompatible datasets are refused via canDrop (no-drop cursor).
+  const { droppedDict, matches } = useDatasetLookup();
+  const handleDrop = (item) => {
+    const ds = droppedDict(item);
+    if (!ds) return;
+    const display = `${ds.process_name} / v${ds.process_version} / ${ds.dataset_name}`;
+    onChange(ds.url);
+    setDisplayValue(display);
+    setSearchText(display);
+    setShowDropdown(false);
+  };
+  const dropRef = useDatasetDrop(handleDrop, item => matches(item, targetMediatypes));
 
   // Use TanStack Query for dataset search - automatically refetches when invalidated
   const { data: datasets = [], isLoading: loading } = useSearchDatasets(
@@ -137,8 +153,14 @@ export default function DatasetSelector({ value, onChange, id, required, targetM
   };
 
   const handleInputChange = (e) => {
-    setSearchText(e.target.value);
+    const text = e.target.value;
+    setSearchText(text);
     setShowDropdown(true);
+    // Emptying the box clears the selection. Otherwise typing only refines the
+    // search; the value is committed when an item is picked. Without this, a
+    // "cleared" field keeps its old value, so re-selecting (or dropping) the same
+    // dataset is a no-op and nothing appears to happen.
+    if (text === '' && value) onChange('');
   };
 
   const handleInputFocus = () => {
@@ -162,7 +184,7 @@ export default function DatasetSelector({ value, onChange, id, required, targetM
   const displayItems = getDisplayItems();
 
   return (
-    <div ref={wrapperRef} style={{ position: 'relative' }}>
+    <div ref={node => { wrapperRef.current = node; dropRef(node); }} style={{ position: 'relative' }}>
       <Form.Control
         id={id}
         type="text"
