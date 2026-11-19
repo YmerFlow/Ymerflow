@@ -7,6 +7,8 @@ import ExpressionField from './ExpressionField';
 import ButtonTemplates from './CustomButtonTemplates';
 import CustomFieldTemplate from './CustomFieldTemplate';
 import CustomObjectFieldTemplate, { TitleContext } from './CustomObjectFieldTemplate';
+import CustomTitleFieldTemplate from './CustomTitleFieldTemplate';
+import CustomDescriptionFieldTemplate from './CustomDescriptionFieldTemplate';
 
 function CustomAnyOfField(props) {
   if (props.schema?.['x-format'] === 'expression') {
@@ -44,7 +46,9 @@ export default function CustomForm(props) {
   const customTemplates = {
     ButtonTemplates: ButtonTemplates,
     FieldTemplate: CustomFieldTemplate,
-    ObjectFieldTemplate: CustomObjectFieldTemplate
+    ObjectFieldTemplate: CustomObjectFieldTemplate,
+    TitleFieldTemplate: CustomTitleFieldTemplate,
+    DescriptionFieldTemplate: CustomDescriptionFieldTemplate
   };
 
   // Clean up undefined properties (removes undefined values left by anyOf switching)

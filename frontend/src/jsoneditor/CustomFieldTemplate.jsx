@@ -1,4 +1,5 @@
 import React from 'react';
+import HelpBubble from './HelpBubble';
 
 export default function CustomFieldTemplate(props) {
   const {
@@ -30,12 +31,7 @@ export default function CustomFieldTemplate(props) {
     rawDescription ||
     '';
 
-  const bubble = descText ? (
-    <span className="field-description-icon">
-      <i className="fa fa-question-circle" aria-label="Help" />
-      <span className="field-description-tooltip">{descText}</span>
-    </span>
-  ) : null;
+  const bubble = <HelpBubble text={descText} />;
 
   // Object/array fields render their own heading (a <legend> via the Object/Array
   // field template). rjsf also marks their FieldTemplate label displayable for
