@@ -156,8 +156,16 @@ $headings-font-weight:   600;   // Semibold headings
 // additionalProperties object-map (axes). rjsf v6 prefixes array classes with
 // `rjsf-`; a map is identified by its "add" control (.rjsf-object-property-expand),
 // whose sibling .rjsf-field-object divs are the map's entries.
+// rjsf wraps array items in a Bootstrap `.row` (negative side margins); inside a
+// padding-less fieldset those margins widen the items past the dialog and add a
+// horizontal scrollbar. Neutralise them.
+.rjsf-field-array .array-item-list {
+  margin-left: 0;
+  margin-right: 0;
+}
+
 .rjsf-field-array .rjsf-array-item,
-fieldset:has(> .row > .rjsf-object-property-expand) > .rjsf-field-object {
+fieldset:has(> .rjsf-object-property-expand) > .rjsf-field-object {
   margin-left: 1rem;
   margin-bottom: 0.75rem;
   padding: 0.75rem;
@@ -209,6 +217,57 @@ fieldset:has(> .row > .rjsf-object-property-expand) > .rjsf-field-object {
 }
 .checkbox + .field-description-icon {
   vertical-align: middle;
+}
+
+// JSON Schema Form - the "+" add button for an array or additionalProperties map
+// floats at the top-right of that section, on the title row (rjsf renders it last by
+// default). The array fieldset (.rjsf-field-array) and the object fieldset position
+// it; the buttons carry rjsf's add classes.
+.rjsf-field-array,
+.rjsf-field-object > fieldset {
+  position: relative;
+}
+
+.rjsf-array-item-add,
+.rjsf-object-property-expand {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+// Icon-only control buttons (add / remove / move up / move down) for arrays and
+// objects. No filled box — the FontAwesome glyph is the whole control.
+.yf-icon-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+  cursor: pointer;
+  font-size: 1.25rem;
+  color: $gray-600;
+
+  &:hover {
+    filter: brightness(0.85);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+    filter: none;
+  }
+
+  & + .yf-icon-btn {
+    margin-left: 0.35rem;
+  }
+}
+
+.yf-icon-btn--info {
+  color: $blue-500;
+}
+
+.yf-icon-btn--danger {
+  color: $danger;
 }
 
 // JSON Schema Form - single-row fields: "label: <field>" on one line, the field
