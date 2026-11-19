@@ -6,6 +6,7 @@ import CustomNumberField from './CustomNumberField';
 import ExpressionField from './ExpressionField';
 import ButtonTemplates from './CustomButtonTemplates';
 import CustomFieldTemplate from './CustomFieldTemplate';
+import CustomObjectFieldTemplate, { TitleContext } from './CustomObjectFieldTemplate';
 
 function CustomAnyOfField(props) {
   if (props.schema?.['x-format'] === 'expression') {
@@ -20,7 +21,13 @@ function CustomAnyOfField(props) {
     );
   }
   const { fields } = getDefaultRegistry();
-  return <fields.AnyOfField {...props} />;
+  // The union dropdown already labels the selected variant; tell that variant
+  // object (rendered next) to drop its own duplicate heading.
+  return (
+    <TitleContext.Provider value={{ suppressTitle: true }}>
+      <fields.AnyOfField {...props} />
+    </TitleContext.Provider>
+  );
 }
 
 export default function CustomForm(props) {
@@ -36,7 +43,8 @@ export default function CustomForm(props) {
 
   const customTemplates = {
     ButtonTemplates: ButtonTemplates,
-    FieldTemplate: CustomFieldTemplate
+    FieldTemplate: CustomFieldTemplate,
+    ObjectFieldTemplate: CustomObjectFieldTemplate
   };
 
   // Clean up undefined properties (removes undefined values left by anyOf switching)

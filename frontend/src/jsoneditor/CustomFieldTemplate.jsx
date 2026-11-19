@@ -37,15 +37,23 @@ export default function CustomFieldTemplate(props) {
     </span>
   ) : null;
 
+  // Object/array fields render their own heading (a <legend> via the Object/Array
+  // field template). rjsf also marks their FieldTemplate label displayable for
+  // additionalProperties entries (e.g. each axis under `axes`), which produced a
+  // duplicate "xaxis_bottom" (control-label) + "xaxis_bottom" (legend). Skip the
+  // FieldTemplate label for them and let the legend be the single heading.
+  const isObjectOrArray =
+    schema?.type === 'object' || schema?.type === 'array' || !!schema?.properties || !!schema?.items;
+
   // Leaf widgets with no displayed label (notably checkboxes, where rjsf sets
   // displayLabel=false) render their description inline. Surface it as a bubble
-  // too, so booleans match every other field. Objects/arrays keep their own
-  // inline section description.
-  const isLeaf = schema?.type !== 'object' && schema?.type !== 'array';
+  // too, so booleans match every other field.
+  const isLeaf = !isObjectOrArray;
+  const showLabel = displayLabel && label && !isObjectOrArray;
 
   return (
     <div className={classNames} style={style}>
-      {displayLabel && label && (
+      {showLabel && (
         <label htmlFor={id} className="control-label">
           {label}
           {required && <span className="required">*</span>}
@@ -53,7 +61,7 @@ export default function CustomFieldTemplate(props) {
         </label>
       )}
       {children}
-      {!(displayLabel && label) && isLeaf && bubble}
+      {!showLabel && isLeaf && bubble}
       {errors}
       {help}
     </div>
