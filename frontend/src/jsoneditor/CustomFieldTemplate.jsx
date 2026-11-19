@@ -51,6 +51,31 @@ export default function CustomFieldTemplate(props) {
   const isLeaf = !isObjectOrArray;
   const showLabel = displayLabel && label && !isObjectOrArray;
 
+  // Single-row inputs (text, number, dropdown, combobox) put the label and field
+  // on one line: "label: <field>". Multi-row widgets (textarea) and checkboxes keep
+  // the label stacked above / inline with the control.
+  const isTextarea = schema?.['x-format'] === 'textarea';
+  const isCheckbox = schema?.type === 'boolean';
+  const isSingleRow = showLabel && !isTextarea && !isCheckbox;
+
+  if (isSingleRow) {
+    return (
+      <div className={`${classNames} field-inline`} style={style}>
+        <div className="field-inline-row">
+          <label htmlFor={id} className="control-label">
+            {label}
+            {required && <span className="required">*</span>}
+            <span className="label-colon">:</span>
+            {bubble}
+          </label>
+          <div className="field-inline-control">{children}</div>
+        </div>
+        {errors}
+        {help}
+      </div>
+    );
+  }
+
   return (
     <div className={classNames} style={style}>
       {showLabel && (

@@ -211,6 +211,27 @@ fieldset:has(> .row > .rjsf-object-property-expand) > .rjsf-field-object {
   vertical-align: middle;
 }
 
+// JSON Schema Form - single-row fields: "label: <field>" on one line, the field
+// taking the remaining width. Multi-row widgets (textarea) and checkboxes opt out
+// in CustomFieldTemplate.
+.field-inline-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+
+  .control-label {
+    flex: 0 0 auto;
+    margin-bottom: 0;
+    white-space: nowrap;
+  }
+
+  .field-inline-control {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
 // JSON Schema Form - Field description tooltip
 .field-description-icon {
   display: inline-block;
