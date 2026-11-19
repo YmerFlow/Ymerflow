@@ -10,6 +10,15 @@ import { CustomForm } from '../../jsoneditor';
 import validator from "@rjsf/validator-ajv8";
 import { useIsMobile } from '../../hooks/useIsMobile';
 
+// The widget config schema carries the generic envelope fields `id` and `widget`
+// (Widget Type). Both are shown in the modal title instead, so hide them from the
+// form — hidden fields keep their value in formData, so the saved node is unchanged.
+// (Pane.jsx uses the same uiSchema for the pane config modal.)
+const CONFIG_UI_SCHEMA = {
+  id: { 'ui:widget': 'hidden' },
+  widget: { 'ui:widget': 'hidden' },
+};
+
 function removeTabFromTree(node, tabSetId, tabId) {
   if (node.id === tabSetId) {
     const newChildren = node.children.filter(t => t.id !== tabId);
@@ -269,12 +278,13 @@ export default function TabSet({ parentUpdate, inheritedCompact, inheritedGlobal
       {configTab && configSchema && (
         <Modal show onHide={() => setConfigTab(null)} size="lg" scrollable>
           <Modal.Header closeButton>
-            <Modal.Title>Configure {configWidget?.title}</Modal.Title>
+            <Modal.Title>Configure {configWidget?.title} ({configTab.id})</Modal.Title>
           </Modal.Header>
           <Modal.Body>
             <CustomForm
               id="tab-config-form"
               schema={configSchema}
+              uiSchema={CONFIG_UI_SCHEMA}
               formData={configFormData}
               validator={validator}
               onSubmit={handleTabConfigSubmit}

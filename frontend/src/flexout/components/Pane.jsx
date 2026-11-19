@@ -12,6 +12,14 @@ import validator from "@rjsf/validator-ajv8";
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { resolveGlobalCompact, isCompact } from '../headerMode';
 
+// The widget config schema carries the generic envelope fields `id` and `widget`
+// (Widget Type). Both are shown in the modal title instead, so hide them from the
+// form — hidden fields keep their value in formData, so the saved node is unchanged.
+const CONFIG_UI_SCHEMA = {
+  id: { 'ui:widget': 'hidden' },
+  widget: { 'ui:widget': 'hidden' },
+};
+
 // Error Boundary to catch widget crashes
 class WidgetErrorBoundary extends Component {
   constructor(props) {
@@ -330,13 +338,14 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, inheritedCo
       {/* Configuration Modal */}
       <Modal show={showConfigModal} onHide={() => setShowConfigModal(false)} size="lg" scrollable>
         <Modal.Header closeButton>
-          <Modal.Title>Configure {Widget.title}</Modal.Title>
+          <Modal.Title>Configure {Widget.title} ({node.id})</Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {hasConfig && (
             <CustomForm
               id="widget-config-form"
               schema={Widget.get_schema(data_context)}
+              uiSchema={CONFIG_UI_SCHEMA}
               formData={formData}
               validator={validator}
               onSubmit={handleConfigSubmit}
