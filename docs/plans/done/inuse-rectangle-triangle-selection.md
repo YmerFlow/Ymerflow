@@ -1,6 +1,6 @@
 # InUse editor: one row, and six new selection shapes
 
-**State:** draft 2026-11-05; questions 1, 2 (with 2a) and 3 decided 2026-11-05, questions 4 and 6 to 10 on 2026-11-06; question 5 open (the gladly maintainer's call)
+**State:** questions 1, 2 (with 2a) and 3 decided 2026-11-05, questions 4 and 6 to 10 on 2026-11-06; question 5 settled by the 0.0.25 release; the step 3 changes from review decided 2026-11-18 (see [Changes for step 3](#changes-for-step-3-decided-2026-11-18)); steps 0 to 3 done
 **Labels:** enhancement, frontend, gladly
 **Tracking:** YmerFlow/ymerflow-business#156 (shapes), YmerFlow/ymerflow-business#157 (one row)
 
@@ -80,6 +80,8 @@ The release that carries the new modes also carries everything merged since 0.0.
 
 Recommendation: from master, which is the gladly maintainer's call, with the layer pass done as part of the Ymerflow bump.
 
+Settled: gladly-plot 0.0.25 (2026-11-15) came from master and carries the shapes, `setLassoMode` and the typed axis limits; Ymerflow master's `package.json` asks for `^0.0.25`.
+
 A second gladly change is in progress beside this one: typed axis and color-scale limits, in the axis code rather than the lasso. The two should not touch the same files, and one release can carry both if their timing lines up; that is also the maintainer's call.
 
 ### 6. Which lands first, the one row or the shapes (decided: a)
@@ -122,9 +124,19 @@ Decided 2026-11-06: three more modes, since gladly's shapes serve every plot and
 
 Circles and ellipses are drawn in screen pixels. On a map with equal axes a circle is round in map units; on a profile with unequal or log axes it is an ellipse in data units.
 
-### 10. Shape keys and their memo (decided: number keys, digit beside the icon)
+### 10. Shape keys and their memo (decided: number keys; digit in the corner since 2026-11-18)
 
-C and E are already Clear and Enable, so the shapes take the number keys, 1 to 7 in picker order: lasso, rectangle, triangle, polygon, circle, ellipse, band. They cannot collide with an action key now or later. Each shape button shows its digit beside the icon, chosen 2026-11-06 from a mockup of three forms (a digit in the button's corner, beside the icon, or tooltips only), so the key is in view without hovering.
+C and E are already Clear and Enable, so the shapes take the number keys, 1 to 7 in picker order: lasso, rectangle, triangle, polygon, circle, ellipse, band. They cannot collide with an action key now or later. Each shape button shows its digit, so the key is in view without hovering. On 2026-11-06 the digit went beside the icon, from a mockup of three forms (a digit in the button's corner, beside the icon, or tooltips only); on 2026-11-18 it moved to the corner (see below).
+
+### Changes for step 3 (decided 2026-11-18)
+
+The gladly maintainer reviewed the plan after steps 0 to 2 landed and asked for changes to the editor; these were decided with mockups of each.
+
+- Two layouts: the row as built in step 0, and a column for a narrow side pane. The editor picks from the pane's shape: the column when the pane is taller than it is wide, the row otherwise. Nothing is set or saved; the editor's root fills the pane and a `ResizeObserver` on it decides. A saved widget setting was the other option, but it would have had to be set in every workspace that wants the column. In the column everything stacks: Enable, Disable and Clear one under another, the shapes one per line, and "?" above Save, to keep the column narrow.
+- Enable, Disable and Clear show their whole words again, with the key letter underlined, since letters alone were too terse.
+- The shape icons stay drawn inline SVGs, all in one outline style. Font Awesome Free was tried first, but it has no free lasso, triangle, ellipse or band, and its only triangles are filled.
+- Each shape button shows its key digit small in the top-left corner and the icon in the bottom-right, so every shape button is the same small size in the row and in the column.
+- The band as released in gladly 0.0.25 goes further than question 9: the drag's longer side sets its direction, so a mostly sideways drag selects a range of distance from top to bottom and a mostly up-or-down drag selects a strip across the whole width. Its one-click strip of the set width is in the release too, but selects nothing until the app passes a band width, which no Ymerflow code did before step 3; step 3 passes it through `setLassoMode`.
 
 ## Design
 
@@ -151,10 +163,10 @@ Run time (question 3b): `plot.setLassoMode(mode, { bandWidth })` sets the mode, 
 - `ProcessContext`: `selectionShape` and `setSelectionShape`, React state beside `inUseAction`, default `'lasso'`, and `selectionBandWidth` with its setter, in meters, default 100. One shape and one band width for the whole editor, as there is one action. Neither is saved; a reload starts with the lasso and 100 m.
 - `InUseEditor.jsx`, one row (business#157): a `flex` row with `flexWrap: 'wrap'` and `alignItems: 'center'`, in this order:
   - the "InUse Editor" title, which the request keeps beside the buttons and which is the only label in a compact pane;
-  - E / D / C, the active one highlighted as now, with "Enable (E)", "Disable (D)" and "Clear (C)" as tooltips;
+  - Enable / Disable / Clear, the key letter underlined (2026-11-18), the active one highlighted as now, with "Enable (E)", "Disable (D)" and "Clear (C)" as tooltips;
   - Ctrl+Z for Undo, disabled with nothing to undo as now, with "Undo the last edit (Ctrl+Z)" as its tooltip;
   - one thin vertical divider, 1 px wide, about 18 px tall and the buttons' border gray, so the actions and the shapes read as two groups (chosen 2026-11-06);
-  - the shape picker (questions 7, 9 and 10): seven drawn buttons, a loop, a box, a triangle, a pentagon, a circle, a tilted ellipse and a strip between two bars for the band, each an inline SVG of one path with its key digit beside it, the active one highlighted like the action buttons. They are Lasso (1), Rectangle (2), Triangle (3), Polygon (4), Circle (5), Ellipse (6) and Band (7), each tooltip giving the name, the key and the gesture, for example "Triangle (3): Shift+press at the apex, drag to a corner of the base". The keys go in the existing keydown handler, which already skips text inputs and Ctrl;
+  - the shape picker (questions 7, 9 and 10): seven drawn buttons, a loop, a box, a triangle, a pentagon, a circle, a tilted ellipse and a strip between two bars for the band, each an inline SVG outline (`frontend/src/widgets/inUseShapes.jsx`) with its key digit small in the top-left corner (2026-11-18), the active one highlighted like the action buttons. They are Lasso (1), Rectangle (2), Triangle (3), Polygon (4), Circle (5), Ellipse (6) and Band (7), each tooltip giving the name, the key and the gesture, for example "Triangle (3): Shift+press at the apex, drag to a corner of the base". The keys go in the existing keydown handler, which already skips text inputs and Ctrl;
   - while the band is picked, a small number field for its width with "m" beside it;
   - the edit count in the spare width, short: "1,234 edits (↑ 1,000 ↓ 234)", or "No pending edits", with today's full sentence, dataset count included, as its tooltip. It takes `flex: '1 1 40px'` and `minWidth: 0` with an ellipsis, so it gives up width first and moves to a second line only once less than 40 px is left for it;
   - "?" with the hint as its tooltip (question 8): "Turn on inUseMode on a ChannelPlot or GateAnomalyPlot layer, then Shift+drag in it to select. Triangle: start at the apex. Polygon: Shift+click the corners, then right-click. Ellipse: Shift+click the center and the two axes. Band: Shift+drag across, or Shift+click for the set width.";
@@ -162,7 +174,7 @@ Run time (question 3b): `plot.setLassoMode(mode, { bandWidth })` sets the mode, 
 
   The padding drops from 12 px to about 4 px, with about 24 px on the right so Save clears a compact pane's corner chevron. The padding is the same whether or not the pane is compact, which is simpler than reading the pane's mode. The buttons keep today's colors, with less side padding to suit single letters. Tooltips are plain `title` attributes.
 - `PlotView/index.jsx`: an effect on `selectionShape` and `selectionBandWidth` calls `plotRef.current?.setLassoMode(selectionShape, { bandWidth: selectionBandWidth })`, and the plot is created with both; `interactions.lasso` stays `true`. The click handler returns early when `e.shiftKey` is set (question 4).
-- `frontend/package.json`: `gladly-plot` bumped to the new release with `npm install --save gladly-plot@<version>`, a registry version and never a `file:` path. During development the Ymerflow side can run against the gladly branch with `npm install --no-save` from a local gladly checkout, which leaves `package.json` and the lock file alone.
+- `frontend/package.json`: `gladly-plot` bumped to the new release with `npm install --save gladly-plot@<version>`, a registry version and never a `file:` path. (Done on master as `^0.0.25`; step 3 brings `package-lock.json` up to it, since the lock still named 0.0.22 and `npm ci` refused it.) During development the Ymerflow side can run against the gladly branch with `npm install --no-save` from a local gladly checkout, which leaves `package.json` and the lock file alone.
 
 Shapes apply wherever the lasso does, so a later editing layer (for example editing from the sounding plot, or soundings on a map) gets them with no further work. The band width is passed in meters because both editing layers plot `xdist_m`; a later editing layer with another x quantity would need the field's unit to follow it.
 

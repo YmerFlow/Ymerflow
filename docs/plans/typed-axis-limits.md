@@ -112,7 +112,7 @@ A new `src/axes/AxisLimitEditor.js`, one per plot, created once in `_initialize`
 
 ### Releasing with the selection-shape change
 
-The InUse editor's rectangle, triangle and polygon selection (`docs/plans/inuse-rectangle-triangle-selection.md`) is a second gladly change in flight. The two touch different files except `src/core/Plot.js`, where the shapes add `setLassoMode` and this change adds the editor's construction and teardown and the `'axislimit'` event in `on()`, so a merge conflict is unlikely and whichever PR merges second rebases on the other.
+The InUse editor's rectangle, triangle and polygon selection (`docs/plans/done/inuse-rectangle-triangle-selection.md`) is a second gladly change in flight. The two touch different files except `src/core/Plot.js`, where the shapes add `setLassoMode` and this change adds the editor's construction and teardown and the `'axislimit'` event in `on()`, so a merge conflict is unlikely and whichever PR merges second rebases on the other.
 
 Recommendation: both gladly PRs against master and one release carrying both, then one Ymerflow bump, done in whichever Ymerflow PR merges first together with the pass over every PlotView layer type the shapes plan already scopes; the other Ymerflow PR rebases on it. Whether that release comes from master or from a patch branch off 0.0.19 is the gladly maintainer's call and is asked in the shapes plan (its question 5). This change follows that answer; since `src/axes/` is unchanged since 0.0.19 it fits either.
 

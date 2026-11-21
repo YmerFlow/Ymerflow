@@ -227,12 +227,14 @@ Interactive editor for hand-building or editing synthetic AEM (airborne electrom
 Companion control panel for bulk-editing per-sounding, per-gate "in use" flags on AEM data, driven by lasso selections made in a `PlotView` pane's `ChannelPlot` or `GateAnomalyPlot` layers (see [In-use editing layers](#in-use-editing-layers)).
 
 **Features:**
-- All controls on one row, which wraps in a narrow pane: the title, E / D / C, Ctrl+Z, the edit count, a "?" and Save at the right end. Each button's full name and key are its tooltip, and the "?" carries the hint (turn on `inUseMode` on an editing layer, then Shift+drag in it to select). The row's right padding keeps Save clear of a compact pane's corner chevron.
-- Enable/Disable/Clear action modes, selectable via buttons or keyboard shortcuts (E/D/C)
+- Two layouts, chosen from the pane's shape: one row when the pane is wider than it is tall, one column when it is taller than wide (a narrow side pane). The root fills the pane and a `ResizeObserver` on it picks the layout, so nothing is set or saved. The row wraps in a narrow pane: the title, Enable / Disable / Clear, Ctrl+Z, a divider, the shape picker, the band width while the band is picked, the edit count, and "?" and Save at the right end. The row's right padding, or in the column the title's, keeps clear of a compact pane's corner chevron. In the column everything stacks, one shape per line, with "?" above Save.
+- Enable/Disable/Clear action modes, selectable via buttons or keyboard shortcuts (E/D/C). Each button shows its whole word with the key letter underlined, and its tooltip gives the name and key.
+- Shape picker: seven buttons for gladly's lasso modes, in key order Lasso (1), Rectangle (2), Triangle (3), Polygon (4), Circle (5), Ellipse (6) and Band (7). Each shows its key digit small in the top-left corner and a drawn outline icon (`frontend/src/widgets/inUseShapes.jsx`, one inline SVG per shape in the text color, so it turns white on the active button); its tooltip gives the name, key and gesture. The "?" carries the full hint. The shape and the band width [m along `xdist`, default 100] are `selectionShape` and `selectionBandWidth` in `ProcessContext`, not saved; `PlotView` passes them to `plot.setLassoMode()`, which changes the shape at run time without rebuilding the plot.
 - Undo last edit (Ctrl+Z) and save the changed in-memory edits back to the processes that made the datasets (see [Saving edits](#saving-edits))
 - Shows a short edit count (edits, enabled, disabled) in the row's spare width, cut short with an ellipsis as the pane narrows and moved to a second line, beside "?" and Save, once less than 40 px is left for it; its tooltip gives the full figures, gate-sounding pairs edited across how many datasets, counting edits loaded from save points
 - Save is enabled only when an edit changed since it loaded, or was made from scratch
-- Reads/writes edit state via `ProcessContext`'s `inMemoryDiffs`, `inMemoryDiffDirty`, `inUseAction`, `undoLastEdit`, `saveAllDiffs`
+- Reads/writes edit state via `ProcessContext`'s `inMemoryDiffs`, `inMemoryDiffDirty`, `inUseAction`, `selectionShape`, `selectionBandWidth`, `undoLastEdit`, `saveAllDiffs`
+- A Shift-click in a `PlotView` never moves the current sounding: every shape ends in a Shift press and release, and polygon and ellipse points are Shift-clicks.
 
 **Implementation:** See `frontend/src/widgets/InUseEditor.jsx`.
 

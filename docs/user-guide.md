@@ -109,6 +109,22 @@ never moves the current sounding, and a right-click that closes a drawing polygo
 3D curtain does not open it. All of these settings are saved with the workspace, so they come
 back on reload.
 
+#### InUseEditor - Editing In-Use Flags
+
+The InUse Editor turns gates on and off in a `ChannelPlot` or `GateAnomalyPlot` pane whose layer has `inUseMode` on. Pick an action and a shape, then hold Shift and draw the shape in the plot: the gates inside it are enabled, disabled, or cleared back to the data's own flag.
+
+- **Actions**: Enable, Disable and Clear, or the keys E, D and C (the underlined letters). Ctrl+Z undoes the last edit, and Save writes the edits back to the processes that made the data.
+- **Shapes**, with the keys 1 to 7:
+  - Lasso (1): Shift+drag around the gates.
+  - Rectangle (2): Shift+drag from one corner to the opposite one.
+  - Triangle (3): Shift+press at the apex and drag to a corner of the base; the other corner is its mirror image.
+  - Polygon (4): Shift+click each corner, then right-click or press Enter to close it.
+  - Circle (5): Shift+press at the center and drag out to the radius.
+  - Ellipse (6): Shift+click the center, then the end of one axis, then how wide it is.
+  - Band (7): a Shift+drag that is mostly sideways selects every gate between the two distances, top to bottom; one that is mostly up or down selects a strip across the whole width between the two heights, for example a run of gates along the whole line in the anomaly section. A Shift+click selects a strip of the width set beside the buttons, in meters, centered on the click.
+- Escape drops a polygon or ellipse in progress, as do a click without Shift, a wheel zoom, or a shape change. A Shift-click never moves the current sounding.
+- The editor lays itself out as one row in a wide pane and as a column in a narrow one.
+
 #### EnvironmentView - Manage Environments
 
 Lists every environment available in the current project:
