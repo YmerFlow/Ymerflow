@@ -7,7 +7,6 @@ import { encodeSeg } from '../../datamodel/datasetPath';
 import { getKeys, resolveDataPath } from './colorUtils.js';
 import { cellEditEntries, segmentEditEntries } from './inUseEdits.js';
 import { addPinnedData, loadPinnedData, pinnedEntries } from './pinnedDatasets.js';
-import { currentSoundingFrom } from './soundingMatch.js';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useSearchDatasets } from '../../datamodel/useQueries';
 import { useDatasetDrop } from '../../dnd/datasetDnd';
@@ -64,7 +63,6 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
   };
   const configRef             = useRef(null);   // tracks latest sanitized config for pick resolution
   const fetchedDataRef        = useRef(fetchedData);
-  const setCurrentSoundingRef = useRef(setCurrentSounding);
   const inUseActionRef        = useRef(inUseAction);
   const applyInMemoryEditRef  = useRef(applyInMemoryEdit);
   const lastSavedRef          = useRef(null);      // JSON of last config we sent via parentUpdate
@@ -73,7 +71,6 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
   const parentUpdateRef       = useRef(parentUpdate);
   useEffect(() => { parentUpdateRef.current = parentUpdate; }, [parentUpdate]);
   useEffect(() => { fetchedDataRef.current = fetchedData; }, [fetchedData]);
-  useEffect(() => { setCurrentSoundingRef.current = setCurrentSounding; }, [setCurrentSounding]);
   useEffect(() => { inUseActionRef.current = inUseAction; }, [inUseAction]);
   useEffect(() => { applyInMemoryEditRef.current = applyInMemoryEdit; }, [applyInMemoryEdit]);
 
@@ -176,11 +173,6 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     setDropMenu(null);
   }, [dropMenu]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The current dataset the selected sounding indexes; pinned layers match its row by line and gtime.
-  const currentFlightlines = useMemo(
-    () => Object.values(fetchedData || {}).find(d => d?.flightlines)?.flightlines,
-    [fetchedData],
-  );
   const pinnedMessages = useMemo(
     () => pinnedEntries(lazilyLoadedData, currentPart).map(e => e.message).filter(Boolean),
     [lazilyLoadedData, currentPart],
@@ -228,7 +220,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     });
 
     // On click: GPU-pick the nearest point, update status bar, and set current sounding.
-    const clickHandle = plot.on('click', async (e, coords) => {
+    const clickHandle = plot.on('click', async (e) => {
       const p = plotRef.current;
       if (!p) return;
 
@@ -262,37 +254,23 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
       publishReadout({ pick: pickText });
 
       // --- Sounding selection ---
-      // On xdist-axis plots (ChannelPlot, ResistivityCurtain, etc.) always select by
-      // nearest xdist, regardless of what pick() returned. Using the pick vertex index
-      // is unreliable here because:
-      //   - Instanced layers (ResistivityCurtain) are not GPU-pickable → pick() returns null
-      //   - Overlay line layers (sounding marker, topo line) are pickable but their vertex
-      //     indices don't map to a meaningful sounding, causing every-other-click toggling
-      // For non-xdist plots (FlightlinePlot on lat/lon) fall back to the pick index.
-      if (coords?.xdist_m !== undefined) {
-        const rawData = plotRef.current?._rawData;
-        const layers  = configRef.current?.layers ?? [];
-        let bestSounding = null, bestDist = Infinity;
-        for (const spec of layers) {
-          if (!spec || typeof spec !== 'object') continue;
-          const params = Object.values(spec)[0];
-          if (!params?.dataset) continue;
-          const ds    = resolveDataPath(rawData, params.dataset);
-          const xdist = ds?.flightlines?.xdist;
-          if (!xdist?.length) continue;
-          for (let i = 0; i < xdist.length; i++) {
-            const d = Math.abs(Number(xdist[i]) - coords.xdist_m);
-            if (d < bestDist) { bestDist = d; bestSounding = i; }
-          }
-          // A pinned dataset's row becomes the current dataset's row by line and gtime.
-          bestSounding = currentSoundingFrom(rawData, params.dataset, bestSounding);
-          break; // first dataset with xdist is sufficient
-        }
-        if (bestSounding !== null) setCurrentSoundingRef.current(bestSounding);
-      } else if (result) {
-        // Non-xdist plot (e.g. FlightlinePlot on lat/lon): use pick vertex index.
-        // For point layers index is the sounding directly; floor(index/2) == index.
-        setCurrentSoundingRef.current(Math.floor(result.index / 2));
+      // A vertex was picked: let the layer type that drew it decide what the click does.
+      // onClick gets the same (parameters, plot) createLayer did — plot._rawData carries
+      // the runtime context/actions (_currentSounding, _setCurrentSounding, …) — plus the
+      // pick result, whose dataIndex the layer's own pickInfo already resolved to a data
+      // row. PlotView holds no per-layer click logic and no coordinate/quantity-kind
+      // knowledge; layers with no onClick (e.g. a basemap tile) do nothing.
+      console.log('[DIAG] click pick result:', result && JSON.stringify({
+        configLayerIndex: result.configLayerIndex, layerIndex: result.layerIndex,
+        tile: result.tile, index: result.index, dataIndex: result.dataIndex,
+        layerType: result.layer?.type?.name, hasOnClick: !!result.layer?.type?.onClick,
+      }));
+      if (result) {
+        const spec   = configRef.current?.layers?.[result.configLayerIndex];
+        const params = spec && typeof spec === 'object' ? Object.values(spec).find(v => v != null) : null;
+        console.log('[DIAG] onClick dispatch; params.dataset:', params?.dataset,
+          'resolved sounding:', result.dataIndex);
+        result.layer?.type?.onClick?.(result, params, plotRef.current);
       }
     });
 
@@ -449,9 +427,9 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     Object.assign(dataForPlot, {
       current: encodedCurrent,
       _currentSounding: currentSounding,
-      // The current dataset _currentSounding indexes; pinned layers match its row by line and gtime.
-      _currentFlightlines: currentFlightlines,
       _inMemoryDiffs: inMemoryDiffs,
+      // Action a layer's onClick can call to move the selection (mirror of _currentSounding).
+      _setCurrentSounding: setCurrentSounding,
     });
 
     // Merge lazily loaded non-current datasets for the selected part (see addPinnedData).

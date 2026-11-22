@@ -6,8 +6,8 @@
 // shows the pinned dataset's part with the selected part's name, or every part when "all" is
 // selected. With no such part the panel stays empty and says so. A fourth segment that names
 // one of the dataset's parts pins that part instead, whatever is selected; any other fourth
-// segment is a column of the followed part. Soundings are matched by line and gtime
-// (soundingMatch.js).
+// segment is a column of the followed part. The selected sounding is a plain row index into the
+// current dataset; a pinned layer indexes its own dataset at that same row (soundingMatch.js).
 import { DataGroup } from 'gladly-plot';
 import { loadDataset } from '../../datamodel/dataset';
 import { encodeSeg } from '../../datamodel/datasetPath';

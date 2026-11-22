@@ -1,6 +1,6 @@
 import { LayerType, registerLayerType, AXIS_GEOMETRY } from 'gladly-plot';
 import { parseColor, fillColorArrays, resolveDataPath, getFrom, getKeys } from '../colorUtils.js';
-import { soundingIndex } from '../soundingMatch.js';
+import { soundingIndex, selectSoundingOnClick, soundingFromPickX } from '../soundingMatch.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -87,4 +87,11 @@ registerLayerType('SoundingMarker', new LayerType({
       primitive:  'line strip',
     }];
   },
+
+  // A two-vertex vertical marker: resolve the sounding from its own x (xdist) attribute at
+  // the hit vertex — the nearest flightlines row to that xdist.
+  pickInfo(regl, parameters, data, plot, layer, primitive) {
+    return { dataIndex: soundingFromPickX(parameters, plot, layer, primitive) };
+  },
+  onClick: selectSoundingOnClick,
 }));

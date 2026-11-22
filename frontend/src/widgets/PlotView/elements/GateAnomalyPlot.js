@@ -2,6 +2,7 @@ import { LayerType, registerLayerType, AXIS_GEOMETRY } from 'gladly-plot';
 import { resolveDataPath, getFrom, getKeys, toFloat32Array } from '../colorUtils.js';
 import { HEIGHT_COLUMNS, findHeightColumn, gateAnomalyColumn, heightAnomaly, heightCorrectedColumn } from '../gateAnomaly.js';
 import { globalSoundingIndex, soundingState } from '../inUseEdits.js';
+import { selectSoundingOnClick } from '../soundingMatch.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -244,4 +245,13 @@ registerLayerType('GateAnomalyPlot', new LayerType({
       instanceCount: nS * gateKeys.length,
     }];
   },
+
+  // Instances are laid out gate-major (instance = gate*nS + sounding), so the hit instance
+  // maps to flightlines row index % nS, with gate = floor(index / nS).
+  pickInfo(regl, parameters, data, plot, layer, { index }) {
+    const nS = resolveDataPath(plot?._rawData, parameters.dataset)?.flightlines?.xdist?.length;
+    if (!nS) return { dataIndex: null };
+    return { dataIndex: index % nS, gate: Math.floor(index / nS) };
+  },
+  onClick: selectSoundingOnClick,
 }));

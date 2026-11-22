@@ -1,6 +1,7 @@
 import { LayerType, registerLayerType, AXIS_GEOMETRY } from 'gladly-plot';
 import { resolveDataPath, getFrom, getKeys, toFloat32Array } from '../colorUtils.js';
 import { globalSoundingIndex, soundingState } from '../inUseEdits.js';
+import { selectSoundingOnClick } from '../soundingMatch.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -167,4 +168,12 @@ registerLayerType('ChannelPlot', new LayerType({
       lineWidth: 1,
     }];
   },
+
+  // Tiled per gate, primitive 'lines': a_pickId is per-vertex, vertices come in pairs
+  // (xdist[i], xdist[i+1]) per segment, so the hit vertex maps to flightlines row
+  // floor(index/2). gate is the tile.
+  pickInfo(regl, parameters, data, plot, layer, { tile, index }) {
+    return { dataIndex: Math.floor(index / 2), gate: tile };
+  },
+  onClick: selectSoundingOnClick,
 }));

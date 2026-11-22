@@ -1,5 +1,6 @@
 import { LayerType, registerLayerType, AXIS_GEOMETRY, resolveQuantityKind } from 'gladly-plot';
 import { parseColor, fillColorArrays, toFloat32Array, resolveDataPath } from '../colorUtils.js';
+import { selectSoundingOnClick } from '../soundingMatch.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -54,7 +55,7 @@ const RGB_FRAG = `#version 300 es
   }
 `;
 
-registerLayerType('FlightlinePlot', new LayerType({
+const flightlinePlot = new LayerType({
   name: 'FlightlinePlot',
 
   getAxisConfig: (parameters, data) => {
@@ -115,4 +116,13 @@ registerLayerType('FlightlinePlot', new LayerType({
     if (mode.includes('lines'))   results.push({ attributes: attribs, uniforms: { pointSize: 1.0 }, primitive: 'line strip', domains });
     return results;
   },
-}));
+});
+
+// A click selects the sounding under the cursor. FlightlinePlot draws one GPU vertex per
+// sounding (points and/or a line strip), so the picked vertex index IS this dataset's row:
+// the identity pickInfo (the default) makes result.dataIndex that row, and the shared
+// onClick translates it to the current dataset's sounding and selects it. PlotView holds
+// no FlightlinePlot-specific logic.
+flightlinePlot.onClick = selectSoundingOnClick;
+
+registerLayerType('FlightlinePlot', flightlinePlot);

@@ -1,6 +1,6 @@
 import { LayerType, registerLayerType, AXIS_GEOMETRY, crsToQkX, crsToQkY } from 'gladly-plot';
 import { fillColorArrays, toFloat32Array, resolveDataPath, getFrom, getKeys } from '../colorUtils.js';
-import { soundingIndex } from '../soundingMatch.js';
+import { soundingIndex, selectSoundingOnClick, soundingFromPickX } from '../soundingMatch.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -36,6 +36,15 @@ class ResistivityCurtainBase extends LayerType {
   _getAxisConfig(p, d) { return this._buildAxisConfig(p, d); }
   _schema(d)           { return this._buildSchema(d); }
   _createLayer(r, p, d, plot) { return this._buildLayer(r, p, d, plot); }
+
+  // Instances are per-(sounding, model-layer) cells with invalid cells skipped, so the
+  // instance index can't be decoded arithmetically; resolve the sounding from the picked
+  // instance's own x (xdist) attribute instead — the nearest flightlines row. The 3D
+  // variant has no xdist column, so soundingFromPickX finds no match and selection no-ops.
+  pickInfo(regl, parameters, data, plot, layer, primitive) {
+    return { dataIndex: soundingFromPickX(parameters, plot, layer, primitive) };
+  }
+  onClick(result, parameters, plot) { return selectSoundingOnClick(result, parameters, plot); }
 
   _findTopoCol(flightlines, parameters) {
     return [parameters.topo_column, 'Topography', 'topo', 'elevation']
@@ -498,4 +507,11 @@ registerLayerType('ResistivityCurtainLines', new LayerType({
 
     return results;
   },
+
+  // Topography / marker line strips drawn on xdist: resolve the sounding from the hit
+  // vertex's own x (xdist) attribute — the nearest flightlines row.
+  pickInfo(regl, parameters, data, plot, layer, primitive) {
+    return { dataIndex: soundingFromPickX(parameters, plot, layer, primitive) };
+  },
+  onClick: selectSoundingOnClick,
 }));
