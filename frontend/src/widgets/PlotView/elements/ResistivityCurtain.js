@@ -11,12 +11,40 @@ const QUAD_CX = new Float32Array([0, 1, 1, 0, 1, 0]);
 const QUAD_CY = new Float32Array([0, 0, 1, 0, 1, 1]);
 
 const SHARED_FRAG = `#version 300 es
-  precision mediump float;
+  precision highp float;
   in float vVal;
+  in float vMarker;
   void main() {
+    if (vMarker > 0.5) { fragColor = gladly_apply_color(vec4(1.0, 0.0, 0.0, 1.0)); return; }
     fragColor = map_color_resistivity(vVal);
   }
 `;
+
+// Half-width of the current-sounding marker bar, in clip-space units (WebGL can't widen a line
+// primitive, so the marker is a thin full-height quad).
+const MARKER_HALF_WIDTH = 0.003;
+
+// The current sounding (flightlines row) to mark, or null if the marker should not be drawn
+// (hidden via showCurrentSounding:false, no selection, or out of range / no xdist).
+function markerSounding(parameters, rawData, xdist) {
+  if (parameters.showCurrentSounding === false) return null;
+  const cs = soundingIndex(rawData);
+  if (cs == null || cs < 0 || cs >= xdist.length || !Number.isFinite(Number(xdist[cs]))) return null;
+  return cs;
+}
+
+// Append the current-sounding marker as one extra instance to an already-built instanced cell
+// draw. Drawing it in the SAME draw (rather than a trailing second layer) is deliberate: a
+// separate trailing layer gets dropped by gladly's build/epoch race after the expensive cell
+// compile. `markerValues` maps every per-instance attribute name to the value the marker
+// instance takes (its own x attribute gets markerX; isMarker=1; the rest 0). The vert branches
+// on isMarker to draw a full-height bar in clip space (y-axis-agnostic); the frag colors it
+// red. Returns the new instanceCount.
+function appendMarkerInstance(attributes, instanceCount, markerValues) {
+  const grow = (arr, v) => { const out = new Float32Array(arr.length + 1); out.set(arr); out[arr.length] = v; return out; };
+  for (const [name, markerVal] of Object.entries(markerValues)) attributes[name] = grow(attributes[name], markerVal);
+  return instanceCount + 1;
+}
 
 // ─── ResistivityCurtainBase ───────────────────────────────────────────────────
 
@@ -36,15 +64,6 @@ class ResistivityCurtainBase extends LayerType {
   _getAxisConfig(p, d) { return this._buildAxisConfig(p, d); }
   _schema(d)           { return this._buildSchema(d); }
   _createLayer(r, p, d, plot) { return this._buildLayer(r, p, d, plot); }
-
-  // Instances are per-(sounding, model-layer) cells with invalid cells skipped, so the
-  // instance index can't be decoded arithmetically; resolve the sounding from the picked
-  // instance's own x (xdist) attribute instead — the nearest flightlines row. The 3D
-  // variant has no xdist column, so soundingFromPickX finds no match and selection no-ops.
-  pickInfo(regl, parameters, data, plot, layer, primitive) {
-    return { dataIndex: soundingFromPickX(parameters, plot, layer, primitive) };
-  }
-  onClick(result, parameters, plot) { return selectSoundingOnClick(result, parameters, plot); }
 
   _findTopoCol(flightlines, parameters) {
     return [parameters.topo_column, 'Topography', 'topo', 'elevation']
@@ -133,6 +152,7 @@ class ResistivityCurtainBase extends LayerType {
       cmin:        { type: 'number', default: 1    },
       cmax:        { type: 'number', default: 1000 },
       yAxis:       { type: 'string', enum: Y_AXES, default: 'yaxis_left' },
+      showCurrentSounding: { type: 'boolean', default: true, title: 'Show current sounding line' },
     };
   }
 }
@@ -144,12 +164,24 @@ class ResistivityCurtain2D extends ResistivityCurtainBase {
     super({
       name: 'ResistivityCurtain',
       vert: `#version 300 es
-        precision mediump float;
+        precision highp float;
         in float cx, cy;
         in float x, xPrev, xNext, top, bot;
         in float resistivity;
+        in float isMarker;
         out float vVal;
+        out float vMarker;
         void main() {
+          vMarker = isMarker;
+          if (isMarker > 0.5) {
+            // Current-sounding marker: a thin vertical bar at x spanning the curtain's elevation
+            // extent (top..bot). Positioned with the SAME plot_pos as the cells so it lands
+            // exactly on the clicked sounding's column; width is a small clip-space offset.
+            vVal = 1.0;
+            vec4 p = plot_pos(vec2(x, cy > 0.5 ? top : bot));
+            gl_Position = vec4(p.x + (cx - 0.5) * 2.0 * ${MARKER_HALF_WIDTH.toFixed(5)} * p.w, p.y, p.z, p.w);
+            return;
+          }
           vVal = resistivity;
           if (!color_filter_resistivity(resistivity)) {
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -210,6 +242,7 @@ class ResistivityCurtain2D extends ResistivityCurtainBase {
     const top = new Float32Array(topVals);
     const bot = new Float32Array(botVals);
     const col = new Float32Array(colVals);
+    const isMarker = new Float32Array(n);                 // 0 for every cell
 
     let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
     for (let i = 0; i < n; i++) {
@@ -218,14 +251,22 @@ class ResistivityCurtain2D extends ResistivityCurtainBase {
       if (isFinite(bot[i])) { yMin = Math.min(yMin, bot[i]); yMax = Math.max(yMax, bot[i]); }
     }
 
+    const attributes = { cx: QUAD_CX, cy: QUAD_CY, x, xPrev: xP, xNext: xN, top, bot, resistivity: col, isMarker };
+    let instanceCount = n;
+    const cs = markerSounding(parameters, rawData, xdistRaw);
+    if (cs !== null) {
+      instanceCount = appendMarkerInstance(attributes, instanceCount,
+        { x: Number(xdistRaw[cs]), xPrev: 0, xNext: 0, top: yMax, bot: yMin, resistivity: 1, isMarker: 1 });
+    }
+
     return [{
-      attributes: { cx: QUAD_CX, cy: QUAD_CY, x, xPrev: xP, xNext: xN, top, bot, resistivity: col },
-      attributeDivisors: { x: 1, xPrev: 1, xNext: 1, top: 1, bot: 1, resistivity: 1 },
+      attributes,
+      attributeDivisors: { x: 1, xPrev: 1, xNext: 1, top: 1, bot: 1, resistivity: 1, isMarker: 1 },
       uniforms: {},
       domains: { xdist_m: [xMin, xMax], elevation_m: [yMin, yMax], resistivity: [resMin, resMax] },
       primitive: 'triangles',
       vertexCount: 6,
-      instanceCount: n,
+      instanceCount,
     }];
   }
 }
@@ -248,13 +289,16 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
     super({
       name: 'ResistivityCurtain3D',
       vert: `#version 300 es
-        precision mediump float;
+        precision highp float;
         in float cx, cy;
         in float gx, gz, gxPrev, gzPrev, gxNext, gzNext;
         in float top, bot;
         in float resistivity;
+        in float isMarker;
         out float vVal;
+        out float vMarker;
         void main() {
+          vMarker = isMarker;   // always 0 in 3D; the shared frag needs it declared
           vVal = resistivity;
           if (!color_filter_resistivity(resistivity)) {
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -383,11 +427,11 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
       attributes: {
         cx: QUAD_CX, cy: QUAD_CY,
         gx, gz, gxPrev: gxP, gzPrev: gzP, gxNext: gxN, gzNext: gzN,
-        top, bot, resistivity: col,
+        top, bot, resistivity: col, isMarker: new Float32Array(n),
       },
       attributeDivisors: {
         gx: 1, gz: 1, gxPrev: 1, gzPrev: 1, gxNext: 1, gzNext: 1,
-        top: 1, bot: 1, resistivity: 1,
+        top: 1, bot: 1, resistivity: 1, isMarker: 1,
       },
       uniforms: {},
       domains: {
@@ -420,7 +464,7 @@ registerLayerType('ResistivityCurtainLines', new LayerType({
   }),
 
   vert: `#version 300 es
-    precision mediump float;
+    precision highp float;
     in float x, y, r, g, b;
     out vec3 vColor;
     void main() {
@@ -430,7 +474,7 @@ registerLayerType('ResistivityCurtainLines', new LayerType({
   `,
 
   frag: `#version 300 es
-    precision mediump float;
+    precision highp float;
     in vec3 vColor;
     void main() { fragColor = gladly_apply_color(vec4(vColor, 1.0)); }
   `,

@@ -5,6 +5,7 @@ import { PlotGroupContext } from '../../PlotGroupContext';
 import { registerQuantityKinds } from './quantityKinds';
 import { encodeSeg } from '../../datamodel/datasetPath';
 import { getKeys, resolveDataPath } from './colorUtils.js';
+import { nearestSoundingByXdist } from './soundingMatch.js';
 import { cellEditEntries, segmentEditEntries } from './inUseEdits.js';
 import { addPinnedData, loadPinnedData, pinnedEntries } from './pinnedDatasets.js';
 import { useIsMobile } from '../../hooks/useIsMobile';
@@ -220,7 +221,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     });
 
     // On click: GPU-pick the nearest point, update status bar, and set current sounding.
-    const clickHandle = plot.on('click', async (e) => {
+    const clickHandle = plot.on('click', async (e, coords) => {
       const p = plotRef.current;
       if (!p) return;
 
@@ -260,16 +261,28 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
       // pick result, whose dataIndex the layer's own pickInfo already resolved to a data
       // row. PlotView holds no per-layer click logic and no coordinate/quantity-kind
       // knowledge; layers with no onClick (e.g. a basemap tile) do nothing.
-      console.log('[DIAG] click pick result:', result && JSON.stringify({
-        configLayerIndex: result.configLayerIndex, layerIndex: result.layerIndex,
-        tile: result.tile, index: result.index, dataIndex: result.dataIndex,
-        layerType: result.layer?.type?.name, hasOnClick: !!result.layer?.type?.onClick,
-      }));
-      if (result) {
+      // --- Sounding selection ---
+      // On an xdist-axis plot (ResistivityCurtain, ChannelPlot, …) select the sounding nearest
+      // the clicked distance-along-line. coords.xdist_m is the click's data-space position on the
+      // xdist axis (domain- and zoom-correct); the result is a plain row index into the current
+      // dataset (see soundingMatch.js). A GPU pick on the instanced curtain is unreliable for
+      // this (hundreds of thousands of overlapping cells), so we go from the clicked coordinate.
+      if (coords?.xdist_m != null) {
+        const rawData = plotRef.current?._rawData;
+        for (const spec of (configRef.current?.layers ?? [])) {
+          if (!spec || typeof spec !== 'object') continue;
+          const params = Object.values(spec).find(v => v != null);
+          const xdist  = resolveDataPath(rawData, params?.dataset)?.flightlines?.xdist;
+          if (!xdist?.length) continue;
+          const sounding = nearestSoundingByXdist(xdist, coords.xdist_m);
+          if (sounding != null) rawData?._setCurrentSounding?.(sounding);
+          break;   // first dataset with an xdist column is enough
+        }
+      } else if (result) {
+        // Non-xdist plot (e.g. FlightlinePlot on lat/lon, one pickable point per sounding):
+        // the layer's onClick turns the GPU pick into a selection.
         const spec   = configRef.current?.layers?.[result.configLayerIndex];
         const params = spec && typeof spec === 'object' ? Object.values(spec).find(v => v != null) : null;
-        console.log('[DIAG] onClick dispatch; params.dataset:', params?.dataset,
-          'resolved sounding:', result.dataIndex);
         result.layer?.type?.onClick?.(result, params, plotRef.current);
       }
     });
@@ -383,7 +396,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
 
   // Update plot whenever config, data or sounding changes.
   // _currentSounding is merged into the data object so LayerTypes that need it
-  // (SoundingMarker, SoundingPlot, ResistivityCurtainLines) can read it, through
+  // (ResistivityCurtain's sounding line, SoundingPlot, ResistivityCurtainLines) can read it, through
   // soundingIndex() for their own dataset, in their createLayer function.
   useEffect(() => {
     const plot = plotRef.current;

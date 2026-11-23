@@ -2,7 +2,6 @@
 import './FlightlinePlot.js';
 import './ChannelPlot.js';
 import './GateAnomalyPlot.js';
-import './SoundingMarker.js';
 import './SoundingPlot.js';
 import './ResistivityCurtain.js';
 import './MagLinePlot.js';
