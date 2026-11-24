@@ -11,11 +11,38 @@ const Z_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === '
 const QUAD_CX = new Float32Array([0, 1, 1, 0, 1, 0]);
 const QUAD_CY = new Float32Array([0, 0, 1, 0, 1, 1]);
 
+// Half-width (clip-space / NDC units) of the 3D curtain's black top/bottom outline ribbon.
+// WebGL can't widen a line primitive, so the outline is a thin screen-space quad instead; this
+// is ~1px on a typical viewport (same technique as MARKER_HALF_WIDTH, but a thinner line).
+const OUTLINE_HALF_WIDTH = 0.0015;
+
+// Per-instance attribute keys the 3D curtain grows when appending outline edge segments.
+const CURTAIN3D_INSTANCED = [
+  'gx', 'gz', 'gxPrev', 'gzPrev', 'gxNext', 'gzNext',
+  'top', 'bot', 'resistivity', 'isMarker', 'isOutline', 'soundingId',
+];
+
+const concatF32 = (a, b) => { const o = new Float32Array(a.length + b.length); o.set(a); o.set(b, a.length); return o; };
+
 const SHARED_FRAG = `#version 300 es
   precision highp float;
   in float vVal;
   in float vMarker;
   void main() {
+    if (vMarker > 0.5) { fragColor = gladly_apply_color(vec4(1.0, 0.0, 0.0, 1.0)); return; }
+    fragColor = map_color_resistivity(vVal);
+  }
+`;
+
+// 3D curtain fragment shader: adds a black outline branch (vOutline) on top of SHARED_FRAG's
+// marker/resistivity paths, so the folded top/bottom edges are visible even at uniform resistivity.
+const FRAG_3D = `#version 300 es
+  precision highp float;
+  in float vVal;
+  in float vMarker;
+  in float vOutline;
+  void main() {
+    if (vOutline > 0.5) { fragColor = gladly_apply_color(vec4(0.0, 0.0, 0.0, 1.0)); return; }
     if (vMarker > 0.5) { fragColor = gladly_apply_color(vec4(1.0, 0.0, 0.0, 1.0)); return; }
     fragColor = map_color_resistivity(vVal);
   }
@@ -263,6 +290,7 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
   constructor() {
     super({
       name: 'ResistivityCurtain3D',
+      frag: FRAG_3D,
       vert: `#version 300 es
         precision highp float;
         in float cx, cy;
@@ -270,10 +298,30 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
         in float top, bot;
         in float resistivity;
         in float isMarker;
+        in float isOutline;
         out float vVal;
         out float vMarker;
+        out float vOutline;
         void main() {
           vMarker = isMarker;
+          vOutline = isOutline;
+          if (isOutline > 0.5) {
+            // Black outline ribbon along a top/bottom edge segment: endpoint A=(gx,top,gz),
+            // B=(gxNext,bot,gzNext). cx picks the endpoint; cy offsets perpendicular to the
+            // segment's screen direction by a fixed NDC half-width, giving a ~1px line.
+            vVal = 0.0;
+            vec4 pa = plot_pos_3d(vec3(gx, top, gz));
+            vec4 pb = plot_pos_3d(vec3(gxNext, bot, gzNext));
+            vec2 na = pa.xy / pa.w;
+            vec2 nb = pb.xy / pb.w;
+            vec2 diff = nb - na;
+            vec2 dir = length(diff) > 1e-6 ? normalize(diff) : vec2(1.0, 0.0);
+            vec2 perp = vec2(-dir.y, dir.x) * ${OUTLINE_HALF_WIDTH.toFixed(5)};
+            vec4 p = cx > 0.5 ? pb : pa;
+            vec2 nn = (cx > 0.5 ? nb : na) + (cy > 0.5 ? perp : -perp);
+            gl_Position = vec4(nn * p.w, p.z, p.w);
+            return;
+          }
           if (isMarker > 0.5) {
             // Current-sounding marker: a thin vertical ribbon at the sounding's geo position
             // (gx, gz), spanning the curtain's elevation extent (top..bot).
@@ -418,16 +466,25 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
     const attributes = {
       cx: QUAD_CX, cy: QUAD_CY,
       gx, gz, gxPrev: gxP, gzPrev: gzP, gxNext: gxN, gzNext: gzN,
-      top, bot, resistivity: col, isMarker: new Float32Array(n),
+      top, bot, resistivity: col, isMarker: new Float32Array(n), isOutline: new Float32Array(n),
       soundingId: new Float32Array(soundingIdxs),   // flightlines row each cell belongs to
     };
     let instanceCount = n;
+
+    // Black top/bottom edge outline (extra instances in this same draw, so the build/epoch race
+    // can't drop it the way it drops a trailing layer — see soundingLineMarker.js).
+    const outline = this._buildOutlineInstances(cells, gxFull, gzFull, boundaries);
+    if (outline) {
+      for (const k of CURTAIN3D_INSTANCED) attributes[k] = concatF32(attributes[k], outline[k]);
+      instanceCount += outline.count;
+    }
+
     const cs = markerSounding(parameters, rawData, flightlines.xdist);
     if (cs !== null && Number.isFinite(gxFull[cs]) && Number.isFinite(gzFull[cs])) {
       instanceCount = appendMarkerInstance(attributes, instanceCount, {
         gx: gxFull[cs], gz: gzFull[cs],
         gxPrev: gxFull[cs], gzPrev: gzFull[cs], gxNext: gxFull[cs], gzNext: gzFull[cs],
-        top: yMax, bot: yMin, resistivity: 1, isMarker: 1, soundingId: cs,
+        top: yMax, bot: yMin, resistivity: 1, isMarker: 1, isOutline: 0, soundingId: cs,
       });
     }
 
@@ -435,7 +492,7 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
       attributes,
       attributeDivisors: {
         gx: 1, gz: 1, gxPrev: 1, gzPrev: 1, gxNext: 1, gzNext: 1,
-        top: 1, bot: 1, resistivity: 1, isMarker: 1, soundingId: 1,
+        top: 1, bot: 1, resistivity: 1, isMarker: 1, isOutline: 1, soundingId: 1,
       },
       uniforms: {},
       domains: {
@@ -448,6 +505,50 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
       vertexCount: 6,
       instanceCount,
     }];
+  }
+
+  // One outline instance per top/bottom edge segment between adjacent soundings in a flightline.
+  // The top edge is the highest cell top; the bottom edge the lowest cell bottom, per sounding.
+  // Segments are not drawn across flightline boundaries. Returns per-instance attribute arrays
+  // (keyed like CURTAIN3D_INSTANCED) plus count, or null when there is nothing to outline.
+  _buildOutlineInstances(cells, gxFull, gzFull, boundaries) {
+    const { nS, soundingIdxs, topVals, botVals } = cells;
+    const topEdge = new Float32Array(nS).fill(NaN);
+    const botEdge = new Float32Array(nS).fill(NaN);
+    for (let k = 0; k < soundingIdxs.length; k++) {
+      const i = soundingIdxs[k];
+      if (Number.isNaN(topEdge[i]) || topVals[k] > topEdge[i]) topEdge[i] = topVals[k];
+      if (Number.isNaN(botEdge[i]) || botVals[k] < botEdge[i]) botEdge[i] = botVals[k];
+    }
+
+    const gx = [], gz = [], gxNext = [], gzNext = [], top = [], bot = [], sid = [];
+    const addSeg = (i, j, edge) => {
+      if (!Number.isFinite(edge[i]) || !Number.isFinite(edge[j])) return;
+      if (!Number.isFinite(gxFull[i]) || !Number.isFinite(gxFull[j])) return;
+      gx.push(gxFull[i]); gz.push(gzFull[i]);
+      gxNext.push(gxFull[j]); gzNext.push(gzFull[j]);
+      top.push(edge[i]); bot.push(edge[j]); sid.push(i);
+    };
+    for (let i = 0; i < nS - 1; i++) {
+      if (boundaries[i + 1]) continue;   // don't bridge separate flightlines
+      addSeg(i, i + 1, topEdge);
+      addSeg(i, i + 1, botEdge);
+    }
+
+    const count = gx.length;
+    if (count === 0) return null;
+    const f = a => new Float32Array(a);
+    return {
+      count,
+      gx: f(gx), gz: f(gz),
+      gxPrev: f(gx), gzPrev: f(gz),   // unused by the outline branch; mirror gx/gz
+      gxNext: f(gxNext), gzNext: f(gzNext),
+      top: f(top), bot: f(bot),
+      resistivity: new Float32Array(count),           // 0; outline branch skips the color filter
+      isMarker: new Float32Array(count),              // 0
+      isOutline: new Float32Array(count).fill(1),
+      soundingId: f(sid),
+    };
   }
 }
 
