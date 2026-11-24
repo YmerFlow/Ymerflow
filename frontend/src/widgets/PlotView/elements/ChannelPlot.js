@@ -2,6 +2,10 @@ import { LayerType, registerLayerType, AXIS_GEOMETRY } from 'gladly-plot';
 import { resolveDataPath, getFrom, getKeys, toFloat32Array } from '../colorUtils.js';
 import { globalSoundingIndex, soundingState } from '../inUseEdits.js';
 import { selectSoundingOnClick } from '../soundingMatch.js';
+import {
+  currentSoundingMarkerTile, showCurrentSoundingSchema,
+  MARKER_VERT_IN, MARKER_VERT_BRANCH, MARKER_FRAG_IN, MARKER_FRAG_BRANCH,
+} from './soundingLineMarker.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -30,9 +34,10 @@ registerLayerType('ChannelPlot', new LayerType({
     in float y;
     in float gate_index;
     in float inuse_state;
+    ${MARKER_VERT_IN}
     out float vGateIndex;
     out float vInuseState;
-    void main() {
+    void main() {${MARKER_VERT_BRANCH}
       // y == NaN means this segment had an invalid (NaN/zero/inf) endpoint.
       if (y != y) {
         gl_Position = vec4(2.0, 0.0, 0.0, 1.0);
@@ -47,9 +52,11 @@ registerLayerType('ChannelPlot', new LayerType({
   frag: `#version 300 es
     precision mediump float;
     uniform vec4 bad_color;
+    ${MARKER_FRAG_IN}
     in float vGateIndex;
     in float vInuseState;
     void main() {
+      ${MARKER_FRAG_BRANCH}
       if (vInuseState > 2.5) {
         fragColor = gladly_apply_color(vec4(0.85, 0.1, 0.1, 1.0));
       } else if (vInuseState > 1.5) {
@@ -87,6 +94,7 @@ registerLayerType('ChannelPlot', new LayerType({
       },
       xAxis: { type: 'string', enum: X_AXES, default: 'xaxis_bottom' },
       yAxis: { type: 'string', enum: Y_AXES, default: 'yaxis_left' },
+      showCurrentSounding: showCurrentSoundingSchema,
     },
     required: ['dataset', 'channel'],
   }),
@@ -125,7 +133,7 @@ registerLayerType('ChannelPlot', new LayerType({
     const nSegs       = N - 1;
     const gateIndices = getKeys(yDataDict).sort((a, b) => a - b);
 
-    const allXs = [], allYs = [], allGateIdxs = [], allInuseStates = [];
+    const allXs = [], allYs = [], allGateIdxs = [], allInuseStates = [], allIsMarker = [];
 
     for (let t = 0; t < gateIndices.length; t++) {
       const gateKey  = gateIndices[t];
@@ -158,10 +166,22 @@ registerLayerType('ChannelPlot', new LayerType({
       allYs.push(ys);
       allGateIdxs.push(gateIdx);
       allInuseStates.push(inuseState);
+      allIsMarker.push(new Float32Array(nSegs * 2));   // 0 for every data vertex
+    }
+
+    // Current-sounding marker as an extra 2-vertex tile (vertical line), in the same layer.
+    const marker = currentSoundingMarkerTile(parameters, rawData, xdist,
+      { gate_index: new Float32Array([0, 0]), inuse_state: new Float32Array([0, 0]) });
+    if (marker) {
+      allXs.push(marker.x);
+      allYs.push(marker.y);
+      allGateIdxs.push(marker.gate_index);
+      allInuseStates.push(marker.inuse_state);
+      allIsMarker.push(marker.isMarker);
     }
 
     return [{
-      attributes: { x: allXs, y: allYs, gate_index: allGateIdxs, inuse_state: allInuseStates },
+      attributes: { x: allXs, y: allYs, gate_index: allGateIdxs, inuse_state: allInuseStates, isMarker: allIsMarker },
       uniforms: { bad_color: badColor },
       domains: { gate_index: [0, gateIndices.length - 1] },
       primitive: 'lines',

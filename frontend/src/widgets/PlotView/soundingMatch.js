@@ -36,6 +36,16 @@ export function soundingFromPickX(parameters, plot, layer, { tile, index }, xAtt
   return nearestSoundingByXdist(fl?.xdist, xval);
 }
 
+// Map a picked primitive straight to the flightlines row it belongs to, read from a
+// per-primitive attribute the layer fills (soundingId). Used by layers whose instance index
+// can't be decoded arithmetically (invalid cells skipped) and that have no xdist coordinate to
+// resolve the click from — e.g. the 3D curtain on geo axes. Returns a row index or null.
+export function soundingFromPickId(layer, { tile, index }, attr = 'soundingId') {
+  const a = layer?.attributes?.[attr];
+  const v = Array.isArray(a) ? a[tile]?.[index] : a?.[index];
+  return v == null ? null : Math.round(Number(v));
+}
+
 // Shared layer-type onClick for sounding-selecting layers: select the row index the pick
 // resolved to (result.dataIndex, produced by the layer's own pickInfo).
 export function selectSoundingOnClick(result, parameters, plot) {

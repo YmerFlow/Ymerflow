@@ -1,6 +1,7 @@
 import { LayerType, registerLayerType, AXIS_GEOMETRY, resolveQuantityKind } from 'gladly-plot';
 import { parseColor, fillColorArrays, toFloat32Array, resolveDataPath } from '../colorUtils.js';
-import { selectSoundingOnClick } from '../soundingMatch.js';
+import { selectSoundingOnClick, soundingIndex } from '../soundingMatch.js';
+import { showCurrentSoundingSchema } from './soundingLineMarker.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -37,20 +38,25 @@ function finiteExtent(arr) {
 
 const RGB_VERT = `#version 300 es
   precision mediump float;
-  in float x, y, r, g, b;
+  in float x, y, r, g, b, isMarker;
   uniform float pointSize;
   out vec3 vColor;
+  out float vMarker;
   void main() {
     gl_Position = plot_pos(vec2(x, y));
-    gl_PointSize = pointSize;
+    // The current-sounding marker is the same point, drawn larger (and red, in the frag).
+    gl_PointSize = isMarker > 0.5 ? pointSize + 8.0 : pointSize;
     vColor = vec3(r, g, b);
+    vMarker = isMarker;
   }
 `;
 
 const RGB_FRAG = `#version 300 es
   precision mediump float;
   in vec3 vColor;
+  in float vMarker;
   void main() {
+    if (vMarker > 0.5) { fragColor = gladly_apply_color(vec4(1.0, 0.0, 0.0, 1.0)); return; }
     fragColor = gladly_apply_color(vec4(vColor, 1.0));
   }
 `;
@@ -81,6 +87,7 @@ const flightlinePlot = new LayerType({
       color:    { type: 'string', default: 'blue' },
       xAxis:    { type: 'string', enum: X_AXES, default: 'xaxis_bottom' },
       yAxis:    { type: 'string', enum: Y_AXES, default: 'yaxis_left'   },
+      showCurrentSounding: showCurrentSoundingSchema,
     },
     required: ['dataset'],
   }),
@@ -102,9 +109,10 @@ const flightlinePlot = new LayerType({
     const rgb = parseColor(parameters.color || 'blue');
     const { r, g, b } = fillColorArrays(n, rgb);
 
-    const attribs = { x, y, r, g, b };
-    const mode    = parameters.mode || 'markers';
-    const results = [];
+    const noMarker = new Float32Array(n);                 // 0 for every data point
+    const attribs  = { x, y, r, g, b, isMarker: noMarker };
+    const mode     = parameters.mode || 'markers';
+    const results  = [];
 
     const xDom = finiteExtent(x);
     const yDom = finiteExtent(y);
@@ -112,8 +120,16 @@ const flightlinePlot = new LayerType({
     if (xDom) domains[xQK] = xDom;
     if (yDom) domains[yQK] = yDom;
 
-    if (mode.includes('markers')) results.push({ attributes: attribs, uniforms: { pointSize: 3.0 }, primitive: 'points',     domains });
-    if (mode.includes('lines'))   results.push({ attributes: attribs, uniforms: { pointSize: 1.0 }, primitive: 'line strip', domains });
+    // The current-sounding marker is an extra highlighted point at that sounding's position,
+    // appended to the points pass only (a line pass would draw a stray segment to it).
+    const cs = parameters.showCurrentSounding === false ? null : soundingIndex(rawData);
+    const grow = (arr, v) => { const o = new Float32Array(arr.length + 1); o.set(arr); o[arr.length] = v; return o; };
+    const pointAttribs = (cs != null && cs >= 0 && cs < n && Number.isFinite(x[cs]) && Number.isFinite(y[cs]))
+      ? { x: grow(x, x[cs]), y: grow(y, y[cs]), r: grow(r, 0), g: grow(g, 0), b: grow(b, 0), isMarker: grow(noMarker, 1) }
+      : attribs;
+
+    if (mode.includes('markers')) results.push({ attributes: pointAttribs, uniforms: { pointSize: 3.0 }, primitive: 'points',     domains });
+    if (mode.includes('lines'))   results.push({ attributes: attribs,      uniforms: { pointSize: 1.0 }, primitive: 'line strip', domains });
     return results;
   },
 });

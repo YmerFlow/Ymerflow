@@ -1,6 +1,7 @@
 import { LayerType, registerLayerType, AXIS_GEOMETRY, crsToQkX, crsToQkY } from 'gladly-plot';
 import { fillColorArrays, toFloat32Array, resolveDataPath, getFrom, getKeys } from '../colorUtils.js';
-import { soundingIndex, selectSoundingOnClick, soundingFromPickX } from '../soundingMatch.js';
+import { soundingIndex, selectSoundingOnClick, soundingFromPickX, soundingFromPickId } from '../soundingMatch.js';
+import { MARKER_HALF_WIDTH, markerSounding, appendMarkerInstance, showCurrentSoundingSchema } from './soundingLineMarker.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -19,32 +20,6 @@ const SHARED_FRAG = `#version 300 es
     fragColor = map_color_resistivity(vVal);
   }
 `;
-
-// Half-width of the current-sounding marker bar, in clip-space units (WebGL can't widen a line
-// primitive, so the marker is a thin full-height quad).
-const MARKER_HALF_WIDTH = 0.003;
-
-// The current sounding (flightlines row) to mark, or null if the marker should not be drawn
-// (hidden via showCurrentSounding:false, no selection, or out of range / no xdist).
-function markerSounding(parameters, rawData, xdist) {
-  if (parameters.showCurrentSounding === false) return null;
-  const cs = soundingIndex(rawData);
-  if (cs == null || cs < 0 || cs >= xdist.length || !Number.isFinite(Number(xdist[cs]))) return null;
-  return cs;
-}
-
-// Append the current-sounding marker as one extra instance to an already-built instanced cell
-// draw. Drawing it in the SAME draw (rather than a trailing second layer) is deliberate: a
-// separate trailing layer gets dropped by gladly's build/epoch race after the expensive cell
-// compile. `markerValues` maps every per-instance attribute name to the value the marker
-// instance takes (its own x attribute gets markerX; isMarker=1; the rest 0). The vert branches
-// on isMarker to draw a full-height bar in clip space (y-axis-agnostic); the frag colors it
-// red. Returns the new instanceCount.
-function appendMarkerInstance(attributes, instanceCount, markerValues) {
-  const grow = (arr, v) => { const out = new Float32Array(arr.length + 1); out.set(arr); out[arr.length] = v; return out; };
-  for (const [name, markerVal] of Object.entries(markerValues)) attributes[name] = grow(attributes[name], markerVal);
-  return instanceCount + 1;
-}
 
 // ─── ResistivityCurtainBase ───────────────────────────────────────────────────
 
@@ -152,7 +127,7 @@ class ResistivityCurtainBase extends LayerType {
       cmin:        { type: 'number', default: 1    },
       cmax:        { type: 'number', default: 1000 },
       yAxis:       { type: 'string', enum: Y_AXES, default: 'yaxis_left' },
-      showCurrentSounding: { type: 'boolean', default: true, title: 'Show current sounding line' },
+      showCurrentSounding: showCurrentSoundingSchema,
     };
   }
 }
@@ -298,7 +273,15 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
         out float vVal;
         out float vMarker;
         void main() {
-          vMarker = isMarker;   // always 0 in 3D; the shared frag needs it declared
+          vMarker = isMarker;
+          if (isMarker > 0.5) {
+            // Current-sounding marker: a thin vertical ribbon at the sounding's geo position
+            // (gx, gz), spanning the curtain's elevation extent (top..bot).
+            vVal = 1.0;
+            vec4 p = plot_pos_3d(vec3(gx, cy > 0.5 ? top : bot, gz));
+            gl_Position = vec4(p.x + (cx - 0.5) * 2.0 * ${MARKER_HALF_WIDTH.toFixed(5)} * p.w, p.y, p.z, p.w);
+            return;
+          }
           vVal = resistivity;
           if (!color_filter_resistivity(resistivity)) {
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -316,6 +299,15 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
       `,
     });
   }
+
+  // On geo axes a click has no xdist coordinate, so resolve the sounding straight from the GPU
+  // pick: each cell carries its own flightlines row in soundingId, so the picked instance maps
+  // directly to its sounding (the index can't be decoded arithmetically — invalid cells are
+  // skipped when the instances are built).
+  pickInfo(regl, parameters, data, plot, layer, primitive) {
+    return { dataIndex: soundingFromPickId(layer, primitive) };
+  }
+  onClick(result, parameters, plot) { return selectSoundingOnClick(result, parameters, plot); }
 
   _resolveGeo(flightlines, crs, dataset) {
     const xCols = GEO_X_COLS[crs] ?? GEO_X_COLS.projected;
@@ -423,15 +415,27 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
       if (isFinite(bot[i])) { yMin  = Math.min(yMin,  bot[i]); yMax  = Math.max(yMax,  bot[i]); }
     }
 
+    const attributes = {
+      cx: QUAD_CX, cy: QUAD_CY,
+      gx, gz, gxPrev: gxP, gzPrev: gzP, gxNext: gxN, gzNext: gzN,
+      top, bot, resistivity: col, isMarker: new Float32Array(n),
+      soundingId: new Float32Array(soundingIdxs),   // flightlines row each cell belongs to
+    };
+    let instanceCount = n;
+    const cs = markerSounding(parameters, rawData, flightlines.xdist);
+    if (cs !== null && Number.isFinite(gxFull[cs]) && Number.isFinite(gzFull[cs])) {
+      instanceCount = appendMarkerInstance(attributes, instanceCount, {
+        gx: gxFull[cs], gz: gzFull[cs],
+        gxPrev: gxFull[cs], gzPrev: gzFull[cs], gxNext: gxFull[cs], gzNext: gzFull[cs],
+        top: yMax, bot: yMin, resistivity: 1, isMarker: 1, soundingId: cs,
+      });
+    }
+
     return [{
-      attributes: {
-        cx: QUAD_CX, cy: QUAD_CY,
-        gx, gz, gxPrev: gxP, gzPrev: gzP, gxNext: gxN, gzNext: gzN,
-        top, bot, resistivity: col, isMarker: new Float32Array(n),
-      },
+      attributes,
       attributeDivisors: {
         gx: 1, gz: 1, gxPrev: 1, gzPrev: 1, gxNext: 1, gzNext: 1,
-        top: 1, bot: 1, resistivity: 1, isMarker: 1,
+        top: 1, bot: 1, resistivity: 1, isMarker: 1, soundingId: 1,
       },
       uniforms: {},
       domains: {
@@ -442,7 +446,7 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
       },
       primitive: 'triangles',
       vertexCount: 6,
-      instanceCount: n,
+      instanceCount,
     }];
   }
 }

@@ -3,6 +3,7 @@ import { resolveDataPath, getFrom, getKeys, toFloat32Array } from '../colorUtils
 import { HEIGHT_COLUMNS, findHeightColumn, gateAnomalyColumn, heightAnomaly, heightCorrectedColumn } from '../gateAnomaly.js';
 import { globalSoundingIndex, soundingState } from '../inUseEdits.js';
 import { selectSoundingOnClick } from '../soundingMatch.js';
+import { MARKER_HALF_WIDTH, markerSounding, appendMarkerInstance, showCurrentSoundingSchema } from './soundingLineMarker.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -88,10 +89,19 @@ registerLayerType('GateAnomalyPlot', new LayerType({
     precision mediump float;
     in float cx, cy;
     in float x0, x1, gate, diff, has_diff, inuse_state;
+    in float isMarker;
     out float vDiff;
     out float vHasDiff;
     out float vInuseState;
+    out float vMarker;
     void main() {
+      vMarker = isMarker;
+      if (isMarker > 0.5) {
+        // Current-sounding marker: thin full-height vertical bar at x0 (= the sounding's xdist).
+        vDiff = 0.0; vHasDiff = 0.0; vInuseState = 0.0;
+        gl_Position = vec4(plot_pos(vec2(x0, 0.0)).x + (cx - 0.5) * 2.0 * ${MARKER_HALF_WIDTH.toFixed(5)}, cy > 0.5 ? 1.0 : -1.0, 0.0, 1.0);
+        return;
+      }
       // gladly's lasso captures one position per cell (u_mode 1); give it the cell center,
       // so a cell is selected when its center is inside the lasso.
       float u = u_mode > 0.5 ? 0.5 : cx;
@@ -113,6 +123,7 @@ registerLayerType('GateAnomalyPlot', new LayerType({
     in float vDiff;
     in float vHasDiff;
     in float vInuseState;
+    in float vMarker;
     // matplotlib's BrBG, as on the drawing sheets: brown below the median, white at it,
     // green above.
     const vec3 BRBG[11] = vec3[11](
@@ -126,6 +137,7 @@ registerLayerType('GateAnomalyPlot', new LayerType({
       return mix(BRBG[i], BRBG[i + 1], p - float(i));
     }
     void main() {
+      if (vMarker > 0.5) { fragColor = gladly_apply_color(vec4(1.0, 0.0, 0.0, 1.0)); return; }
       vec3 base = vHasDiff > 0.5 ? brbg(0.5 + 0.5 * vDiff / range_decades) : bad_color.rgb;
       vec3 color;
       if (vInuseState > 2.5)      color = mix(base, vec3(0.85, 0.1, 0.1), 0.7);
@@ -183,6 +195,7 @@ registerLayerType('GateAnomalyPlot', new LayerType({
       },
       xAxis: { type: 'string', enum: X_AXES, default: 'xaxis_bottom' },
       yAxis: { type: 'string', enum: Y_AXES, default: 'yaxis_left' },
+      showCurrentSounding: showCurrentSoundingSchema,
     },
     required: ['dataset', 'channel'],
   }),
@@ -228,13 +241,26 @@ registerLayerType('GateAnomalyPlot', new LayerType({
       }
     });
 
+    const nCells = nS * gateKeys.length;
+    const attributes = {
+      cx: QUAD_CX, cy: QUAD_CY,
+      x0: cells.x0, x1: cells.x1, gate: cells.gate,
+      diff: cells.diff, has_diff: cells.hasDiff, inuse_state: inuseState,
+      isMarker: new Float32Array(nCells),
+    };
+    let instanceCount = nCells;
+    const xdist = toFloat32Array(flightlines.xdist);
+    const cs = markerSounding(parameters, rawData, xdist);
+    if (cs !== null) {
+      instanceCount = appendMarkerInstance(attributes, instanceCount, {
+        x0: Number(xdist[cs]), x1: Number(xdist[cs]), gate: 0,
+        diff: 0, has_diff: 0, inuse_state: 0, isMarker: 1,
+      });
+    }
+
     return [{
-      attributes: {
-        cx: QUAD_CX, cy: QUAD_CY,
-        x0: cells.x0, x1: cells.x1, gate: cells.gate,
-        diff: cells.diff, has_diff: cells.hasDiff, inuse_state: inuseState,
-      },
-      attributeDivisors: { x0: 1, x1: 1, gate: 1, diff: 1, has_diff: 1, inuse_state: 1 },
+      attributes,
+      attributeDivisors: { x0: 1, x1: 1, gate: 1, diff: 1, has_diff: 1, inuse_state: 1, isMarker: 1 },
       uniforms: {
         range_decades: parameters.range_decades ?? 0.5,
         bad_color: parameters.bad_color ?? [0.82, 0.82, 0.82, 1.0],
@@ -242,7 +268,7 @@ registerLayerType('GateAnomalyPlot', new LayerType({
       domains: cells.domains,
       primitive: 'triangles',
       vertexCount: 6,
-      instanceCount: nS * gateKeys.length,
+      instanceCount,
     }];
   },
 
