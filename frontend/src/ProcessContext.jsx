@@ -151,6 +151,11 @@ export function ProcessProvider({ children }) {
   const loadedEditsRef = useRef(new Map());
   const loadStatusRef = useRef(new Map());
   const [inUseAction, setInUseAction] = useState('enable'); // 'enable' | 'disable' | 'clear'
+  // The InUse editor's selection shape (one of gladly's lasso modes) and the band shape's
+  // width [m along xdist]. One of each for the whole editor, as there is one action; not
+  // saved, so a reload starts with the lasso and 100 m.
+  const [selectionShape, setSelectionShape] = useState('lasso');
+  const [selectionBandWidth, setSelectionBandWidth] = useState(100);
   const [newProcessToken, setNewProcessToken] = useState(0);
   const [newProcessDefaults, setNewProcessDefaults] = useState(null);
   const createProcess = useCreateProcess();
@@ -576,6 +581,10 @@ export function ProcessProvider({ children }) {
       inMemoryDiffDirty: inUseDiffState.dirty,
       inUseAction,
       setInUseAction,
+      selectionShape,
+      setSelectionShape,
+      selectionBandWidth,
+      setSelectionBandWidth,
       applyInMemoryEdit,
       undoLastEdit,
       clearDatasetDiff,
@@ -614,6 +623,8 @@ export function ProcessProvider({ children }) {
       inUseDiffState,
       inUseAction,
       setInUseAction,
+      selectionShape,
+      selectionBandWidth,
       applyInMemoryEdit,
       undoLastEdit,
       clearDatasetDiff,
