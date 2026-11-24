@@ -13,7 +13,7 @@
     "bootstrap": "^5.3.8",
     "d3": "^7.9.0",
     "geotiff": "^3.0.5",
-    "gladly-plot": "^0.0.27",
+    "gladly-plot": "^0.0.28",
     "js-yaml": "^5.4.1",
     "leaflet": "^1.9.4",
     "markdown-to-jsx": "^9.8.2",
