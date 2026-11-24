@@ -367,7 +367,7 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
   }
 
   _buildAxisConfig(parameters, data) {
-    const crs = parameters.crs ?? 'projected';
+    const crs = parameters.crs ?? 'EPSG:3857';
     let xAxisQk, zAxisQk;
 
     if (crs !== 'projected') {
@@ -399,7 +399,7 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
       type: 'object',
       properties: {
         ...this._commonSchemaProperties(data),
-        crs:   { type: 'string', enum: ['projected', 'EPSG:4326', 'EPSG:3857'], default: 'projected' },
+        crs:   { type: 'string', enum: ['projected', 'EPSG:4326', 'EPSG:3857'], default: 'EPSG:3857' },
         xAxis: { type: 'string', enum: X_AXES, default: 'xaxis_bottom' },
         zAxis: { type: 'string', enum: Z_AXES, default: 'zaxis_bottom_left' },
       },
@@ -416,7 +416,7 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
 
     if (!flightlines.xdist || flightlines.xdist.length === 0) return [];
 
-    const crs = parameters.crs ?? 'projected';
+    const crs = parameters.crs ?? 'EPSG:3857';
     const { xCol, zCol } = this._resolveGeo(flightlines, crs, dataset);
     if (!xCol || !zCol) return [];
 
