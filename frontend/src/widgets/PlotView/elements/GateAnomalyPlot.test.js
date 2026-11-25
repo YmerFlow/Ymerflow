@@ -8,6 +8,7 @@ vi.mock('gladly-plot', () => {
     AXIS_GEOMETRY: { xaxis_bottom: { dir: 'x' }, yaxis_left: { dir: 'y' } },
     LayerType: class { constructor(config) { Object.assign(this, config); } },
     registerLayerType: (name, layerType) => { registeredLayerTypes[name] = layerType; },
+    getLayerType: (name) => registeredLayerTypes[name],
     registeredLayerTypes,
   };
 });

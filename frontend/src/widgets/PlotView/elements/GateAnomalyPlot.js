@@ -3,7 +3,7 @@ import { resolveDataPath, getFrom, getKeys, toFloat32Array } from '../colorUtils
 import { HEIGHT_COLUMNS, findHeightColumn, gateAnomalyColumn, heightAnomaly, heightCorrectedColumn } from '../gateAnomaly.js';
 import { globalSoundingIndex, soundingState } from '../inUseEdits.js';
 import { selectSoundingOnClick } from '../soundingMatch.js';
-import { MARKER_HALF_WIDTH, markerSounding, appendMarkerInstance, showCurrentSoundingSchema } from './soundingLineMarker.js';
+import { MARKER_HALF_WIDTH, appendMarkerInstance, markerXUniforms, currentSoundingSchema, showCurrentSoundingSchema } from './soundingLineMarker.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -90,6 +90,8 @@ registerLayerType('GateAnomalyPlot', new LayerType({
     in float cx, cy;
     in float x0, x1, gate, diff, has_diff, inuse_state;
     in float isMarker;
+    uniform float u_markerX;
+    uniform float u_markerVisible;
     out float vDiff;
     out float vHasDiff;
     out float vInuseState;
@@ -97,9 +99,10 @@ registerLayerType('GateAnomalyPlot', new LayerType({
     void main() {
       vMarker = isMarker;
       if (isMarker > 0.5) {
-        // Current-sounding marker: thin full-height vertical bar at x0 (= the sounding's xdist).
+        // Current-sounding marker: thin full-height vertical bar at u_markerX (the sounding's xdist).
         vDiff = 0.0; vHasDiff = 0.0; vInuseState = 0.0;
-        gl_Position = vec4(plot_pos(vec2(x0, 0.0)).x + (cx - 0.5) * 2.0 * ${MARKER_HALF_WIDTH.toFixed(5)}, cy > 0.5 ? 1.0 : -1.0, 0.0, 1.0);
+        if (u_markerVisible < 0.5) { gl_Position = vec4(2.0, 0.0, 0.0, 1.0); return; }
+        gl_Position = vec4(plot_pos(vec2(u_markerX, 0.0)).x + (cx - 0.5) * 2.0 * ${MARKER_HALF_WIDTH.toFixed(5)}, cy > 0.5 ? 1.0 : -1.0, 0.0, 1.0);
         return;
       }
       // gladly's lasso captures one position per cell (u_mode 1); give it the cell center,
@@ -196,6 +199,7 @@ registerLayerType('GateAnomalyPlot', new LayerType({
       xAxis: { type: 'string', enum: X_AXES, default: 'xaxis_bottom' },
       yAxis: { type: 'string', enum: Y_AXES, default: 'yaxis_left' },
       showCurrentSounding: showCurrentSoundingSchema,
+      currentSounding: currentSoundingSchema,
     },
     required: ['dataset', 'channel'],
   }),
@@ -248,15 +252,11 @@ registerLayerType('GateAnomalyPlot', new LayerType({
       diff: cells.diff, has_diff: cells.hasDiff, inuse_state: inuseState,
       isMarker: new Float32Array(nCells),
     };
-    let instanceCount = nCells;
+    // Always-present current-sounding marker instance; position/visibility via u_marker* uniforms.
     const xdist = toFloat32Array(flightlines.xdist);
-    const cs = markerSounding(parameters, rawData, xdist);
-    if (cs !== null) {
-      instanceCount = appendMarkerInstance(attributes, instanceCount, {
-        x0: Number(xdist[cs]), x1: Number(xdist[cs]), gate: 0,
-        diff: 0, has_diff: 0, inuse_state: 0, isMarker: 1,
-      });
-    }
+    const instanceCount = appendMarkerInstance(attributes, nCells, {
+      x0: 0, x1: 0, gate: 0, diff: 0, has_diff: 0, inuse_state: 0, isMarker: 1,
+    });
 
     return [{
       attributes,
@@ -264,6 +264,7 @@ registerLayerType('GateAnomalyPlot', new LayerType({
       uniforms: {
         range_decades: parameters.range_decades ?? 0.5,
         bad_color: parameters.bad_color ?? [0.82, 0.82, 0.82, 1.0],
+        ...markerXUniforms(parameters, xdist),
       },
       domains: cells.domains,
       primitive: 'triangles',

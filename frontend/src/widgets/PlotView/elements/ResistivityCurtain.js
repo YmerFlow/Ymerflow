@@ -1,7 +1,10 @@
 import { LayerType, registerLayerType, AXIS_GEOMETRY, crsToQkX, crsToQkY } from 'gladly-plot';
 import { fillColorArrays, toFloat32Array, resolveDataPath, getFrom, getKeys } from '../colorUtils.js';
-import { soundingIndex, selectSoundingOnClick, soundingFromPickX, soundingFromPickId } from '../soundingMatch.js';
-import { MARKER_HALF_WIDTH, markerSounding, appendMarkerInstance, showCurrentSoundingSchema } from './soundingLineMarker.js';
+import { selectSoundingOnClick, soundingFromPickX, soundingFromPickId } from '../soundingMatch.js';
+import {
+  MARKER_HALF_WIDTH, appendMarkerInstance, markerXUniforms, markerGeoUniforms,
+  currentSoundingSchema, showCurrentSoundingSchema,
+} from './soundingLineMarker.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -155,6 +158,7 @@ class ResistivityCurtainBase extends LayerType {
       cmax:        { type: 'number', default: 1000 },
       yAxis:       { type: 'string', enum: Y_AXES, default: 'yaxis_left' },
       showCurrentSounding: showCurrentSoundingSchema,
+      currentSounding: currentSoundingSchema,
     };
   }
 }
@@ -171,16 +175,19 @@ class ResistivityCurtain2D extends ResistivityCurtainBase {
         in float x, xPrev, xNext, top, bot;
         in float resistivity;
         in float isMarker;
+        uniform float u_markerX;
+        uniform float u_markerVisible;
         out float vVal;
         out float vMarker;
         void main() {
           vMarker = isMarker;
           if (isMarker > 0.5) {
-            // Current-sounding marker: a thin vertical bar at x spanning the curtain's elevation
-            // extent (top..bot). Positioned with the SAME plot_pos as the cells so it lands
-            // exactly on the clicked sounding's column; width is a small clip-space offset.
+            // Current-sounding marker: a thin vertical bar at u_markerX spanning the curtain's
+            // elevation extent (top..bot). Positioned with the SAME plot_pos as the cells so it
+            // lands exactly on the sounding's column; width is a small clip-space offset.
+            if (u_markerVisible < 0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
             vVal = 1.0;
-            vec4 p = plot_pos(vec2(x, cy > 0.5 ? top : bot));
+            vec4 p = plot_pos(vec2(u_markerX, cy > 0.5 ? top : bot));
             gl_Position = vec4(p.x + (cx - 0.5) * 2.0 * ${MARKER_HALF_WIDTH.toFixed(5)} * p.w, p.y, p.z, p.w);
             return;
           }
@@ -254,17 +261,15 @@ class ResistivityCurtain2D extends ResistivityCurtainBase {
     }
 
     const attributes = { cx: QUAD_CX, cy: QUAD_CY, x, xPrev: xP, xNext: xN, top, bot, resistivity: col, isMarker };
-    let instanceCount = n;
-    const cs = markerSounding(parameters, rawData, xdistRaw);
-    if (cs !== null) {
-      instanceCount = appendMarkerInstance(attributes, instanceCount,
-        { x: Number(xdistRaw[cs]), xPrev: 0, xNext: 0, top: yMax, bot: yMin, resistivity: 1, isMarker: 1 });
-    }
+    // Always-present marker instance spanning the curtain's elevation extent; position/visibility
+    // from the u_marker* uniforms (fast path). The per-instance `x` here is a placeholder.
+    const instanceCount = appendMarkerInstance(attributes, n,
+      { x: 0, xPrev: 0, xNext: 0, top: yMax, bot: yMin, resistivity: 1, isMarker: 1 });
 
     return [{
       attributes,
       attributeDivisors: { x: 1, xPrev: 1, xNext: 1, top: 1, bot: 1, resistivity: 1, isMarker: 1 },
-      uniforms: {},
+      uniforms: { ...markerXUniforms(parameters, xdistRaw) },
       domains: { xdist_m: [xMin, xMax], elevation_m: [yMin, yMax], resistivity: [resMin, resMax] },
       primitive: 'triangles',
       vertexCount: 6,
@@ -299,6 +304,9 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
         in float resistivity;
         in float isMarker;
         in float isOutline;
+        uniform float u_markerGx;
+        uniform float u_markerGz;
+        uniform float u_markerVisible;
         out float vVal;
         out float vMarker;
         out float vOutline;
@@ -324,9 +332,10 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
           }
           if (isMarker > 0.5) {
             // Current-sounding marker: a thin vertical ribbon at the sounding's geo position
-            // (gx, gz), spanning the curtain's elevation extent (top..bot).
+            // (u_markerGx, u_markerGz), spanning the curtain's elevation extent (top..bot).
+            if (u_markerVisible < 0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
             vVal = 1.0;
-            vec4 p = plot_pos_3d(vec3(gx, cy > 0.5 ? top : bot, gz));
+            vec4 p = plot_pos_3d(vec3(u_markerGx, cy > 0.5 ? top : bot, u_markerGz));
             gl_Position = vec4(p.x + (cx - 0.5) * 2.0 * ${MARKER_HALF_WIDTH.toFixed(5)} * p.w, p.y, p.z, p.w);
             return;
           }
@@ -479,14 +488,11 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
       instanceCount += outline.count;
     }
 
-    const cs = markerSounding(parameters, rawData, flightlines.xdist);
-    if (cs !== null && Number.isFinite(gxFull[cs]) && Number.isFinite(gzFull[cs])) {
-      instanceCount = appendMarkerInstance(attributes, instanceCount, {
-        gx: gxFull[cs], gz: gzFull[cs],
-        gxPrev: gxFull[cs], gzPrev: gzFull[cs], gxNext: gxFull[cs], gzNext: gzFull[cs],
-        top: yMax, bot: yMin, resistivity: 1, isMarker: 1, isOutline: 0, soundingId: cs,
-      });
-    }
+    // Always-present marker instance; geo position/visibility from the u_marker* uniforms.
+    instanceCount = appendMarkerInstance(attributes, instanceCount, {
+      gx: 0, gz: 0, gxPrev: 0, gzPrev: 0, gxNext: 0, gzNext: 0,
+      top: yMax, bot: yMin, resistivity: 1, isMarker: 1, isOutline: 0, soundingId: 0,
+    });
 
     return [{
       attributes,
@@ -494,7 +500,7 @@ class ResistivityCurtain3D extends ResistivityCurtainBase {
         gx: 1, gz: 1, gxPrev: 1, gzPrev: 1, gxNext: 1, gzNext: 1,
         top: 1, bot: 1, resistivity: 1, isMarker: 1, isOutline: 1, soundingId: 1,
       },
-      uniforms: {},
+      uniforms: { ...markerGeoUniforms(parameters, nS, gxFull, gzFull) },
       domains: {
         [xAxisQk]:  [gxMin, gxMax],
         elevation_m: [yMin, yMax],
@@ -570,9 +576,19 @@ registerLayerType('ResistivityCurtainLines', new LayerType({
 
   vert: `#version 300 es
     precision highp float;
-    in float x, y, r, g, b;
+    in float x, y, r, g, b, isMarker;
+    uniform float u_markerX;
+    uniform float u_markerVisible;
     out vec3 vColor;
     void main() {
+      if (isMarker > 0.5) {
+        // Always-present current-sounding marker: a red vertical line at u_markerX spanning the
+        // curtain's elevation extent (carried in y). Offscreen when hidden.
+        if (u_markerVisible < 0.5) { gl_Position = vec4(2.0, 0.0, 0.0, 1.0); return; }
+        gl_Position = plot_pos(vec2(u_markerX, y));
+        vColor = vec3(1.0, 0.0, 0.0);
+        return;
+      }
       gl_Position = plot_pos(vec2(x, y));
       vColor = vec3(r, g, b);
     }
@@ -591,14 +607,14 @@ registerLayerType('ResistivityCurtainLines', new LayerType({
       topo_column: { type: 'string', default: 'topo' },
       xAxis:       { type: 'string', enum: X_AXES, default: 'xaxis_bottom' },
       yAxis:       { type: 'string', enum: Y_AXES, default: 'yaxis_left'   },
+      showCurrentSounding: showCurrentSoundingSchema,
+      currentSounding: currentSoundingSchema,
     },
     required: ['dataset'],
   }),
 
   createLayer: function(regl, parameters, data, plot) {
-    const rawData         = plot?._rawData ?? data;
-    const currentSounding = soundingIndex(rawData, parameters.dataset);
-
+    const rawData     = plot?._rawData ?? data;
     const dataset     = resolveDataPath(rawData, parameters.dataset);
     const flightlines = dataset?.flightlines;
     const layer_data  = dataset?.layer_data;
@@ -609,6 +625,7 @@ registerLayerType('ResistivityCurtainLines', new LayerType({
 
     const nS    = xdistRaw.length;
     const xdist = toFloat32Array(xdistRaw);
+    const markerUniforms = markerXUniforms(parameters, xdistRaw);
     const results = [];
 
     // Topography line (black)
@@ -617,42 +634,43 @@ registerLayerType('ResistivityCurtainLines', new LayerType({
     if (topoCol) {
       const topoY  = toFloat32Array(flightlines[topoCol]);
       const { r, g, b } = fillColorArrays(nS, [0, 0, 0]);
-      results.push({ attributes: { x: xdist, y: topoY, r, g, b }, uniforms: {}, primitive: 'line strip' });
-    }
-
-    // Sounding marker (red vertical line)
-    const cs = currentSounding;
-    if (cs !== undefined && cs !== null && cs >= 0 && cs < nS) {
-      const dep_top = layer_data.dep_top;
-      const dep_bot = layer_data.dep_bot;
-      const topo    = topoCol ? flightlines[topoCol] : null;
-
-      let yMin = Infinity, yMax = -Infinity;
-      if (dep_top && dep_bot) {
-        for (const j of getKeys(dep_top)) {
-          const topArr = getFrom(dep_top, j);
-          const botArr = getFrom(dep_bot, j);
-          if (!topArr || !botArr) continue;
-          for (let i = 0; i < nS; i++) {
-            const t   = topo ? Number(topo[i]) : 0;
-            const top = t - Number(topArr[i]);
-            const bot = t - Number(botArr[i]);
-            if (isFinite(top)) { yMin = Math.min(yMin, top); yMax = Math.max(yMax, top); }
-            if (isFinite(bot)) { yMin = Math.min(yMin, bot); yMax = Math.max(yMax, bot); }
-          }
-        }
-      }
-      if (!isFinite(yMin)) yMin = 0;
-      if (!isFinite(yMax)) yMax = 100;
-
-      const xPos = xdist[cs];
-      const { r, g, b } = fillColorArrays(2, [1, 0, 0]);
       results.push({
-        attributes: { x: new Float32Array([xPos, xPos]), y: new Float32Array([yMin, yMax]), r, g, b },
-        uniforms:   {},
-        primitive:  'line strip',
+        attributes: { x: xdist, y: topoY, r, g, b, isMarker: new Float32Array(nS) },
+        uniforms: { ...markerUniforms }, primitive: 'line strip',
       });
     }
+
+    // Always-present sounding marker (red vertical line), spanning the model's elevation extent.
+    // Position/visibility come from the u_marker* uniforms (fast path); the extent is built once.
+    const dep_top = layer_data.dep_top;
+    const dep_bot = layer_data.dep_bot;
+    const topo    = topoCol ? flightlines[topoCol] : null;
+    let yMin = Infinity, yMax = -Infinity;
+    if (dep_top && dep_bot) {
+      for (const j of getKeys(dep_top)) {
+        const topArr = getFrom(dep_top, j);
+        const botArr = getFrom(dep_bot, j);
+        if (!topArr || !botArr) continue;
+        for (let i = 0; i < nS; i++) {
+          const t   = topo ? Number(topo[i]) : 0;
+          const top = t - Number(topArr[i]);
+          const bot = t - Number(botArr[i]);
+          if (isFinite(top)) { yMin = Math.min(yMin, top); yMax = Math.max(yMax, top); }
+          if (isFinite(bot)) { yMin = Math.min(yMin, bot); yMax = Math.max(yMax, bot); }
+        }
+      }
+    }
+    if (!isFinite(yMin)) yMin = 0;
+    if (!isFinite(yMax)) yMax = 100;
+
+    const z = new Float32Array([0, 0]);
+    results.push({
+      attributes: {
+        x: z, y: new Float32Array([yMin, yMax]), r: z, g: z, b: z, isMarker: new Float32Array([1, 1]),
+      },
+      uniforms:  { ...markerUniforms },
+      primitive: 'line strip',
+    });
 
     return results;
   },

@@ -3,7 +3,7 @@ import { resolveDataPath, getFrom, getKeys, toFloat32Array } from '../colorUtils
 import { globalSoundingIndex, soundingState } from '../inUseEdits.js';
 import { selectSoundingOnClick } from '../soundingMatch.js';
 import {
-  currentSoundingMarkerTile, showCurrentSoundingSchema,
+  markerLineTile, markerXUniforms, currentSoundingSchema, showCurrentSoundingSchema,
   MARKER_VERT_IN, MARKER_VERT_BRANCH, MARKER_FRAG_IN, MARKER_FRAG_BRANCH,
 } from './soundingLineMarker.js';
 
@@ -95,6 +95,7 @@ registerLayerType('ChannelPlot', new LayerType({
       xAxis: { type: 'string', enum: X_AXES, default: 'xaxis_bottom' },
       yAxis: { type: 'string', enum: Y_AXES, default: 'yaxis_left' },
       showCurrentSounding: showCurrentSoundingSchema,
+      currentSounding: currentSoundingSchema,
     },
     required: ['dataset', 'channel'],
   }),
@@ -169,20 +170,19 @@ registerLayerType('ChannelPlot', new LayerType({
       allIsMarker.push(new Float32Array(nSegs * 2));   // 0 for every data vertex
     }
 
-    // Current-sounding marker as an extra 2-vertex tile (vertical line), in the same layer.
-    const marker = currentSoundingMarkerTile(parameters, rawData, xdist,
+    // Always-present current-sounding marker as an extra 2-vertex tile (vertical line), in the
+    // same layer. Its position/visibility come from the u_marker* uniforms (fast path).
+    const marker = markerLineTile(
       { gate_index: new Float32Array([0, 0]), inuse_state: new Float32Array([0, 0]) });
-    if (marker) {
-      allXs.push(marker.x);
-      allYs.push(marker.y);
-      allGateIdxs.push(marker.gate_index);
-      allInuseStates.push(marker.inuse_state);
-      allIsMarker.push(marker.isMarker);
-    }
+    allXs.push(marker.x);
+    allYs.push(marker.y);
+    allGateIdxs.push(marker.gate_index);
+    allInuseStates.push(marker.inuse_state);
+    allIsMarker.push(marker.isMarker);
 
     return [{
       attributes: { x: allXs, y: allYs, gate_index: allGateIdxs, inuse_state: allInuseStates, isMarker: allIsMarker },
-      uniforms: { bad_color: badColor },
+      uniforms: { bad_color: badColor, ...markerXUniforms(parameters, xdist) },
       domains: { gate_index: [0, gateIndices.length - 1] },
       primitive: 'lines',
       lineWidth: 1,

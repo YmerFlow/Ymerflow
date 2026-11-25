@@ -466,6 +466,11 @@ export function ProcessProvider({ children }) {
   const [fetchedData, setFetchedData] = useState(INITIAL_FETCHED_DATA);
   const [dataLoading, setDataLoading] = useState(false);
 
+  // Memoize the dataset collection against datasetObjects alone, so it keeps a stable identity
+  // across unrelated context changes (e.g. a current-sounding change). PlotView's rebuild effect
+  // depends on this reference; a fresh object every render would defeat the sounding fast path.
+  const datasetCollection = useMemo(() => new DatasetCollectionAdapter(datasetObjects), [datasetObjects]);
+
   // Load dataset objects when datasets change
   useEffect(() => {
     const loadDatasets = async () => {
@@ -565,7 +570,7 @@ export function ProcessProvider({ children }) {
       environmentsLoading,
       datasets,
       datasetObjects,
-      datasetCollection: new DatasetCollectionAdapter(datasetObjects),
+      datasetCollection,
       datasetsLoading: datasetsLoading || datasetsQueryLoading || (!!activeProcess && isLoading) || (datasets.length > 0 && Object.keys(datasetObjects).length === 0),
       fetchedData,
       dataLoading,
@@ -613,6 +618,7 @@ export function ProcessProvider({ children }) {
       environmentsLoading,
       datasets,
       datasetObjects,
+      datasetCollection,
       datasetsLoading,
       datasetsQueryLoading,
       fetchedData,

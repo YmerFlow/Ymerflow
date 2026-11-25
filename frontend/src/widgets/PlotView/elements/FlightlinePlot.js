@@ -1,7 +1,7 @@
 import { LayerType, registerLayerType, AXIS_GEOMETRY, resolveQuantityKind } from 'gladly-plot';
 import { parseColor, fillColorArrays, toFloat32Array, resolveDataPath } from '../colorUtils.js';
-import { selectSoundingOnClick, soundingIndex } from '../soundingMatch.js';
-import { showCurrentSoundingSchema } from './soundingLineMarker.js';
+import { selectSoundingOnClick } from '../soundingMatch.js';
+import { markerXYUniforms, currentSoundingSchema, showCurrentSoundingSchema } from './soundingLineMarker.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -40,14 +40,22 @@ const RGB_VERT = `#version 300 es
   precision mediump float;
   in float x, y, r, g, b, isMarker;
   uniform float pointSize;
+  uniform float u_markerX, u_markerY, u_markerVisible;
   out vec3 vColor;
   out float vMarker;
   void main() {
-    gl_Position = plot_pos(vec2(x, y));
-    // The current-sounding marker is the same point, drawn larger (and red, in the frag).
-    gl_PointSize = isMarker > 0.5 ? pointSize + 8.0 : pointSize;
-    vColor = vec3(r, g, b);
     vMarker = isMarker;
+    vColor = vec3(r, g, b);
+    // The always-present current-sounding marker is an extra point at (u_markerX, u_markerY),
+    // drawn larger (and red, in the frag). Offscreen when hidden.
+    if (isMarker > 0.5) {
+      if (u_markerVisible < 0.5) { gl_Position = vec4(2.0, 0.0, 0.0, 1.0); gl_PointSize = 0.0; return; }
+      gl_Position = plot_pos(vec2(u_markerX, u_markerY));
+      gl_PointSize = pointSize + 8.0;
+      return;
+    }
+    gl_Position = plot_pos(vec2(x, y));
+    gl_PointSize = pointSize;
   }
 `;
 
@@ -88,6 +96,7 @@ const flightlinePlot = new LayerType({
       xAxis:    { type: 'string', enum: X_AXES, default: 'xaxis_bottom' },
       yAxis:    { type: 'string', enum: Y_AXES, default: 'yaxis_left'   },
       showCurrentSounding: showCurrentSoundingSchema,
+      currentSounding: currentSoundingSchema,
     },
     required: ['dataset'],
   }),
@@ -113,6 +122,9 @@ const flightlinePlot = new LayerType({
     const attribs  = { x, y, r, g, b, isMarker: noMarker };
     const mode     = parameters.mode || 'markers';
     const results  = [];
+    // Position/visibility of the marker point come from these uniforms (fast path); both passes
+    // bind them (the shader declares them unconditionally).
+    const markerUniforms = markerXYUniforms(parameters, x, y);
 
     const xDom = finiteExtent(x);
     const yDom = finiteExtent(y);
@@ -120,16 +132,14 @@ const flightlinePlot = new LayerType({
     if (xDom) domains[xQK] = xDom;
     if (yDom) domains[yQK] = yDom;
 
-    // The current-sounding marker is an extra highlighted point at that sounding's position,
-    // appended to the points pass only (a line pass would draw a stray segment to it).
-    const cs = parameters.showCurrentSounding === false ? null : soundingIndex(rawData);
+    // The always-present current-sounding marker is an extra highlighted point, appended to the
+    // points pass only (a line pass would draw a stray segment to it); its position is supplied
+    // by u_markerX/u_markerY, so the appended point here is a placeholder.
     const grow = (arr, v) => { const o = new Float32Array(arr.length + 1); o.set(arr); o[arr.length] = v; return o; };
-    const pointAttribs = (cs != null && cs >= 0 && cs < n && Number.isFinite(x[cs]) && Number.isFinite(y[cs]))
-      ? { x: grow(x, x[cs]), y: grow(y, y[cs]), r: grow(r, 0), g: grow(g, 0), b: grow(b, 0), isMarker: grow(noMarker, 1) }
-      : attribs;
+    const pointAttribs = { x: grow(x, 0), y: grow(y, 0), r: grow(r, 0), g: grow(g, 0), b: grow(b, 0), isMarker: grow(noMarker, 1) };
 
-    if (mode.includes('markers')) results.push({ attributes: pointAttribs, uniforms: { pointSize: 3.0 }, primitive: 'points',     domains });
-    if (mode.includes('lines'))   results.push({ attributes: attribs,      uniforms: { pointSize: 1.0 }, primitive: 'line strip', domains });
+    if (mode.includes('markers')) results.push({ attributes: pointAttribs, uniforms: { pointSize: 3.0, ...markerUniforms }, primitive: 'points',     domains });
+    if (mode.includes('lines'))   results.push({ attributes: attribs,      uniforms: { pointSize: 1.0, ...markerUniforms }, primitive: 'line strip', domains });
     return results;
   },
 });

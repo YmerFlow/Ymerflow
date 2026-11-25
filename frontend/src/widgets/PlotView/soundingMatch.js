@@ -1,16 +1,37 @@
-// Reading and setting the selected sounding for a plot layer. The selection
-// (_currentSounding) is a plain row index into the current line of the current dataset — a
-// pure index, nothing more. A layer indexes its own dataset at that same row.
+// Reading and setting the selected sounding for a plot layer. The selection is a plain row
+// index into the current line of the current dataset — a pure index, nothing more. A layer
+// indexes its own dataset at that same row.
 //
 // Translating a sounding between datasets of different processing stages (pinned datasets,
 // averaged/culled rows) is deliberately NOT done here — that is a deferred problem with real
 // wrinkles, and when it is solved it will route via xdist (distance along line), never via
 // row number or any synthetic id.
+import { getLayerType } from 'gladly-plot';
 import { resolveDataPath } from './colorUtils.js';
 
-// The selected sounding as a row index into the current dataset. A pure index.
-export function soundingIndex(rawData) {
-  return rawData?._currentSounding;
+// The current sounding is a layer *parameter* (config, not data) so gladly can fast-path a
+// selection change as a uniform update — no plot rebuild. A layer opts in by exposing one
+// schema property carrying x-format:'currentSounding' (discovery) + x-uniform:true (fast path);
+// PlotView injects the value into that property before plot.update() and strips it everywhere
+// else. createLayer reads it with soundingParam(parameters); the uniform closures read
+// parameters.currentSounding live on every draw.
+
+// The property name a layer type uses for the current sounding (the one carrying
+// x-format:'currentSounding'), or null if the layer type does not opt in. Discovery is by
+// x-format, not by name, though the name is conventionally 'currentSounding'.
+export function soundingParamName(typeName, data) {
+  const type = getLayerType(typeName);
+  const props = type?.schema?.(data)?.properties ?? {};
+  for (const [name, def] of Object.entries(props)) {
+    if (def && def['x-format'] === 'currentSounding') return name;
+  }
+  return null;
+}
+
+// The selected sounding row index read from a layer's parameters, or null when unset.
+export function soundingParam(parameters) {
+  const v = parameters?.currentSounding;
+  return v == null ? null : v;
 }
 
 // Nearest flightlines row to an xdist value; null if none/invalid.

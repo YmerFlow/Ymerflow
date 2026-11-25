@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { nearestSoundingByXdist, selectSoundingOnClick, soundingIndex } from './soundingMatch';
+import { nearestSoundingByXdist, selectSoundingOnClick, soundingParam } from './soundingMatch';
 
-describe('soundingIndex', () => {
-  it('returns the selected row index, unchanged', () => {
-    expect(soundingIndex({ _currentSounding: 7 })).toBe(7);
-    expect(soundingIndex({ _currentSounding: 0 })).toBe(0);
+describe('soundingParam', () => {
+  it('reads the selected row index from a layer parameters object', () => {
+    expect(soundingParam({ currentSounding: 7 })).toBe(7);
+    expect(soundingParam({ currentSounding: 0 })).toBe(0);
   });
 
-  it('returns null/undefined when there is no selection', () => {
-    expect(soundingIndex({ _currentSounding: null })).toBeNull();
-    expect(soundingIndex({})).toBeUndefined();
-    expect(soundingIndex(undefined)).toBeUndefined();
+  it('returns null when unset', () => {
+    expect(soundingParam({ currentSounding: null })).toBeNull();
+    expect(soundingParam({})).toBeNull();
+    expect(soundingParam(undefined)).toBeNull();
   });
 });
 

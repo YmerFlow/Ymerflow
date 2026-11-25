@@ -5,7 +5,7 @@ import { PlotGroupContext } from '../../PlotGroupContext';
 import { registerQuantityKinds } from './quantityKinds';
 import { encodeSeg } from '../../datamodel/datasetPath';
 import { getKeys, resolveDataPath } from './colorUtils.js';
-import { nearestSoundingByXdist } from './soundingMatch.js';
+import { nearestSoundingByXdist, soundingParamName } from './soundingMatch.js';
 import { cellEditEntries, segmentEditEntries } from './inUseEdits.js';
 import { addPinnedData, loadPinnedData, pinnedEntries } from './pinnedDatasets.js';
 import { useIsMobile } from '../../hooks/useIsMobile';
@@ -28,6 +28,68 @@ const IN_USE_LAYER_TYPES = ['ChannelPlot', 'GateAnomalyPlot'];
 const DEFAULT_BG = '#f8f9fa';
 const ERROR_BG = '#f8d7da';
 const ERROR_MSG = 'Dataset not compatible with existing layers';
+
+// ─── Current-sounding plumbing (see docs/plans/current-sounding-uniform-fast-path.md) ───
+// The current sounding is a layer *parameter* so gladly can fast-path a selection change as a
+// uniform update (no plot rebuild). It is injected into the config just before plot.update() and
+// stripped everywhere else — never persisted, never shown in the editor. Opted-in layers are
+// discovered by the x-format:'currentSounding' schema property (soundingParamName).
+
+// Set the current sounding on every opted-in layer. A fresh params object per layer is fine: the
+// fast path compares values, then keeps the mutated live object and discards this one.
+function injectSounding(config, data, value) {
+  if (!config?.layers?.length) return config;
+  const layers = config.layers.map(spec => {
+    if (!spec || typeof spec !== 'object') return spec;
+    const entries = Object.entries(spec).filter(([, v]) => v != null);
+    if (entries.length !== 1) return spec;
+    const [typeName, params] = entries[0];
+    const name = soundingParamName(typeName, data);
+    return name ? { [typeName]: { ...params, [name]: value } } : spec;
+  });
+  return { ...config, layers };
+}
+
+// Remove every x-format:'currentSounding' property from every layer (before any persist/compare),
+// so the selection is never saved and a sounding change never triggers a spurious write-back.
+function stripSoundingParam(config, data) {
+  if (!config?.layers?.length) return config;
+  let changed = false;
+  const layers = config.layers.map(spec => {
+    if (!spec || typeof spec !== 'object') return spec;
+    const entries = Object.entries(spec).filter(([, v]) => v != null);
+    if (entries.length !== 1) return spec;
+    const [typeName, params] = entries[0];
+    const name = soundingParamName(typeName, data);
+    if (!name || !params || !(name in params)) return spec;
+    const { [name]: _drop, ...rest } = params;
+    changed = true;
+    return { [typeName]: rest };
+  });
+  return changed ? { ...config, layers } : config;
+}
+
+// Drop every x-format:'currentSounding' property from a generated JSON schema (recursively), so
+// the field never renders in the rjsf editor. showCurrentSounding (x-uniform but no x-format)
+// stays a visible toggle.
+function stripSoundingSchema(schema) {
+  if (!schema || typeof schema !== 'object') return schema;
+  if (Array.isArray(schema)) return schema.map(stripSoundingSchema);
+  const result = {};
+  for (const [k, v] of Object.entries(schema)) {
+    if (k === 'properties' && v && typeof v === 'object' && !Array.isArray(v)) {
+      const props = {};
+      for (const [pk, pv] of Object.entries(v)) {
+        if (pv && typeof pv === 'object' && pv['x-format'] === 'currentSounding') continue;
+        props[pk] = stripSoundingSchema(pv);
+      }
+      result[k] = props;
+    } else {
+      result[k] = stripSoundingSchema(v);
+    }
+  }
+  return result;
+}
 
 // inheritedCompact / inheritedGlobalCompact are flexout header-mode props Pane passes
 // to every widget; PlotView ignores them but must destructure them out so they never
@@ -71,6 +133,15 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
   const lastPropConfigRef     = useRef(null);      // JSON of last prop config passed to plot.update()
   const plotDataRef           = useRef(null);      // latest DataGroup passed to plot.update() (for drop filtering)
   const parentUpdateRef       = useRef(parentUpdate);
+  // Latest current sounding, read by the rebuild effect so a rebuild draws the marker/curve at the
+  // right place without depending on currentSounding (which would make it rebuild on every click).
+  const currentSoundingRef    = useRef(currentSounding);
+  currentSoundingRef.current  = currentSounding;
+  // Stable write wrapper assigned onto the data object, so layer onClick / PlotView's click handler
+  // keep calling plot._rawData._setCurrentSounding(row) through one stable identity.
+  const setCurrentSoundingRef = useRef(setCurrentSounding);
+  useEffect(() => { setCurrentSoundingRef.current = setCurrentSounding; }, [setCurrentSounding]);
+  const setCurrentSoundingStable = useRef(v => setCurrentSoundingRef.current?.(v)).current;
   useEffect(() => { parentUpdateRef.current = parentUpdate; }, [parentUpdate]);
   useEffect(() => { fetchedDataRef.current = fetchedData; }, [fetchedData]);
   useEffect(() => { inUseActionRef.current = inUseAction; }, [inUseAction]);
@@ -95,7 +166,8 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
   saveConfigRef.current = (statusBarOverride) => {
     const plot = plotRef.current;
     if (!plot || !parentUpdateRef.current || !id) return;
-    const fullConfig = { ...plot.getConfig() };
+    // getConfig() carries the injected current sounding; strip it so it is never persisted.
+    const fullConfig = stripSoundingParam({ ...plot.getConfig() }, plot.currentData);
     const sb = statusBarOverride !== undefined ? statusBarOverride : config.statusBar;
     if (sb !== undefined) fullConfig.statusBar = sb;
     const fullConfigJson = JSON.stringify(fullConfig);
@@ -261,7 +333,7 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
       // --- Sounding selection ---
       // A vertex was picked: let the layer type that drew it decide what the click does.
       // onClick gets the same (parameters, plot) createLayer did — plot._rawData carries
-      // the runtime context/actions (_currentSounding, _setCurrentSounding, …) — plus the
+      // the runtime action (_setCurrentSounding) — plus the
       // pick result, whose dataIndex the layer's own pickInfo already resolved to a data
       // row. PlotView holds no per-layer click logic and no coordinate/quantity-kind
       // knowledge; layers with no onClick (e.g. a basemap tile) do nothing.
@@ -405,10 +477,11 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     plotRef.current?.setLassoMode(selectionShape, { bandWidth: selectionBandWidth });
   }, [selectionShape, selectionBandWidth]);
 
-  // Update plot whenever config, data or sounding changes.
-  // _currentSounding is merged into the data object so LayerTypes that need it
-  // (ResistivityCurtain's sounding line, SoundingPlot, ResistivityCurtainLines) can read it, through
-  // soundingIndex() for their own dataset, in their createLayer function.
+  // Rebuild the plot whenever the real data inputs or the config change. The current sounding is
+  // deliberately NOT in this effect's deps: it is a config-only uniform parameter, applied by the
+  // dedicated fast-path effect below with no rebuild. When this effect does run (real data/config
+  // change) it injects the latest sounding (from currentSoundingRef) so the rebuilt layers draw
+  // the marker/curve in the right place. See docs/plans/current-sounding-uniform-fast-path.md.
   useEffect(() => {
     const plot = plotRef.current;
     if (!plot || datasetsLoading || dataLoading) return;
@@ -450,10 +523,10 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     }
     Object.assign(dataForPlot, {
       current: encodedCurrent,
-      _currentSounding: currentSounding,
       _inMemoryDiffs: inMemoryDiffs,
-      // Action a layer's onClick can call to move the selection (mirror of _currentSounding).
-      _setCurrentSounding: setCurrentSounding,
+      // Action a layer's onClick calls to move the selection. The current sounding itself lives in
+      // config (a uniform parameter), not on the data object.
+      _setCurrentSounding: setCurrentSoundingStable,
     });
 
     // Merge lazily loaded non-current datasets for the selected part (see addPinnedData).
@@ -469,9 +542,12 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
     const propConfigChanged = propConfigJson !== lastPropConfigRef.current;
     lastPropConfigRef.current = propConfigJson;
 
-    const configToApply = propConfigChanged
+    const baseConfig = propConfigChanged
       ? sanitizedConfig
       : (plot.getConfig() || sanitizedConfig);
+    // Inject the latest current sounding into the opted-in layers so the rebuilt layers draw it
+    // in the right place; it never touches the data path and is stripped before any persist.
+    const configToApply = injectSounding(baseConfig, dataForPlot, currentSoundingRef.current);
 
     let cancelled = false;
     plot.update({ data: dataForPlot, config: configToApply }).then(() => {
@@ -480,7 +556,8 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
       // axes, colorscales, etc. are visible in the config editor.
       // statusBar is our own layoutConfig field, not part of gladly's config; preserve
       // it across the getConfig() round-trip so toggling it isn't dropped on next update.
-      const fullConfig = { ...plot.getConfig() };
+      // Strip the injected current sounding so the selection is never persisted.
+      const fullConfig = stripSoundingParam({ ...plot.getConfig() }, plot.currentData);
       if (sanitizedConfig.statusBar !== undefined) fullConfig.statusBar = sanitizedConfig.statusBar;
       const fullConfigJson = JSON.stringify(fullConfig);
       if (fullConfigJson !== lastSavedRef.current && parentUpdateRef.current && id) {
@@ -489,7 +566,18 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
       }
     });
     return () => { cancelled = true; };
-  }, [config, fetchedData, datasetCollection, currentSounding, datasetsLoading, dataLoading, lazilyLoadedData, inMemoryDiffs, currentPart]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, fetchedData, datasetCollection, datasetsLoading, dataLoading, lazilyLoadedData, inMemoryDiffs, currentPart]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fast path: a current-sounding change is a config-only uniform update (no data), which gladly
+  // classifies as 'uniforms' and applies in place via LayerHandle.set — no _initialize(), no
+  // geometry rebuild. Guarded until the plot has been built with a config; on mount the initial
+  // sounding is applied by the rebuild effect's first update, so skipping the very first tick here
+  // is harmless and avoids two concurrent update()s in one commit.
+  useEffect(() => {
+    const plot = plotRef.current;
+    if (!plot || !plot.currentConfig?.layers?.length) return;
+    plot.update({ config: injectSounding(plot.getConfig(), plot.currentData, currentSounding) });
+  }, [currentSounding]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div ref={dropRef}
@@ -604,7 +692,8 @@ PlotView.get_schema = (data_context = {}) => {
   const rawGladlySchema = Plot.schema(null, data_context.layoutConfig);
   console.log('[PlotView.get_schema] $defs.expression:', JSON.stringify(rawGladlySchema?.$defs?.expression));
   console.log('[PlotView.get_schema] layers.items sample:', JSON.stringify(rawGladlySchema?.properties?.layers?.items)?.slice(0, 500));
-  const gladlySchema = addConstDefaults(dropEmptyEnums(rawGladlySchema));
+  // Drop x-format:'currentSounding' properties so the runtime-only selection field never renders.
+  const gladlySchema = stripSoundingSchema(addConstDefaults(dropEmptyEnums(rawGladlySchema)));
 
   // Patch the layers items schema in place.
   if (gladlySchema?.properties?.layers?.items) {
