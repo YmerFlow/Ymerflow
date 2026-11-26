@@ -11,10 +11,14 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 // Thin wrapper over the two display modes. The shared tag filter bar + its persistence
 // and the derivation hook live here (both modes consume the same version-selection
 // model); the `Graph` config flag picks the ReactFlow graph (default) or the text forest.
-export default function FlowView({ parentUpdate, selectedFilterTagNames: savedFilterTagNames = [], Graph = true, ...nodeProps }) {
+export default function FlowView({ parentUpdate, selectedFilterTagNames: savedFilterTagNames = [], ...nodeProps }) {
   const isMobile = useIsMobile();
   const { startNewProcess } = useContext(ProcessContext);
   const { findWidgetPaths, activatePath } = useContext(LayoutContext);
+
+  // Config fields other than the tag filter are left inside nodeProps (not destructured
+  // out) so the filter-toggle `replace` below round-trips them untouched. Only read them.
+  const Graph = nodeProps.Graph ?? true;
 
   const selectedFilterTagNames = useMemo(() => new Set(savedFilterTagNames), [savedFilterTagNames]);
   // Stable-by-value key for the active filter — the Set gets a fresh identity every
@@ -37,6 +41,7 @@ export default function FlowView({ parentUpdate, selectedFilterTagNames: savedFi
     const next = new Set(selectedFilterTagNames);
     if (next.has(tagName)) next.delete(tagName);
     else next.add(tagName);
+    // nodeProps still carries Graph (and any other config field), so this round-trips them.
     parentUpdate?.('replace', nodeProps.id, { ...nodeProps, selectedFilterTagNames: [...next] });
   }, [selectedFilterTagNames, parentUpdate, nodeProps]);
 

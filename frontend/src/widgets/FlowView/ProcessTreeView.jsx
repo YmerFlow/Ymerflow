@@ -16,7 +16,7 @@ function TreeNode({ process, pathKey, pathPids, depth, ctx }) {
   const versionObj = process.versions?.find(v => v.version === selectedVersion);
 
   const children = (ctx.downstreamMap[pid] || [])
-    .filter(childId => !pathPids.has(childId))
+    .filter(childId => !pathPids.has(childId) && ctx.isVisible(childId))
     .map(childId => ctx.processesById.get(childId))
     .filter(Boolean);
   const hasChildren = children.length > 0;
@@ -119,13 +119,22 @@ export default function ProcessTreeView({ model }) {
   const {
     processes, activeProcess, setActiveProcess, currentProject,
     selectedVersions, visibleVersionsForProcess, handleVersionChange,
-    downstreamMap, roots, datasetColorById,
+    downstreamMap, roots, datasetColorById, visibleProcessIds,
   } = model;
 
   const [expandedSet, setExpandedSet] = useState(() => new Set());
   const [openPopoverKey, setOpenPopoverKey] = useState(null);
 
   const processesById = useMemo(() => new Map(processes.map(p => [p.id, p])), [processes]);
+
+  // Tag-filter visibility: null means no filter (all visible). A visible node's upstream
+  // ancestors are always in the set (computeVisibleVersions expands toward dependencies),
+  // so filtering roots + children keeps the forest connected within the visible set.
+  const isVisible = useCallback(
+    (id) => visibleProcessIds === null || visibleProcessIds.has(id),
+    [visibleProcessIds]
+  );
+  const visibleRoots = useMemo(() => roots.filter(r => isVisible(r.id)), [roots, isVisible]);
 
   const toggleExpand = useCallback((pathKey) => {
     setExpandedSet(prev => {
@@ -149,19 +158,19 @@ export default function ProcessTreeView({ model }) {
         return;
       }
       (downstreamMap[pid] || []).forEach(childId => {
-        if (pathPids.has(childId)) return;
+        if (pathPids.has(childId) || !isVisible(childId)) return;
         const childKey = `${pathKey}/${childId}`;
         dfs(childId, childKey, new Set([...pathPids, childId]), [...ancestorKeys, pathKey]);
       });
     };
 
-    roots.forEach(r => dfs(r.id, r.id, new Set([r.id]), []));
+    visibleRoots.forEach(r => dfs(r.id, r.id, new Set([r.id]), []));
     return forced;
-  }, [activeProcess, roots, downstreamMap]);
+  }, [activeProcess, visibleRoots, downstreamMap, isVisible]);
 
   const ctx = {
     processesById, downstreamMap, selectedVersions, visibleVersionsForProcess,
-    handleVersionChange, datasetColorById, currentProject,
+    handleVersionChange, datasetColorById, currentProject, isVisible,
     activeProcessId: activeProcess?.processId,
     expandedSet, forcedSet, toggleExpand,
     openPopoverKey, setOpenPopoverKey, setActiveProcess,
@@ -178,10 +187,10 @@ export default function ProcessTreeView({ model }) {
           Loading processes…
         </div>
       )}
-      {roots.length === 0 && !isLoading && (
+      {visibleRoots.length === 0 && !isLoading && (
         <div className="text-muted small" style={{ padding: 8 }}>No processes</div>
       )}
-      {roots.map(root => (
+      {visibleRoots.map(root => (
         <TreeNode
           key={root.id}
           process={root}
