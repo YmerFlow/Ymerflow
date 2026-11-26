@@ -1,5 +1,19 @@
 # Sounding Ensemble (all soundings behind the current one, filtered by xdist)
 
+> **Status: IMPLEMENTED (2026-11-26).** Two corrections were made to the design below after
+> Playwright pixel verification against the real gladly `Plot`:
+> 1. **Not instanced.** The plan's "one instanced draw ... source-over compositing gives
+>    accumulated opacity" is FALSE on this GPU stack: overlapping instances of one instanced draw
+>    do not blend-accumulate (n=1 and n=100 coincident translucent instances give the identical
+>    pixel), so the overlay stayed a uniform faint pink with no heatmap. The ensemble is instead
+>    ONE non-instanced `lines` draw whose vertex buffer concatenates the per-sounding topology,
+>    each vertex tagged with its `soundingIdx` — line primitives within one non-instanced draw DO
+>    accumulate. The built-in `a_pickId` plan is therefore unused.
+> 2. **Absolute `saturationCount`, not `saturationFraction·N`.** Per-pixel overlap does not scale
+>    with the total sounding count, so `K = 0.1·N` made a 9 k-sounding survey fade to uniform faint
+>    pink. The layer parameter is now `saturationCount` (absolute overlap count at which the
+>    overlay saturates to full red; default 25), `a = 1 − (1 − T)^(1/K)`, N-independent.
+>
 > **Status: DRAFT — design settled; ready to finalise once the operator confirms. Do not
 > implement until the plan is committed.**
 >
