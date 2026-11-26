@@ -38,34 +38,39 @@ function buildTopology(nLayers) {
 }
 
 // GPU bake body: `float geomAt(int i)` for one output vertex i. Derives (v, sounding) from i via
-// the shared index map, gathers (layerIdx, isBot) from the uploaded topology, and emits either
-// resistivity_x (uWhich 0, a pure gather — NaN/≤0 rho is culled in the draw shader) or elevation_y
-// (uWhich 1, topo − depth). The halfspace (last layer) is the only non-finite dep_bot, so its
-// "previous finite layer" is always exactly L−1 — one neighbour read, no scan loop.
+// the shared index map, gathers (layerIdx, isBot) from the uploaded topology, and emits one of
+// three columns by uWhich: resistivity_x (0, the sanitised rho gather — NaN/≤0 is culled in the
+// draw shader), elevation_y (1, topo − depth), or the per-vertex xdist/fval (2, a per-sounding
+// gather feeding the ensemble filter). Raw rho/dep are uploaded untouched; `san` maps any
+// non-finite (NaN/Inf) to a canonical NaN here on the GPU, so the CPU marshalling copy does zero
+// processing. The halfspace (last layer) is the only non-finite dep_bot, so its "previous finite
+// layer" is always exactly L−1 — one neighbour read, no scan loop.
 const GEOM_BODY = `
+  float san(float x) { return (isnan(x) || isinf(x)) ? uintBitsToFloat(0x7fc00000u) : x; }
   float geomAt(int i) {
     int v = i - (i / uNVert) * uNVert;          // vertex within the sounding
     int s = i / uNVert;                         // sounding index
+    if (uWhich == 2) return sampleColumn(xdistTex, float(s));   // fval (per-sounding xdist)
     int L = int(sampleColumn(layerIdxTex, float(v)) + 0.5);
     float isBot = sampleColumn(isBotTex, float(v));
     int cell = L + uNLayers * s;                // rho/dep table index (layer-fastest)
-    float rho = sampleColumn(rhoTex, float(cell));
+    float rho = san(sampleColumn(rhoTex, float(cell)));
     if (uWhich == 0) return rho;                // resistivity_x
-    float dtop = sampleColumn(depTopTex, float(cell));
+    float dtop = san(sampleColumn(depTopTex, float(cell)));
     float dep = dtop;
     if (isBot > 0.5) {
-      float dbot = sampleColumn(depBotTex, float(cell));
+      float dbot = san(sampleColumn(depBotTex, float(cell)));
       if (dbot == dbot) {
         dep = dbot;
       } else if (L > 0) {
-        float pb = sampleColumn(depBotTex, float((L - 1) + uNLayers * s));
-        float pt = sampleColumn(depTopTex, float((L - 1) + uNLayers * s));
+        float pb = san(sampleColumn(depBotTex, float((L - 1) + uNLayers * s)));
+        float pt = san(sampleColumn(depTopTex, float((L - 1) + uNLayers * s)));
         dep = dtop + max(1.5 * (pb - pt), 50.0);
       } else {
         dep = dtop + 50.0;
       }
     }
-    return sampleColumn(topoTex, float(s)) - dep;   // elevation_y
+    return san(sampleColumn(topoTex, float(s))) - dep;   // elevation_y
   }`;
 
 // One shader for both sublayers (gladly compiles a single program per layer type); u_ensemble
@@ -77,7 +82,7 @@ const VERT = `#version 300 es
   precision mediump float;
   in float resistivity_x;   // GPU-precomputed x (data space); NaN/≤0 → culled
   in float elevation_y;     // GPU-precomputed y (data space)
-  in float fval;            // per-vertex xdist (the filtered quantity)
+  in float fval;            // GPU-precomputed per-vertex xdist (the filtered quantity)
   uniform float u_ensemble;
   uniform float u_currentSounding;
   uniform float u_nVert;
@@ -170,9 +175,9 @@ registerLayerType('SoundingResistivityPlot', new LayerType({
       .find(col => col && flightlines?.[col] !== undefined);
     const topoArr = topoColName ? flightlines[topoColName] : null;
 
-    // All soundings' tables, row-major layer-fastest: flat[sounding*nLayers + layer]. Non-finite
-    // (NaN/Inf) → NaN so the shader's `== self` test handles both.
-    const san = (v) => (Number.isFinite(v) ? v : NaN);
+    // Marshal the per-layer tables to the GPU — ONE walk each, no processing: row-major
+    // layer-fastest flat[sounding*nLayers + layer]. Validity (NaN/Inf → NaN) is done in the bake
+    // shader (`san`), not here, so this copy is pure layout.
     const rhoFlat = new Float32Array(nLayers * nS);
     const topFlat = new Float32Array(nLayers * nS);
     const botFlat = new Float32Array(nLayers * nS);
@@ -181,51 +186,54 @@ registerLayerType('SoundingResistivityPlot', new LayerType({
       const topArr = getFrom(depTopDict, layerIndices[L]);
       const botArr = getFrom(depBotDict, layerIndices[L]);
       for (let s = 0; s < nS; s++) {
-        rhoFlat[s * nLayers + L] = san(Number(rhoArr?.[s]));
-        topFlat[s * nLayers + L] = san(Number(topArr?.[s]));
-        botFlat[s * nLayers + L] = san(Number(botArr?.[s]));
+        rhoFlat[s * nLayers + L] = Number(rhoArr?.[s]);
+        topFlat[s * nLayers + L] = Number(topArr?.[s]);
+        botFlat[s * nLayers + L] = Number(botArr?.[s]);
       }
     }
 
-    // Domain over all soundings (so the view is stable across selections, not re-fit per click).
-    // Resistivity uses a robust 1–99 percentile window: inversion models carry a few physically
-    // meaningless extremes (e.g. 1e-19, 1e22 Ωm in unconstrained layers) that would otherwise
-    // collapse the log axis and hide every real staircase. Elevation is bounded, so full range.
+    // Per-sounding topo (elevation = topo − depth): ONE walk, used both to upload topo for the bake
+    // AND to set the initial elevation view — its min/max fall out of this same pass, not a second
+    // walk over the model.
     const topoPerS = new Float32Array(nS);
-    if (topoArr) for (let s = 0; s < nS; s++) topoPerS[s] = Number(topoArr[s]) || 0;
-    const rhoVals = [];
-    let yMin = Infinity, yMax = -Infinity;
+    let minTopo = Infinity, maxTopo = -Infinity;
     for (let s = 0; s < nS; s++) {
-      const topo = topoPerS[s];
-      for (let L = 0; L < nLayers; L++) {
-        const r = rhoFlat[s * nLayers + L];
-        const dt = topFlat[s * nLayers + L];
-        let db = botFlat[s * nLayers + L];
-        if (Number.isFinite(r) && r > 0) rhoVals.push(r);
-        if (Number.isFinite(dt)) { const y = topo - dt; if (y < yMin) yMin = y; if (y > yMax) yMax = y; }
-        if (!Number.isFinite(db) && Number.isFinite(dt)) db = dt + 50;
-        if (Number.isFinite(db)) { const y = topo - db; if (y < yMin) yMin = y; if (y > yMax) yMax = y; }
-      }
+      const t = topoArr ? (Number(topoArr[s]) || 0) : 0;
+      topoPerS[s] = t;
+      if (t < minTopo) minTopo = t;
+      if (t > maxTopo) maxTopo = t;
     }
-    if (rhoVals.length === 0) return [];   // nothing finite to draw
-    rhoVals.sort((a, b) => a - b);
-    const pct = (p) => rhoVals[Math.min(rhoVals.length - 1, Math.max(0, Math.floor(p * (rhoVals.length - 1))))];
-    let rMin = pct(0.01), rMax = pct(0.99);
-    if (!(rMax > rMin)) { rMin = rhoVals[0]; rMax = rhoVals[rhoVals.length - 1]; if (!(rMax > rMin)) rMax = rMin * 10; }
-    if (!isFinite(yMin)) { yMin = 0; yMax = 100; }
+    if (!isFinite(minTopo)) { minTopo = 0; maxTopo = 0; }
+
+    // Per-sounding xdist (the filtered quantity) — uploaded to the bake and used for the filter
+    // axis range; never expanded per vertex on the CPU (the bake gathers it, uWhich 2).
+    const fvalPerS = ensembleXdist(flightlines, nS);
+
+    // Axis ranges are only the INITIAL view (the operator zooms from there), so they are NOT
+    // derived by scanning the model. Resistivity is a fixed log window: inversion models carry
+    // physically meaningless 1e±19/1e22 Ωm extremes that a data-driven min/max would collapse the
+    // log axis around. Elevation hangs a fixed depth span below the topography.
+    const DEPTH_SPAN = 600;   // m shown below the lowest topography by default
+    const domains = {
+      resistivity: [1, 5000],
+      elevation_m: [minTopo - DEPTH_SPAN, maxTopo],
+      xdist_m: ensembleXdistDomain(fvalPerS),
+    };
 
     const { layerIdx, isBot } = buildTopology(nLayers);
     const nVert = layerIdx.length;
     const N = nVert * nS;
 
-    // Upload the per-layer tables + topology as packed input textures, then bake the two geometry
-    // columns on the GPU (once). resistivity_x and elevation_y share one (vertex, sounding) index
-    // map, so they are the same length and ordering — each consumed as a per-vertex attribute.
+    // Upload the per-layer tables + topology + xdist as packed input textures, then bake the three
+    // flat columns on the GPU (once): resistivity_x, elevation_y and fval share one (vertex,
+    // sounding) index map, so they are the same length and ordering — each consumed as a per-vertex
+    // attribute.
     const samplers = {
       rhoTex:      new ArrayColumn(rhoFlat).toTexture(regl)[0],
       depTopTex:   new ArrayColumn(topFlat).toTexture(regl)[0],
       depBotTex:   new ArrayColumn(botFlat).toTexture(regl)[0],
       topoTex:     new ArrayColumn(topoPerS).toTexture(regl)[0],
+      xdistTex:    new ArrayColumn(fvalPerS).toTexture(regl)[0],
       layerIdxTex: new ArrayColumn(layerIdx).toTexture(regl)[0],
       isBotTex:    new ArrayColumn(isBot).toTexture(regl)[0],
     };
@@ -234,24 +242,19 @@ registerLayerType('SoundingResistivityPlot', new LayerType({
     ).createColumn(regl, {}, plot);
     const resistivityX = await bakeColumn(0);
     const elevationY   = await bakeColumn(1);
-
-    // Per-vertex xdist (the filtered quantity): expand the per-sounding value over the topology.
-    const fval = ensembleXdist(flightlines, nS);
-    const bigFval = new Float32Array(N);
-    for (let s = 0; s < nS; s++) { const fv = fval[s], base = s * nVert; for (let v = 0; v < nVert; v++) bigFval[base + v] = fv; }
+    const fvalCol      = await bakeColumn(2);
 
     const curRgb = parseColor(parameters.color || '#000000');
     const ensRgb = parseColor(parameters.ensembleColor || DEFAULT_ENSEMBLE_COLOR);
     const alpha  = ensembleAlpha(parameters.saturationCount ?? DEFAULT_SATURATION_COUNT);
     const uCS    = () => { const cs = parameters.currentSounding; return (cs != null && cs >= 0 && cs < nS) ? cs : -1; };
-    const domains = { resistivity: [rMin, rMax], elevation_m: [yMin, yMax], xdist_m: ensembleXdistDomain(fval) };
 
     // Two sublayers sharing the one compiled program over the SAME precomputed columns: the
     // translucent ensemble (all vertices, xdist-culled), then the opaque current sounding on top
     // (same vertices, culled to sounding == u_currentSounding). Both iterate all N vertices; the
     // current draw adds no overdraw, only a vertex-only cull pass.
     const sublayer = (ens) => ({
-      attributes: { resistivity_x: resistivityX, elevation_y: elevationY, fval: bigFval },
+      attributes: { resistivity_x: resistivityX, elevation_y: elevationY, fval: fvalCol },
       uniforms: {
         u_ensemble: () => (ens ? 1 : 0),
         u_currentSounding: uCS,
