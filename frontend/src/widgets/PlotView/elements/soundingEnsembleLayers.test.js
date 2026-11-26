@@ -3,6 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 // The layers are built without WebGL: the mocked LayerType only keeps the layer's config, and
 // createLayer returns the raw sublayer configs (not gladly Layer instances). ArrayColumn is a
 // thin carrier of the flat data + shape.
+//
+// NOTE: SoundingResistivityPlot is no longer covered here. It now bakes its staircase geometry on
+// the GPU inside createLayer (a real regl / WebGL context), so its layer structure can't be built
+// headless — it is validated via the Playwright render run instead (see
+// docs/plans/done/sounding-ensemble-perf-rethink.md). SoundingPlot is unchanged and still builds
+// its geometry on the CPU, so it stays unit-tested.
 vi.mock('gladly-plot', () => {
   const registeredLayerTypes = {};
   class ArrayColumn { constructor(data, opts) { this.data = data; this.shape = opts?.shape; } }
@@ -15,54 +21,10 @@ vi.mock('gladly-plot', () => {
   };
 });
 import { registeredLayerTypes } from 'gladly-plot';
-import './SoundingResistivityPlot.js';
 import './SoundingPlot.js';
 
 const build = (name, params, raw) =>
   registeredLayerTypes[name].createLayer(null, params, { current: raw }, { _rawData: { current: raw } });
-
-describe('SoundingResistivityPlot ensemble + current', () => {
-  // 2 layers, 3 soundings; xdist 0/10/20, flat topo 100.
-  const raw = {
-    flightlines: { xdist: Float32Array.from([0, 10, 20]), topo: Float32Array.from([100, 100, 100]) },
-    layer_data: {
-      rho:     new Map([[0, [10, 20, 30]], [1, [40, 50, 60]]]),
-      dep_top: new Map([[0, [0, 0, 0]],    [1, [5, 5, 5]]]),
-      dep_bot: new Map([[0, [5, 5, 5]],    [1, [15, 15, 15]]]),
-    },
-  };
-  const layers = build('SoundingResistivityPlot', { dataset: 'current' }, raw);
-
-  it('returns the ensemble then the current sounding (current on top)', () => {
-    expect(layers.length).toBe(2);
-    expect(layers[0].uniforms.u_ensemble()).toBe(1);   // ensemble first
-    expect(layers[1].uniforms.u_ensemble()).toBe(0);   // current on top
-  });
-
-  it('draws the ensemble as one non-instanced buffer of the topology per sounding', () => {
-    // nVert = buildTopology(2): 2·2 verticals + (2−1)·2 connectors = 6; concatenated over 3 soundings.
-    expect(layers[0].instanceCount).toBeUndefined();
-    expect(layers[0].vertexCount).toBe(18);
-    expect(layers[1].vertexCount).toBe(6);             // current sounding: one copy of the topology
-  });
-
-  it('tags each ensemble vertex with its sounding / topo / xdist (per-vertex, no divisor)', () => {
-    expect(layers[0].attributeDivisors).toBeUndefined();
-    expect(Array.from(layers[0].attributes.soundingIdx))
-      .toEqual([0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2]);
-    expect(Array.from(layers[0].attributes.topo)).toEqual(new Array(18).fill(100));
-    expect(Array.from(layers[0].attributes.fval))
-      .toEqual([0, 0, 0, 0, 0, 0, 10, 10, 10, 10, 10, 10, 20, 20, 20, 20, 20, 20]);
-    expect(layers[0].domains.xdist_m).toEqual([0, 20]);
-    // Current sounding ignores these per-vertex attrs (uses u_topo / u_currentSounding, unfiltered).
-    expect(layers[1].attributes.soundingIdx.length).toBe(6);
-  });
-
-  it('shares the nD data tables between both sublayers and sets a blend', () => {
-    expect(layers[0].attributes.rho).toBe(layers[1].attributes.rho);
-    expect(layers[0].blend).toBeTruthy();
-  });
-});
 
 describe('SoundingPlot ensemble + current', () => {
   const raw = {
