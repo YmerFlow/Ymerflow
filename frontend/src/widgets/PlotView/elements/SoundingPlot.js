@@ -5,6 +5,7 @@ import {
   saturationCountSchema, ensembleColorSchema, DEFAULT_ENSEMBLE_COLOR, DEFAULT_SATURATION_COUNT,
   ensembleAlpha, ensembleXdist, ensembleXdistDomain, ENSEMBLE_BLEND, ENSEMBLE_FILTER_SNIPPET,
 } from './soundingEnsemble.js';
+import { RenderedColumn, renderPackedColumn } from './soundingGeomColumn.js';
 
 const X_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'x');
 const Y_AXES = Object.keys(AXIS_GEOMETRY).filter(a => AXIS_GEOMETRY[a].dir === 'y');
@@ -39,14 +40,17 @@ const VERT = `#version 300 es
   uniform float u_alpha;
   uniform vec3 u_color;
   out vec4 vColor;
+  // Map any non-finite (NaN/Inf) to a canonical NaN, so the raw uploaded gate values can be
+  // abs'd + validity-culled here on the GPU (the CPU marshalling is a pure layout copy).
+  float san(float x) { return (isnan(x) || isinf(x)) ? uintBitsToFloat(0x7fc00000u) : x; }
   // sample_vals(ivec2) + filter_(float) injected by createDrawCommand.
   void main() {
     bool ens = u_ensemble > 0.5;
     if (ens) { ${ENSEMBLE_FILTER_SNIPPET} }
     int cs = ens ? int(soundingIdx) : int(u_currentSounding);
     if (cs < 0) { gl_Position = vec4(2.0, 0.0, 0.0, 1.0); return; }
-    float v = sample_vals(ivec2(int(gateVertex), cs));
-    if (v != v) { gl_Position = vec4(2.0, 0.0, 0.0, 1.0); return; }   // NaN gate → offscreen
+    float v = san(abs(sample_vals(ivec2(int(gateVertex), cs))));
+    if (v != v || v <= 0.0) { gl_Position = vec4(2.0, 0.0, 0.0, 1.0); return; }   // NaN/≤0 gate → offscreen
     gl_Position = plot_pos(vec2(x, v));
     gl_PointSize = pointSize;
     vColor = ens ? vec4(u_color, u_alpha) : vec4(u_color, 1.0);
@@ -61,6 +65,23 @@ const FRAG = `#version 300 es
   in vec4 vColor;
   void main() { fragColor = gladly_apply_color(vColor); }
 `;
+
+// GPU bake body (mirrors SoundingResistivityPlot's GEOM_BODY): `float geomAt(int i)` for one output
+// vertex of the ensemble. The gate-pair line topology (segment g: gate g → gate g+1) is expanded
+// per sounding into a flat column of length bigN = nS·nSeg·2, selected by uWhich — x (0, gathered
+// from the [nGates] gate-time column), gateVertex (1, the gate index), soundingIdx (2) and fval
+// (3, gathered from the [nS] per-sounding xdist column). Pure index-math + gather; the only
+// per-vertex computation (abs + validity) lives in the draw shader.
+const GEOM_BODY = `
+  float geomAt(int i) {
+    int vps = i - (i / uNSeg2) * uNSeg2;   // vertex within the sounding
+    int s   = i / uNSeg2;                  // sounding index
+    if (uWhich == 3) return sampleColumn(fvalTex, float(s));                    // fval
+    int g = vps / 2 + (vps - (vps / 2) * 2);                                    // gate index (pair topology)
+    if (uWhich == 1) return float(g);                                           // gateVertex
+    if (uWhich == 2) return float(s);                                           // soundingIdx
+    return sampleColumn(gateXTex, float(g));                                    // x (uWhich 0)
+  }`;
 
 registerLayerType('SoundingPlot', new LayerType({
   name: 'SoundingPlot',
@@ -94,7 +115,7 @@ registerLayerType('SoundingPlot', new LayerType({
     required: ['dataset', 'channel'],
   }),
 
-  createLayer: function(regl, parameters, data, plot) {
+  createLayer: async function(regl, parameters, data, plot) {
     const rawData     = plot?._rawData ?? data;
     const dataset     = resolveDataPath(rawData, parameters.dataset);
     const flightlines = dataset?.flightlines;
@@ -124,24 +145,13 @@ registerLayerType('SoundingPlot', new LayerType({
     const gateX = new Float32Array(nGates);
     for (let g = 0; g < nGates; g++) gateX[g] = Math.abs(gateTimeArray[g][0]);
 
-    // All soundings' gate values as an nD column, row-major gate-fastest: flat[sounding*nGates + gate].
+    // All soundings' RAW gate values as an nD column, row-major gate-fastest: flat[sounding*nGates
+    // + gate]. A pure layout copy with no processing — abs + validity culling is done in the draw
+    // shader (san + v <= 0.0 cull), matching SoundingResistivityPlot's rhoFlat marshalling.
     const vals = new Float32Array(nGates * nS);
-    let yMin = Infinity, yMax = -Infinity;
     for (let g = 0; g < nGates; g++) {
       const gateData = getFrom(yDataDict, gateIndices[g]);
-      for (let s = 0; s < nS; s++) {
-        const absY = Math.abs(Number(gateData?.[s]));
-        const v = (absY > 0 && isFinite(absY)) ? absY : NaN;
-        vals[s * nGates + g] = v;
-        if (Number.isFinite(v)) { if (v < yMin) yMin = v; if (v > yMax) yMax = v; }
-      }
-    }
-    if (!isFinite(yMin)) return [];   // no finite value anywhere
-
-    let xMin = Infinity, xMax = -Infinity;
-    for (let g = 0; g < nGates; g++) {
-      const v = gateX[g];
-      if (Number.isFinite(v)) { if (v < xMin) xMin = v; if (v > xMax) xMax = v; }
+      for (let s = 0; s < nS; s++) vals[s * nGates + g] = Number(gateData?.[s]);
     }
 
     const valsCol = new ArrayColumn(vals, { shape: [nGates, nS] });
@@ -150,7 +160,16 @@ registerLayerType('SoundingPlot', new LayerType({
     const alpha   = ensembleAlpha(parameters.saturationCount ?? DEFAULT_SATURATION_COUNT);
     const uCS     = () => { const cs = parameters.currentSounding; return (cs != null && cs >= 0 && cs < nS) ? cs : -1; };
     const fval    = ensembleXdist(flightlines, nS);
-    const domains = { time_s: [xMin, xMax], dbdt_abs_pT: [yMin, yMax], xdist_m: ensembleXdistDomain(fval) };
+
+    // Axis ranges are only the INITIAL view (the operator zooms from there), so they are fixed log
+    // windows rather than model scans. The uploaded `vals` are the raw layer_data numbers (no unit
+    // conversion — the dbdt_abs_pT label is nominal), whose magnitudes sit at ~1e-16…1e-7, so the
+    // y window is in native units, NOT picotesla. See docs/plans/sounding-ensemble-gpu-columns.md.
+    const domains = {
+      time_s:      [1e-7, 1e-1],
+      dbdt_abs_pT: [1e-17, 1e-5],
+      xdist_m:     ensembleXdistDomain(fval),
+    };
 
     // Line segments as 'lines' pairs (gate g → gate g+1): a NaN endpoint hides only its segments.
     const nSeg = nGates - 1;
@@ -165,29 +184,36 @@ registerLayerType('SoundingPlot', new LayerType({
     const dotG = new Float32Array(nGates);
     for (let g = 0; g < nGates; g++) dotG[g] = g;
 
-    // Ensemble: the gate-pair line geometry concatenated once per sounding into ONE big vertex
-    // buffer (NOT instanced — see the shader comment; instanced draws don't blend-accumulate, so
-    // they can't form the heatmap). Each vertex carries its sounding index and xdist.
-    const bigN  = nS * nSeg * 2;
-    const bigX  = new Float32Array(bigN);
-    const bigG  = new Float32Array(bigN);
-    const bigS  = new Float32Array(bigN);
-    const bigF  = new Float32Array(bigN);
-    for (let s = 0; s < nS; s++) {
-      const base = s * nSeg * 2, fv = fval[s];
-      for (let k = 0; k < nSeg * 2; k++) {
-        bigX[base + k] = lineX[k];
-        bigG[base + k] = lineG[k];
-        bigS[base + k] = s;
-        bigF[base + k] = fv;
-      }
+    // Ensemble: the gate-pair line geometry expanded once per sounding into ONE big vertex buffer
+    // (NOT instanced — see the shader comment; instanced draws don't blend-accumulate, so they
+    // can't form the heatmap). The four per-vertex columns (x, gateVertex, soundingIdx, fval) are
+    // baked on the GPU via renderPackedColumn over a shared (gate-vertex, sounding) index map,
+    // mirroring SoundingResistivityPlot — no CPU model-sized walk. Each vertex carries its sounding
+    // index and that sounding's xdist (the filtered quantity).
+    const nSeg2 = nSeg * 2;
+    const bigN  = nS * nSeg2;
+    let bigXCol, bigGCol, bigSCol, bigFCol;
+    if (bigN > 0) {
+      const samplers = {
+        gateXTex: new ArrayColumn(gateX).toTexture(regl)[0],   // [nGates] abs gate time
+        fvalTex:  new ArrayColumn(fval).toTexture(regl)[0],    // [nS] per-sounding xdist
+      };
+      const bakeColumn = (which) => new RenderedColumn(
+        (rg) => renderPackedColumn(rg, bigN, samplers, { uNSeg2: nSeg2, uWhich: which }, GEOM_BODY)
+      ).createColumn(regl, {}, plot);
+      bigXCol = await bakeColumn(0);
+      bigGCol = await bakeColumn(1);
+      bigSCol = await bakeColumn(2);
+      bigFCol = await bakeColumn(3);
     }
     const dummyLine = new Float32Array(nSeg * 2);
     const dummyDot  = new Float32Array(nGates);
 
-    // Sublayers share one compiled draw command (identical source), so every per-sublayer-varying
-    // uniform MUST be a function (a regl prop passed per draw) — a static value would bake from the
-    // first sublayer and be wrongly reused.
+    // gladly caches a compiled program per (vert+frag) source: the ensemble (column-sourced
+    // attributes) and the current/dot sublayers (buffer-sourced, identical source to each other)
+    // compile to two programs. Within each shared program every per-sublayer-varying uniform MUST
+    // be a function (a regl prop passed per draw) — a static value would bake from the first
+    // sublayer and be wrongly reused.
     const uniforms = (ensemble) => ({
       pointSize: () => 1.0,
       u_ensemble: () => (ensemble ? 1 : 0),
@@ -202,7 +228,7 @@ registerLayerType('SoundingPlot', new LayerType({
     // from the pre-ensemble behaviour.
     const results = [];
     if (bigN > 0) results.push({
-      attributes: { x: bigX, gateVertex: bigG, soundingIdx: bigS, fval: bigF, vals: valsCol },
+      attributes: { x: bigXCol, gateVertex: bigGCol, soundingIdx: bigSCol, fval: bigFCol, vals: valsCol },
       uniforms: uniforms(true), domains, primitive: 'lines', vertexCount: bigN, blend: ENSEMBLE_BLEND,
     });
     if (nSeg > 0) results.push({
