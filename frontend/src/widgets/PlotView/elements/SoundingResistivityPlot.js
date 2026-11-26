@@ -37,20 +37,19 @@ function buildTopology(nLayers) {
   return { layerIdx, isBot };
 }
 
-// The halfspace (deepest finite layer with a non-finite dep_bot) is extended by
-// max(1.5·prevThickness, 50) via a backward scan for the previous finite layer, reproducing the
-// old CPU extension. Shared by both the current and the ensemble vert.
+// Only the last layer (the halfspace) can ever have a non-finite dep_bot; all other layers are
+// always finite. So the "previous finite layer" is always just L-1 — no scan needed. The halfspace
+// is extended by max(1.5·prevThickness, 50), reproducing the old CPU extension. Shared by both the
+// current and the ensemble vert.
 const DEP_BOT_EFF_GLSL = `
   float depBotEff(int L, int cs) {
     float dbot = sample_dep_bot(ivec2(L, cs));
     if (dbot == dbot) return dbot;                       // finite
     float dtopL = sample_dep_top(ivec2(L, cs));
-    for (int k = 1; k < 256; k++) {
-      int P = L - k;
-      if (P < 0) break;
-      float pb = sample_dep_bot(ivec2(P, cs));
-      float pt = sample_dep_top(ivec2(P, cs));
-      if (pb == pb && pt == pt) return dtopL + max(1.5 * (pb - pt), 50.0);
+    if (L > 0) {
+      float pb = sample_dep_bot(ivec2(L - 1, cs));
+      float pt = sample_dep_top(ivec2(L - 1, cs));
+      return dtopL + max(1.5 * (pb - pt), 50.0);
     }
     return dtopL + 50.0;
   }
