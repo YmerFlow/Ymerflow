@@ -1,4 +1,4 @@
-import React, { createContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useState, useCallback, useMemo, useRef } from 'react';
 import Split from "./components/Split";
 import TabSet from "./components/TabSet";
 import Grid from "./components/Grid";
@@ -33,13 +33,27 @@ export const builtinWidgets = {
   Empty: Empty
 };
     
-export const LayoutProvider = ({ children, widgets, initial_layout, data_context }) => {
+export const LayoutProvider = ({ children, widgets, initial_layout, data_context, converters = [] }) => {
   const [layout, setLayout] = useState(
     initial_layout
       || {
         id: 'root',
         widget: 'Empty'
       });
+
+  // Transient, memory-only store of the original drop ({ item, dragType, offset })
+  // for a node produced by a converter, keyed by the new node's id. A useRef(Map)
+  // (not state) so writing never re-renders; entries are consumed once on mount
+  // (useSimulatedDrop) and are gone on reload — never serialized into any node.
+  const simulatedDrops = useRef(new Map());
+  const setSimulatedDrop = useCallback((id, drop) => {
+    simulatedDrops.current.set(id, drop);
+  }, []);
+  const takeSimulatedDrop = useCallback((id) => {
+    const d = simulatedDrops.current.get(id);
+    simulatedDrops.current.delete(id);  // consume-once
+    return d;
+  }, []);
 
   const updateLayout = useCallback((newLayout) => {
     console.log(newLayout);
@@ -66,8 +80,11 @@ export const LayoutProvider = ({ children, widgets, initial_layout, data_context
       data_context: data_context || {},
       findWidgetPaths: (widgetType) => findWidgetPaths(layout, widgetType),
       activatePath,
+      converters,
+      setSimulatedDrop,
+      takeSimulatedDrop,
     }),
-    [allWidgets, layout, updateLayout, data_context, activatePath]
+    [allWidgets, layout, updateLayout, data_context, activatePath, converters, setSimulatedDrop, takeSimulatedDrop]
   );
 
   return (

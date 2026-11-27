@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useEffect, useState, useContext, useMemo } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './datamodel/queryClient';
@@ -47,6 +47,9 @@ import { buildDatasetRegistry } from './datamodel/datasetRegistry';
 import { buildLayerTypeRegistry, buildQuantityKindRegistry } from './plugins/registries';
 import { loadPlugins } from './plugins/loadPlugin';
 import { API, getPublicationInfo } from './datamodel/api';
+import { DATASET_DRAG_TYPE } from './dnd/datasetDnd';
+import { useDatasetLookup } from './dnd/useDroppedDataset';
+import { compatibleLayerTypes } from './widgets/PlotView/datasetDrop';
 
 // Expose API URL for plugins that need to call the backend
 if (typeof window !== 'undefined') window.__ymerflow_api = API;
@@ -163,10 +166,25 @@ function RequireAdmin({ children }) {
 function AppWithContext({ widgets }) {
   const processContext = useContext(ProcessContext);
   const isMobile = useIsMobile();
+  const { droppedDict } = useDatasetLookup();
+
+  // Converter injected into flexout: a dataset drag onto an Empty pane or the tab
+  // bar becomes a bare PlotView node. The dataset is refused (null → no-drop) when
+  // no layer type accepts it, so no orphan empty plot is created. The layer choice
+  // happens later, in the mounted PlotView via the replayed simulated drop.
+  const converters = useMemo(() => [{
+    accept: DATASET_DRAG_TYPE,
+    convert: (item) => {
+      const dict = droppedDict(item);
+      if (!dict || compatibleLayerTypes(dict, [], null).length === 0) return null;
+      return { widget: 'PlotView', ...PlotView.get_default() };
+    },
+  }], [droppedDict]);
 
   // LayoutProvider starts Empty; WorkspaceLayoutSync fills it in from the URL's workspace.
   return (
-    <LayoutProvider widgets={widgets} initial_layout={{ id: 'root', widget: 'Empty' }} data_context={processContext}>
+    <LayoutProvider widgets={widgets} initial_layout={{ id: 'root', widget: 'Empty' }}
+                    data_context={processContext} converters={converters}>
       <MenuProvider>
         <Routes>
           <Route path="/account/:tab?" element={

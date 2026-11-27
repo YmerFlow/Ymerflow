@@ -1,5 +1,6 @@
-import React, { useContext, useState, useRef, Component, useMemo } from 'react';
+import React, { useContext, useState, useRef, Component, useMemo, useCallback } from 'react';
 import { LayoutContext } from '../LayoutContext';
+import { useConverterDrop } from '../converterDrop';
 import PaneMenuDropdown from './PaneMenuDropdown';
 import PaneMenuContent from './PaneMenuContent';
 import Split from './Split';
@@ -238,6 +239,17 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, inheritedCo
     }
   });
 
+  // Empty-pane converter drop: a non-'pane' drag (e.g. a dataset) is turned into a
+  // layout node by an injected converter and replaces this Empty placeholder. This
+  // is a separate react-dnd target from the 'pane'-move drop above, so they never
+  // conflict. The hook is always called (hooks rules); its ref only attaches on the
+  // Empty branch below.
+  const replaceSelf = useCallback(
+    (newNode) => { parentUpdate ? parentUpdate('replace', node.id, newNode) : updateLayout(newNode); },
+    [parentUpdate, node.id, updateLayout]);
+  const { drop: convDrop, isOver: convOver } = useConverterDrop(replaceSelf);
+  const isEmpty = node.widget === 'Empty';
+
   const style = { opacity: isDragging ? 0.5 : 1 };
 
   const titleText = (node.customTitle !== undefined ? node.customTitle : Widget.title) || '\u00A0';
@@ -326,12 +338,23 @@ export default function Pane({ parentUpdate, onTabMoved, hideHeader, inheritedCo
           </div>
         )}
         <WidgetErrorBoundary widgetName={node.widget} node={node}>
-          <Widget
-            parentUpdate={parentUpdate}
-            {...node}
-            inheritedCompact={compact}
-            inheritedGlobalCompact={globalCompact}
-          />
+          {isEmpty ? (
+            <div ref={convDrop} className={`h-100${convOver ? ' converter-drop-over' : ''}`}>
+              <Widget
+                parentUpdate={parentUpdate}
+                {...node}
+                inheritedCompact={compact}
+                inheritedGlobalCompact={globalCompact}
+              />
+            </div>
+          ) : (
+            <Widget
+              parentUpdate={parentUpdate}
+              {...node}
+              inheritedCompact={compact}
+              inheritedGlobalCompact={globalCompact}
+            />
+          )}
         </WidgetErrorBoundary>
       </div>
 

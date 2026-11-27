@@ -1,5 +1,6 @@
-import React, { useContext, useEffect, useState, useRef, useMemo } from 'react';
+import React, { useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import Pane from './Pane';
+import { useConverterDrop } from '../converterDrop';
 import PaneMenuDropdown from './PaneMenuDropdown';
 import PaneMenuContent from './PaneMenuContent';
 import { useDrag, useDrop } from 'react-dnd';
@@ -228,6 +229,16 @@ export default function TabSet({ parentUpdate, inheritedCompact, inheritedGlobal
     }
   });
 
+  // Converter drop on the trailing '+' area: a non-'pane' drag (e.g. a dataset) is
+  // turned into a layout node by an injected converter and added as a new active
+  // tab, keeping flexout's own id (no re-id, unlike addTab/insertTabAt).
+  const addConvertedTab = useCallback((tabNode) => {
+    parentUpdate('replace', node.id, {
+      ...node, children: [...node.children, tabNode], activeTab: tabNode.id,
+    });
+  }, [parentUpdate, node]);
+  const { drop: convDrop, isOver: convOver } = useConverterDrop(addConvertedTab);
+
   const configWidget = configTab ? (widgets[configTab.widget] || null) : null;
   const configSchema = configWidget?.get_schema ? configWidget.get_schema(data_context) : null;
   const configFormData = useMemo(() => {
@@ -259,7 +270,9 @@ export default function TabSet({ parentUpdate, inheritedCompact, inheritedGlobal
             />
           );
         })}
-        <li className="nav-item">
+        {/* Trailing item grows to fill the empty tab-bar space right of the tabs, so
+            both the '+' button AND that empty area are the converter drop target. */}
+        <li ref={convDrop} className={`nav-item flex-grow-1${convOver ? ' converter-drop-over' : ''}`}>
           <button className="nav-link tab-mini" onClick={() => addTab({ id: uuidv4(), widget: 'Empty' })}>+</button>
         </li>
       </ul>

@@ -115,6 +115,16 @@ $headings-font-weight:   600;   // Semibold headings
   --flexout-drop-indicator: #{$blue-500};
 }
 
+// ── flexout converter drop indicator ─────────────────────────────────────────
+// Highlight for a converter-drop target (Empty pane body, trailing '+' tab area)
+// while a compatible non-'pane' drag (e.g. a dataset) hovers it. Gated on canDrop
+// upstream, so an incompatible drag never toggles this class.
+.converter-drop-over {
+  outline: 2px dashed var(--flexout-drop-indicator, currentColor);
+  outline-offset: -2px;
+  background-color: rgba($blue-500, 0.08);
+}
+
 .pane-header {
   @extend .fs-6;
   font-size: 0.75rem !important;

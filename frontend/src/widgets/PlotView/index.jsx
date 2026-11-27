@@ -11,6 +11,7 @@ import { addPinnedData, loadPinnedData, pinnedEntries } from './pinnedDatasets.j
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useSearchDatasets } from '../../datamodel/useQueries';
 import { useDatasetDrop } from '../../dnd/datasetDnd';
+import { useSimulatedDrop } from '../../flexout/converterDrop';
 import DatasetDropMenu from '../../dnd/DatasetDropMenu';
 import { compatibleLayerTypes, buildLayer } from './datasetDrop.js';
 import './elements/index.js';
@@ -240,6 +241,22 @@ export default function PlotView({ layoutConfig, parentUpdate, id, widget, inher
   }, [allDatasets, activeProcess]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dropRef = useDatasetDrop(handleDatasetDrop);
+
+  // When this PlotView was created by dropping a dataset onto an Empty pane or the
+  // tab bar, flexout stashed the original drop. Receive it on mount and replay it
+  // through the same handleDatasetDrop used for a live drop, so the layer-choice
+  // flow is identical. handleDatasetDrop needs the dataset cache loaded (it resolves
+  // the dict from allDatasets), so hold the drop in a ref and fire it once the cache
+  // is available rather than losing it on an early mount.
+  const simDropRef = useRef(null);
+  useSimulatedDrop(id, (item, _dragType, offset) => { simDropRef.current = { item, offset }; });
+  useEffect(() => {
+    const d = simDropRef.current;
+    if (!d) return;
+    if (!(allDatasets || []).some(x => x.id === d.item.datasetId)) return;  // wait for cache
+    simDropRef.current = null;
+    handleDatasetDrop(d.item, d.offset);
+  }, [allDatasets, handleDatasetDrop]);
 
   const handleDropPick = useCallback((item, path) => {
     appendLayerRef.current(buildLayer(item, path, plotDataRef.current));
