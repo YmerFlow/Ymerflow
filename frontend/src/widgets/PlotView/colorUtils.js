@@ -52,9 +52,9 @@ export function resolveDataPath(obj, path) {
 }
 
 export function toFloat32Array(arr) {
+  // Already the right type → no copy. Otherwise let the Float32Array constructor do the element
+  // conversion natively (typed-array → typed-array is a memcpy+cast; array / array-like coerces
+  // each element via ToNumber) — no per-element JS loop.
   if (arr instanceof Float32Array) return arr;
-  const n = arr.length;
-  const result = new Float32Array(n);
-  for (let i = 0; i < n; i++) result[i] = Number(arr[i]);
-  return result;
+  return new Float32Array(arr);
 }

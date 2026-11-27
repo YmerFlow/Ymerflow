@@ -183,7 +183,7 @@ registerLayerType('ChannelPlot', new LayerType({
     return [{
       attributes: { x: allXs, y: allYs, gate_index: allGateIdxs, inuse_state: allInuseStates, isMarker: allIsMarker },
       uniforms: { bad_color: badColor, ...markerXUniforms(parameters, xdist) },
-      domains: { gate_index: [0, gateIndices.length - 1] },
+      domains: { gate_index: [0, gateIndices.length - 1], dbdt_abs_pT: [1e-12, 1e-6] },
       primitive: 'lines',
       lineWidth: 1,
     }];

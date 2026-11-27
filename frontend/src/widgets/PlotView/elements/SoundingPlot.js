@@ -48,9 +48,19 @@ const VERT = `#version 300 es
     bool ens = u_ensemble > 0.5;
     if (ens) { ${ENSEMBLE_FILTER_SNIPPET} }
     int cs = ens ? int(soundingIdx) : int(u_currentSounding);
-    if (cs < 0) { gl_Position = vec4(2.0, 0.0, 0.0, 1.0); return; }
-    float v = san(abs(sample_vals(ivec2(int(gateVertex), cs))));
-    if (v != v || v <= 0.0) { gl_Position = vec4(2.0, 0.0, 0.0, 1.0); return; }   // NaN/≤0 gate → offscreen
+    // Drop a vertex by giving it a NaN clip position: the GPU discards every primitive that
+    // references it, so an invalid gate removes only the two line segments (and the point)
+    // touching it — WITHOUT leaving a stray segment clipped to the viewport edge. The old
+    // off-screen push (vec4(2,0,0,1)) did exactly that: for a 'lines' pair with one valid and
+    // one invalid endpoint the GPU clipped the segment to the right edge, drawing a NaN-amplitude
+    // gate as a line reaching to "infinite time". vColor is zeroed as a transparent fallback.
+    float discardNaN = uintBitsToFloat(0x7fc00000u);
+    if (cs < 0) { gl_Position = vec4(discardNaN); vColor = vec4(0.0); return; }
+    // vals is a [nS, nGates] column (gate-major: flat = gate*nS + sounding), uploaded straight
+    // from the per-gate source arrays with no CPU transpose. sampleColumnND computes
+    // idx.x + shape.x*idx.y, so (sounding, gate) with shape (nS, nGates) hits gate*nS + sounding.
+    float v = san(abs(sample_vals(ivec2(cs, int(gateVertex)))));
+    if (v != v || v <= 0.0) { gl_Position = vec4(discardNaN); vColor = vec4(0.0); return; }   // NaN/≤0 gate → discard
     gl_Position = plot_pos(vec2(x, v));
     gl_PointSize = pointSize;
     vColor = ens ? vec4(u_color, u_alpha) : vec4(u_color, 1.0);
@@ -145,16 +155,22 @@ registerLayerType('SoundingPlot', new LayerType({
     const gateX = new Float32Array(nGates);
     for (let g = 0; g < nGates; g++) gateX[g] = Math.abs(gateTimeArray[g][0]);
 
-    // All soundings' RAW gate values as an nD column, row-major gate-fastest: flat[sounding*nGates
-    // + gate]. A pure layout copy with no processing — abs + validity culling is done in the draw
-    // shader (san + v <= 0.0 cull), matching SoundingResistivityPlot's rhoFlat marshalling.
+    // All soundings' RAW gate values as a [nS, nGates] nD column, gate-major: flat[gate*nS +
+    // sounding]. The source Gate_Ch* is ALREADY per-gate arrays over soundings, so each gate's
+    // column drops in with a single native typed-array copy — NO per-sounding JS loop (the draw
+    // shader samples it transposed via ivec2(sounding, gate); see the VERT note). abs + validity
+    // culling stay in the shader (san + v <= 0.0). The loop below is over gates only (tens), not
+    // the model.
     const vals = new Float32Array(nGates * nS);
     for (let g = 0; g < nGates; g++) {
       const gateData = getFrom(yDataDict, gateIndices[g]);
-      for (let s = 0; s < nS; s++) vals[s * nGates + g] = Number(gateData?.[s]);
+      if (!gateData) continue;   // missing gate → leaves 0, culled by the shader's v <= 0.0
+      vals.set(gateData.length === nS ? gateData
+             : (gateData.subarray ? gateData.subarray(0, nS) : Array.prototype.slice.call(gateData, 0, nS)),
+             g * nS);
     }
 
-    const valsCol = new ArrayColumn(vals, { shape: [nGates, nS] });
+    const valsCol = new ArrayColumn(vals, { shape: [nS, nGates] });
     const curRgb  = parseColor(parameters.color || '#000000');
     const ensRgb  = parseColor(parameters.ensembleColor || DEFAULT_ENSEMBLE_COLOR);
     const alpha   = ensembleAlpha(parameters.saturationCount ?? DEFAULT_SATURATION_COUNT);
@@ -163,11 +179,11 @@ registerLayerType('SoundingPlot', new LayerType({
 
     // Axis ranges are only the INITIAL view (the operator zooms from there), so they are fixed log
     // windows rather than model scans. The uploaded `vals` are the raw layer_data numbers (no unit
-    // conversion — the dbdt_abs_pT label is nominal), whose magnitudes sit at ~1e-16…1e-7, so the
-    // y window is in native units, NOT picotesla. See docs/plans/sounding-ensemble-gpu-columns.md.
+    // conversion — the dbdt_abs_pT label is nominal), native magnitudes ~1e-12…1e-6.
+    // See docs/plans/sounding-ensemble-gpu-columns.md.
     const domains = {
       time_s:      [1e-7, 1e-1],
-      dbdt_abs_pT: [1e-17, 1e-5],
+      dbdt_abs_pT: [1e-12, 1e-6],
       xdist_m:     ensembleXdistDomain(fval),
     };
 

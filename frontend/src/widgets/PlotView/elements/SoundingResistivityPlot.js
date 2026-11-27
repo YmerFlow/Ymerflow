@@ -53,7 +53,7 @@ const GEOM_BODY = `
     if (uWhich == 2) return sampleColumn(xdistTex, float(s));   // fval (per-sounding xdist)
     int L = int(sampleColumn(layerIdxTex, float(v)) + 0.5);
     float isBot = sampleColumn(isBotTex, float(v));
-    int cell = L + uNLayers * s;                // rho/dep table index (layer-fastest)
+    int cell = s + uNS * L;                     // rho/dep table index (layer-major: flat[L*nS + s])
     float rho = san(sampleColumn(rhoTex, float(cell)));
     if (uWhich == 0) return rho;                // resistivity_x
     float dtop = san(sampleColumn(depTopTex, float(cell)));
@@ -63,8 +63,8 @@ const GEOM_BODY = `
       if (dbot == dbot) {
         dep = dbot;
       } else if (L > 0) {
-        float pb = san(sampleColumn(depBotTex, float((L - 1) + uNLayers * s)));
-        float pt = san(sampleColumn(depTopTex, float((L - 1) + uNLayers * s)));
+        float pb = san(sampleColumn(depBotTex, float(s + uNS * (L - 1))));
+        float pt = san(sampleColumn(depTopTex, float(s + uNS * (L - 1))));
         dep = dtop + max(1.5 * (pb - pt), 50.0);
       } else {
         dep = dtop + 50.0;
@@ -90,15 +90,21 @@ const VERT = `#version 300 es
   uniform vec3 u_color;
   out vec4 vColor;
   void main() {
+    // Drop a vertex by giving it a NaN clip position: the GPU discards every primitive that
+    // references it, so an invalid layer removes only the staircase segments touching it —
+    // WITHOUT the old off-screen push (vec4(2,0,0,1)) leaving a 'lines' pair clipped to the
+    // viewport edge (see the matching note in SoundingPlot.js). vColor is zeroed as a
+    // transparent fallback.
+    float discardNaN = uintBitsToFloat(0x7fc00000u);
     bool ens = u_ensemble > 0.5;
     if (ens) {
       ${ENSEMBLE_FILTER_SNIPPET}
     } else {
       float sd = floor(a_pickId / u_nVert);
-      if (u_currentSounding < 0.0 || sd != u_currentSounding) { gl_Position = vec4(2.0, 0.0, 0.0, 1.0); return; }
+      if (u_currentSounding < 0.0 || sd != u_currentSounding) { gl_Position = vec4(discardNaN); vColor = vec4(0.0); return; }
     }
     if (resistivity_x != resistivity_x || resistivity_x <= 0.0 || elevation_y != elevation_y) {
-      gl_Position = vec4(2.0, 0.0, 0.0, 1.0); return;
+      gl_Position = vec4(discardNaN); vColor = vec4(0.0); return;
     }
     gl_Position = plot_pos(vec2(resistivity_x, elevation_y));
     vColor = ens ? vec4(u_color, u_alpha) : vec4(u_color, 1.0);
@@ -175,21 +181,22 @@ registerLayerType('SoundingResistivityPlot', new LayerType({
       .find(col => col && flightlines?.[col] !== undefined);
     const topoArr = topoColName ? flightlines[topoColName] : null;
 
-    // Marshal the per-layer tables to the GPU — ONE walk each, no processing: row-major
-    // layer-fastest flat[sounding*nLayers + layer]. Validity (NaN/Inf → NaN) is done in the bake
-    // shader (`san`), not here, so this copy is pure layout.
+    // Marshal the per-layer tables to the GPU — ONE native typed-array copy per LAYER (the loop is
+    // over layers, tens), NO per-sounding JS walk. The source rho/dep are ALREADY per-layer arrays
+    // over soundings, so each drops in layer-major: flat[layer*nS + sounding]. Validity (NaN/Inf →
+    // NaN) is done in the bake shader (`san`); the bake samples it via cell = s + uNS*L.
     const rhoFlat = new Float32Array(nLayers * nS);
     const topFlat = new Float32Array(nLayers * nS);
     const botFlat = new Float32Array(nLayers * nS);
+    const copyLayer = (flat, arr, L) => {
+      if (!arr) return;   // missing layer → leaves 0, sanitised/culled downstream
+      flat.set(arr.length === nS ? arr
+             : (arr.subarray ? arr.subarray(0, nS) : Array.prototype.slice.call(arr, 0, nS)), L * nS);
+    };
     for (let L = 0; L < nLayers; L++) {
-      const rhoArr = getFrom(rhoDict,    layerIndices[L]);
-      const topArr = getFrom(depTopDict, layerIndices[L]);
-      const botArr = getFrom(depBotDict, layerIndices[L]);
-      for (let s = 0; s < nS; s++) {
-        rhoFlat[s * nLayers + L] = Number(rhoArr?.[s]);
-        topFlat[s * nLayers + L] = Number(topArr?.[s]);
-        botFlat[s * nLayers + L] = Number(botArr?.[s]);
-      }
+      copyLayer(rhoFlat, getFrom(rhoDict,    layerIndices[L]), L);
+      copyLayer(topFlat, getFrom(depTopDict, layerIndices[L]), L);
+      copyLayer(botFlat, getFrom(depBotDict, layerIndices[L]), L);
     }
 
     // Per-sounding topo (elevation = topo − depth): ONE walk, used both to upload topo for the bake
@@ -238,7 +245,7 @@ registerLayerType('SoundingResistivityPlot', new LayerType({
       isBotTex:    new ArrayColumn(isBot).toTexture(regl)[0],
     };
     const bakeColumn = (which) => new RenderedColumn(
-      (rg) => renderPackedColumn(rg, N, samplers, { uNVert: nVert, uNLayers: nLayers, uWhich: which }, GEOM_BODY)
+      (rg) => renderPackedColumn(rg, N, samplers, { uNVert: nVert, uNS: nS, uWhich: which }, GEOM_BODY)
     ).createColumn(regl, {}, plot);
     const resistivityX = await bakeColumn(0);
     const elevationY   = await bakeColumn(1);
